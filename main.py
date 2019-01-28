@@ -6,8 +6,9 @@ import shutil
 import tensorflow as tf
 from functools import partial
 
-from data_reader_old import DataReader
-from data_reader import DataReader as DataReader_zrh1
+# from data_reader_old import DataReader
+from data_reader import DataReader
+
 from utils import save_parameters, add_letter_path
 from data_utils import input_fn_dummy
 from model import model_fn
@@ -16,13 +17,19 @@ import patches, plots
 HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/3000_gsd5.0.tif'
 
 LRFILE = "/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml"
+# POINTSFILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
+POINTSFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_detections.kml'
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 # Input data args
-parser.add_argument("--HR_file",         default=HRFILE)
-parser.add_argument("--LR_file",                  default=LRFILE)
-parser.add_argument("--roi_lon_lat", default='117.84,8.82,117.92,8.9')
+parser.add_argument("--HR_file", default=HRFILE)
+parser.add_argument("--LR_file", default=LRFILE)
+parser.add_argument("--points", default=POINTSFILE)
+parser.add_argument("--roi_lon_lat_tr", default='117.84,8.82,117.92,8.9')
+parser.add_argument("--roi_lon_lat_tr_lb", default='117.8821,8.87414,117.891,8.8654')
+parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
+parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
 parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12",
                     help="Select the bands. Using comma-separated band names.")
 # parser.add_argument("--data", default="dummy",
@@ -65,7 +72,8 @@ args = parser.parse_args()
 
 def main(unused_args):
 
-    model_dir = os.path.join(args.save_dir,'snapshots','model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
+    data_name = ''.format(os.path.basename(args.HR_file).replace('.tif',''))
+    model_dir = os.path.join(args.save_dir,'snapshots',data_name,'model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting trainign from iter 0...')
@@ -95,26 +103,9 @@ def main(unused_args):
 
     if not args.is_predict:
 
-        if args.data == 'dummy':
-            input_fn = partial(input_fn_dummy,args)
-            input_fn_val = input_fn
-            val_iters = args.train_iters // 2
-
-        elif args.data == 'zrh':
-            reader = DataReader(args, is_training=True)
-            input_fn, input_fn_val = reader.get_input_fn()
-            val_iters = np.sum(reader.patch_gen_val.nr_patches) // args.batch_size
-        elif args.data == 'zrh1':
-            reader = DataReader_zrh1(args, is_training=True)
-            input_fn, input_fn_val = reader.get_input_fn()
-            val_iters = np.sum(reader.patch_gen_val.nr_patches) // args.batch_size
-        elif args.data == 'coco1':
-            reader = DataReader_zrh1(args, is_training=True)
-            input_fn, input_fn_val = reader.get_input_fn()
-            val_iters = np.sum(reader.patch_gen_val.nr_patches) // args.batch_size
-        else:
-            print('inputdata {} not defined'.format(args.data))
-            sys.exit(1)
+        reader = DataReader(args, is_training=True)
+        input_fn, input_fn_val = reader.get_input_fn()
+        val_iters = np.sum(reader.patch_gen_val.nr_patches) // args.batch_size
 
         # Train model and save summaries into logdir.
         # model.train(input_fn=input_fn, steps=args.train_iters)

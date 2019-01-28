@@ -12,9 +12,9 @@ import gdal_processing as gp
 # import patches
 run_60 = False
 
-def readHR(args):
+def readHR(args, roi_lon_lat):
     # args = parseargs()
-    roi_lon_lat = args.roi_lon_lat
+    # roi_lon_lat = args.roi_lon_lat
 
     data_file = args.HR_file
     dsREF = gdal.Open(data_file)
@@ -36,12 +36,8 @@ def readHR(args):
         print(" [!] The ROI does not intersect with the data product")
         sys.exit(0)
 
-    if roi_lon_lat:
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
-    else:
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -180, -90, 180, 90
 
-    xmin, xmax, ymin, ymax = gp.to_xy_box(roi_lon1, roi_lat1, roi_lon2, roi_lat2, dsREF, enlarge=4) # we enlarge from 5m to 20m Bands in S2
+    xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2),dsREF= dsREF, enlarge=4) # we enlarge from 5m to 20m Bands in S2
 
     # elif not roi_lon_lat:
     #     tmxmin = 0
@@ -132,7 +128,7 @@ def readHR(args):
     # print(" [*] Success.")
 
 
-def readS2(args):
+def readS2(args, roi_lon_lat):
 
     data_file = args.LR_file
     if '_USER_' in data_file:
@@ -140,7 +136,7 @@ def readS2(args):
         sys.exit(0)
 
 
-    roi_lon_lat = args.roi_lon_lat
+    # roi_lon_lat = args.roi_lon_lat
     select_bands = args.select_bands
 
 
@@ -180,7 +176,7 @@ def readS2(args):
 
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -180, -90, 180, 90
 
-    xmin, xmax, ymin, ymax = gp.to_xy_box(roi_lon1, roi_lat1, roi_lon2, roi_lat2, dsREF)
+    xmin, ymin, xmax, ymax = gp.to_xy_box((roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF)
 
     # xmin, ymin, xmax, ymax = tmxmin, tmymin, tmxmax, tmymax
     utm = 'NaN'

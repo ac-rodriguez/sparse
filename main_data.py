@@ -19,8 +19,9 @@ def parseargs():
     parser.add_argument("--LR_file",
                     help="An input sentinel-2 data file. This can be either the original ZIP file, or the S2A[...].xml file in a SAFE directory extracted from that ZIP.",
                     default=LRFILE)
-    parser.add_argument("--roi_lon_lat", default='117.84,8.82,117.92,8.9',
-        help="Sets the region of interest to extract, WGS84, decimal notation. Use this syntax: lon_1,lat_1,lon_2,lat_2. The order of points 1 and 2 does not matter: the region of interest extends to the min/max in each direction. Example: --roi_lon_lat=-1.12132,44.72408,-0.90350,44.58646")
+    parser.add_argument("--roi_lon_lat_tr", default='117.84,8.82,117.92,8.9')
+    parser.add_argument("--roi_lon_lat_tr_lb", default='117.8821,8.87414,117.891,8.8654')
+
     parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12", help="Select the bands. Using comma-separated band names.")
 
     args = parser.parse_args()
@@ -41,16 +42,17 @@ dsH = gdal.Open(HR_file)
 
 dsL = gdal.Open(LR_file)
 
-Points_FILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
+# Points_FILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
+Points_FILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_detections.kml'
+
+roi_lon_lat = args.roi_lon_lat_tr
+roi_lon_lat_lb = args.roi_lon_lat_tr_lb
 
 
-roi_lon_lat = args.roi_lon_lat
-
-
-if roi_lon_lat and not roi_lon_lat == 'None':
-    roi_lon1, roi_lat1, roi_lon2, roi_lat2 = map(float,re.split(',', roi_lon_lat))
-else:
-    roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -100, -90, 180, 90
+# if roi_lon_lat and not roi_lon_lat == 'None':
+#     roi_lon1, roi_lat1, roi_lon2, roi_lat2 = map(float,re.split(',', roi_lon_lat))
+# else:
+#     roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -100, -90, 180, 90
 
 
 #
@@ -71,25 +73,28 @@ else:
 #
 
 
-xmin_H,xmax_H,ymin_H,ymax_H = gp.to_xy_box(roi_lon1,roi_lat1,roi_lon2,roi_lat2,dsH, enlarge=2)
+lims_H = gp.to_xy_box(roi_lon_lat,dsH, enlarge=2)
+
+lims_H1 = gp.to_xy_box(roi_lon_lat_lb,dsH, enlarge=2)
 
 
 
-
-hr_mask1 = gp.rasterize_points(Input=Points_FILE,refDataset=HR_file,lims=(xmin_H,ymin_H,xmax_H,ymax_H),scale = 2)
-
+hr_mask1 = gp.rasterize_points_constrained(Input=Points_FILE,refDataset=HR_file,lims=lims_H,lims1=lims_H1,scale = 2)
 
 
-im = plots.plot_heatmap(hr_mask1,0,3)
+
+im = plots.plot_heatmap(hr_mask1,-1,3)
 
 im.save('output/hr_mask.png')
 
 
 
-xmin_L,xmax_L,ymin_L,ymax_L = gp.to_xy_box(roi_lon1,roi_lat1,roi_lon2,roi_lat2,dsL)
+lims_L = gp.to_xy_box(roi_lon_lat,dsL)
+lims_L1 = gp.to_xy_box(roi_lon_lat_lb,dsL)
 
 
-lr_mask1 = gp.rasterize_points(Input=Points_FILE,refDataset=LR_file,lims=(xmin_L,ymin_L,xmax_L,ymax_L),scale = 10)
+
+lr_mask1 = gp.rasterize_points_constrained(Input=Points_FILE,refDataset=LR_file,lims=lims_L,lims1=lims_L1,scale = 10)
 
 # lr_mask = np.zeros((y_max,x_max))
 # for key,val in enumerate(lr_coords):
@@ -99,19 +104,19 @@ lr_mask1 = gp.rasterize_points(Input=Points_FILE,refDataset=LR_file,lims=(xmin_L
 #     if x >= 0 and y >= 0 and x <= x_max and y <= y_max:
 #         lr_mask[y,x] +=1
 #
-print lr_mask1.sum()
+print lr_mask1.sum(), lr_mask1.max()
 #
-im = plots.plot_heatmap(lr_mask1,0,3)
+im = plots.plot_heatmap(lr_mask1,-1,3)
 
 im.save('output/lr_mask.png')
 
 
 
-dataH = readHR(args)
+dataH = readHR(args,roi_lon_lat=roi_lon_lat)
 print 'High-res shape:'
 print dataH.shape, map(lambda x: x/2.0, dataH.shape)
 
-data10, data20 = readS2(args)
+data10, data20 = readS2(args,roi_lon_lat=roi_lon_lat)
 print 'Low-res shapes (10m, 20m):'
 print data10.shape, data20.shape
 

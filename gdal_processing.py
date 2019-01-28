@@ -1,5 +1,6 @@
 import os, sys
 import glob
+import re
 import shutil
 from osgeo import ogr, gdal, osr
 import numpy as np
@@ -118,6 +119,71 @@ def read_coords(Input):
 
     return points
 
+def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
+
+    lims = [i*scale for i in lims]
+
+    xmin, ymin, xmax, ymax = lims # points come already ordered
+
+    lims1 = [i*scale for i in lims1]
+
+    xmin1, ymin1, xmax1, ymax1 = lims1
+
+
+    Image = gdal.Open(refDataset)
+    length_x = xmax - xmin + 1
+    length_y = ymax - ymin + 1
+
+    points = read_coords(Input)
+
+    mask = np.zeros((length_y, length_x), dtype=np.int32)
+
+    xoff, a, b, yoff, d, e = Image.GetGeoTransform()
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(Image.GetProjection())
+    srsLatLon = osr.SpatialReference()
+    srsLatLon.SetWellKnownGeogCS("WGS84")
+    ct = osr.CoordinateTransformation(srsLatLon, srs)
+
+
+    a = a / scale
+    e = e / scale
+
+    for i in points:
+
+        (xp, yp, h) = ct.TransformPoint(i[0], i[1], 0.)
+        xp -= xoff
+        yp -= yoff
+        # matrix inversion
+        det_inv = 1. / (a * e - d * b)
+        x = (e * xp - b * yp) * det_inv
+        y = (-d * xp + a * yp) * det_inv
+        x, y = (int(x), int(y))
+        # x,y = to_xy(i[0], i[1], Image)
+        if x >= xmin and x <=xmax and y>=ymin and y<=ymax:
+            if x >= xmin1 and x <= xmax1 and y >= ymin1 and y <= ymax1:
+                x1 = x - xmin
+                y1 = y - ymin
+
+                mask[y1,x1]+=1
+
+    if scale > 1:
+        # sigma = scale
+        sigma = scale / np.pi
+        mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
+
+        mask = block_reduce(mask, (scale, scale), np.sum)
+        # mask = mask[::scale,::scale]
+        print('GT points were smoothed on High resolution with a Gaussian \sigma = {:.2f} and downsampled {} times'.format(sigma, scale))
+
+    # Set points outside of constraint to -1
+    mask[:,:int((xmin1-xmin) / scale)] = -1
+    mask[:,int((xmax1-xmin) / scale):] = -1
+    mask[:int((ymin1-ymin) / scale),:] = -1
+    mask[int((ymax1-ymin) / scale):,:] = -1
+
+    return mask
+
 def rasterize_points(Input, refDataset, lims, scale = 10):
 
     lims = [i*scale for i in lims]
@@ -169,7 +235,6 @@ def rasterize_points(Input, refDataset, lims, scale = 10):
         print('GT points were smoothed on High resolution with a Gaussian \sigma = {:.2f} and downsampled {} times'.format(sigma, scale))
 
     return mask
-
 def rasterize_points_tiff(Input, refDataset, overwrite = False):
 
     Image = gdal.Open(refDataset)
@@ -306,7 +371,12 @@ def to_xy(lon, lat, ds, is_int = True):
         return (x,y)
 
 
-def to_xy_box(roi_lon1,roi_lat1,roi_lon2,roi_lat2,dsREF, enlarge = 1):
+def to_xy_box(lims,dsREF, enlarge = 1):
+
+    if isinstance(lims,basestring):
+        lims = [float(x) for x in re.split(',', lims)]
+
+    roi_lon1, roi_lat1, roi_lon2, roi_lat2 = lims
     x1, y1 = to_xy(roi_lon1, roi_lat1, dsREF)
     x2, y2 = to_xy(roi_lon2, roi_lat2, dsREF)
     xmin = max(min(x1, x2, dsREF.RasterXSize - 1), 0)
@@ -322,7 +392,7 @@ def to_xy_box(roi_lon1,roi_lat1,roi_lon2,roi_lat2,dsREF, enlarge = 1):
     ymax = int((ymax + 1) / enlarge) * enlarge - 1
 
 
-    return (xmin,xmax,ymin,ymax)
+    return (xmin,ymin,xmax,ymax)
 
 
 def getGeom(inputfile, shapely = False):
