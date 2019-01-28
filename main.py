@@ -1,80 +1,164 @@
 import numpy as np
-from osgeo import gdal
+import os
+import argparse
+import sys
+import shutil
+import tensorflow as tf
+from functools import partial
 
-import gdal_processing as gp
-import plots
+from data_reader_old import DataReader
+from data_reader import DataReader as DataReader_zrh1
+from utils import save_parameters, add_letter_path
+from data_utils import input_fn_dummy
+from model import model_fn
+import patches, plots
 
+HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/3000_gsd5.0.tif'
 
-LR_file = "/home/pf/pfstaff/projects/andresro/barry_palm/data/1C/coco_2017p/PRODUCT/S2A_MSIL1C_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL1C.xml"
+LRFILE = "/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml"
 
-
-HR_file = '/home/pf/pfstaff/projects/andresro/sparse/data/3000/ROI1.tif'
-
-
-dsH = gdal.Open(HR_file)
-
-dsL = gdal.Open(gp.getrefDataset(LR_file))
-
-Points_FILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
-
-
-
-
-lat_lon_coords = gp.read_coords(Points_FILE)
-
-hr_coords = np.zeros_like(lat_lon_coords)
-lr_coords = np.zeros_like(lat_lon_coords)
-for key, val in enumerate(lat_lon_coords):
-
-    xy = gp.to_xy(val[0],val[1],dsH)
-
-    hr_coords[key] = [xy[0],xy[1],0]
-
-    xy = gp.to_xy(val[0],val[1],dsL)
-
-    lr_coords[key] = [xy[0],xy[1],0]
+parser = argparse.ArgumentParser(description="Partial Supervision",
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+# Input data args
+parser.add_argument("--HR_file",         default=HRFILE)
+parser.add_argument("--LR_file",                  default=LRFILE)
+parser.add_argument("--roi_lon_lat", default='117.84,8.82,117.92,8.9')
+parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12",
+                    help="Select the bands. Using comma-separated band names.")
+# parser.add_argument("--data", default="dummy",
+#     help="Dataset to be used [dummy, zrh,zrh1,]")
 
 
-# hr_raster = dsH.ReadAsArray()
-#
-# print hr_raster.shape
-#
-# x_max, y_max = hr_raster.shape[2], hr_raster.shape[1]
-#
-# hr_mask1 = gp.rasterize_points(Input=Points_FILE,refDataset=HR_file,lims=(0,0,x_max,y_max),scale = 1)
-#
-# hr_mask = np.zeros((x_max,y_max))
-# for key,val in enumerate(hr_coords):
-#     # we could already smooth labels here not by adding a 1 to each location but a gaussian to the neighbourhood.
-#     x, y = val[0],val[1]
-#
-#     if x >= 0 and y >= 0 and x <= x_max and y <= y_max:
-#         hr_mask[y,x] +=1
-#
-# im = plots.plot_heatmap(hr_mask,0,2)
-#
-# im.save('hr_maksk.png')
-#
+# Training args
+parser.add_argument("--patch-size", default=128, type = int, help="size of the patches to be created (low-res).")
+parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
+parser.add_argument("--batch-size",default=10,type=int, help="Batch size for training")
+parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
+parser.add_argument("--model", default="ds2_cube",
+    help="Model Architecture to be used [deep_sentinel2, ...]")
+parser.add_argument("--sigma-smooth", type=int, default=None,
+                        help="Sigma smooth to apply to the GT points data.")
+parser.add_argument("--normalize", type=str, default='normal',
+                        help="type of normalization applied to the data.")
+parser.add_argument("--is-restore", default=False, action="store_true",
+                    help="Continue training from a stored model.")
+parser.add_argument("--n-channels", default=12, type=int,
+                    help="Number of channels to be used from the features for training")
+parser.add_argument("--scale-points", default=10, type=int,
+                    help="Original Scale in which the GT points was calculated")
+
+
+# Save args
+
+parser.add_argument("--tag", default="",
+    help="tag to add to the model directory")
+parser.add_argument("--save-dir", default='/home/pf/pfstaff/projects/andresro/sparse/training',
+    help="Path to directory where models should be saved")
+parser.add_argument("--is-overwrite", default=False, action="store_true",
+                    help="Delete model_dir before starting training from iter 0. Overrides --is-restore flag")
+
+
+parser.add_argument("--is-predict", default=False, action="store_true",
+                    help="Predict using an already trained model")
+args = parser.parse_args()
+
+
+def main(unused_args):
+
+    model_dir = os.path.join(args.save_dir,'snapshots','model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
+
+    if args.is_overwrite and os.path.exists(model_dir):
+        print(' [!] Removing exsiting model and starting trainign from iter 0...')
+        shutil.rmtree(model_dir, ignore_errors=True)
+    elif not (args.is_restore or args.is_predict):
+        model_dir = add_letter_path(model_dir, timestamp=False)
+
+    if not os.path.exists(model_dir): os.makedirs(model_dir)
 
 
 
-x_max, y_max = dsL.RasterXSize, dsL.RasterYSize
-
-# lr_mask1 = gp.rasterize_points(Input=Points_FILE,refDataset=LR_file,lims=(0,0,y_max,x_max),scale = 1)
-
-lr_mask = np.zeros((y_max,x_max))
-for key,val in enumerate(lr_coords):
-    # we could already smooth labels here not by adding a 1 to each location but a gaussian to the neighbourhood.
-    x, y = int(val[0]),int(val[1])
-
-    if x >= 0 and y >= 0 and x <= x_max and y <= y_max:
-        lr_mask[y,x] +=1
-
-im = plots.plot_heatmap(lr_mask,0,2)
-
-im.save('lr_maksk.png')
+    save_parameters(args,model_dir, sys.argv)
+    params = {}
 
 
-print('done!')
+
+    params['model_dir'] = model_dir
+    params['args'] = args
+
+    run_config = tf.estimator.RunConfig()
 
 
+    model = tf.estimator.Estimator(model_fn=partial(model_fn,params=params),
+                                   model_dir=model_dir, config=run_config)
+
+    tf.logging.set_verbosity(tf.logging.INFO)# Show training logs.
+
+    if not args.is_predict:
+
+        if args.data == 'dummy':
+            input_fn = partial(input_fn_dummy,args)
+            input_fn_val = input_fn
+            val_iters = args.train_iters // 2
+
+        elif args.data == 'zrh':
+            reader = DataReader(args, is_training=True)
+            input_fn, input_fn_val = reader.get_input_fn()
+            val_iters = np.sum(reader.patch_gen_val.nr_patches) // args.batch_size
+        elif args.data == 'zrh1':
+            reader = DataReader_zrh1(args, is_training=True)
+            input_fn, input_fn_val = reader.get_input_fn()
+            val_iters = np.sum(reader.patch_gen_val.nr_patches) // args.batch_size
+        elif args.data == 'coco1':
+            reader = DataReader_zrh1(args, is_training=True)
+            input_fn, input_fn_val = reader.get_input_fn()
+            val_iters = np.sum(reader.patch_gen_val.nr_patches) // args.batch_size
+        else:
+            print('inputdata {} not defined'.format(args.data))
+            sys.exit(1)
+
+        # Train model and save summaries into logdir.
+        # model.train(input_fn=input_fn, steps=args.train_iters)
+        # scores = model.evaluate(input_fn=input_fn_val, steps=(val_iters))
+
+        train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)
+        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps = (val_iters))
+        #
+        tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
+    else:
+        #TODO finish is_Trainign false implementation to predict large areas
+        reader = DataReader_zrh1(args,is_training=False)
+
+        preds_gen = model.predict(input_fn=reader.input_fn_test) #,predict_keys=['hr_hat_rgb'])
+
+        nr_patches = reader.patch_gen_test.nr_patches[0]
+        batch_idxs = (nr_patches) // args.batch_size
+
+        rgb_rec = np.empty(shape=([nr_patches, args.patch_size*args.scale, args.patch_size*args.scale,3]))
+        # pred_c_rec = np.empty(shape=([nr_patches, args.patch_size, args.patch_size]))
+        # pred_r_rec = np.empty(shape=([nr_patches, args.patch_size, args.patch_size,1]))
+        print('Predicting {} Patches...'.format(nr_patches))
+        for idx in xrange(0, batch_idxs):
+        # for idx in xrange(0,100):
+            p_ = preds_gen.next()
+            start, stop = idx*args.batch_size, (idx+1)*args.batch_size
+            rgb_rec[start:stop] = p_['hr_hat']
+            # pred_c_rec[start:stop] = pc_
+            # pred_r_rec[start:stop] = p_
+
+            if start % 1000 == 0:
+                print(start)
+            # recompose
+        border = 4
+        ref_size = (args.scale*(reader.train[0].shape[1]-border*2), args.scale*(reader.train[0].shape[0]-border*2))
+        ## Recompose RGB
+        data_recomposed = patches.recompose_images(rgb_rec, size=ref_size, border=border)
+        plots.plot_rgb(data_recomposed,file=model_dir+'/data_recomposed')
+
+        # save
+
+if __name__ == '__main__':
+    tf.app.run()
+
+
+
+print('Done!')

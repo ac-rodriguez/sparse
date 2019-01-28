@@ -9,8 +9,10 @@ SAVEDIR='/home/pf/pfstaff/projects/andresro/sparse/data'
 
 IMGDIR='/home/pf/pfstaff/projects/andresro/barry_palm/obj_det/coco/DB_JPEG/aerial_images_tiles'
 
+GSD='1.0'
 set -x
 
-python -u ~/code/supertime/untile_images.py --ref-dataset=$DS --roi_lon_lat=$ROI --save-dir=$SAVEDIR --image-dir=$IMGDIR --is-debug --is-merge
+python -u ~/code/supertime/untile_images.py --ref-dataset=$DS --roi_lon_lat=$ROI --save-dir=$SAVEDIR --image-dir=$IMGDIR --is-merge --gsd=$GSD
+#--is-debug
 
 

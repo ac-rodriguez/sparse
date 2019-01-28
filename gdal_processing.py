@@ -204,16 +204,22 @@ def rasterize_points_tiff(Input, refDataset, overwrite = False):
     else:
         print('{} already exists!'.format(OutputImage))
 
-def getrefDataset(refds):
-    # refds = '/home/pf/pfstaff/projects/barry_palm/data/1C/coco_2017p/PRODUCT/S2A_MSIL1C_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL1C.xml'
+def getrefDataset(refds,is_use_gtiff =False):
+
     raster1c = gdal.Open(refds)
     datasets1c = raster1c.GetSubDatasets()
+
+    if not datasets1c and is_use_gtiff:
+        parentfile = os.path.dirname(refds)
+        geotiffile = os.path.join(parentfile,'geotif','Band_B3.tif')
+        if os.path.isfile(geotiffile):
+            return geotiffile
+
     tenMsets = []
     for (dsname, dsdesc) in datasets1c:
         if '10m resolution' in dsdesc:
             tenMsets += [(dsname, dsdesc)]
     return  tenMsets[0][0]
-            # dsREF = gdal.Open(tenMsets[0][0])
 
 
 def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte):
@@ -298,6 +304,26 @@ def to_xy(lon, lat, ds, is_int = True):
         return (int(x), int(y))
     else:
         return (x,y)
+
+
+def to_xy_box(roi_lon1,roi_lat1,roi_lon2,roi_lat2,dsREF, enlarge = 1):
+    x1, y1 = to_xy(roi_lon1, roi_lat1, dsREF)
+    x2, y2 = to_xy(roi_lon2, roi_lat2, dsREF)
+    xmin = max(min(x1, x2, dsREF.RasterXSize - 1), 0)
+    xmax = min(max(x1, x2, 0), dsREF.RasterXSize - 1)
+    ymin = max(min(y1, y2, dsREF.RasterYSize - 1), 0)
+    ymax = min(max(y1, y2, 0), dsREF.RasterYSize - 1)
+
+
+    xmin = int(xmin / enlarge) * enlarge
+    xmax = int((xmax + 1) / enlarge) * enlarge - 1
+
+    ymin = int(ymin / enlarge) * enlarge
+    ymax = int((ymax + 1) / enlarge) * enlarge - 1
+
+
+    return (xmin,xmax,ymin,ymax)
+
 
 def getGeom(inputfile, shapely = False):
     Shapefile = ogr.Open(inputfile)
@@ -439,9 +465,9 @@ def roi_intersection(ds, geo_pts_ref, return_polygon = False):
         return p1.intersects(p2), None
 
 
-def enlarge_to_60pixel(xmin,xmax):
-    xmin = int(xmin / 6) * 6
-    xmax = int((xmax + 1) / 6) * 6 - 1
+def enlarge_pixel(xmin, xmax, ref=6):
+    xmin = int(xmin / ref) * ref
+    xmax = int((xmax + 1) / ref) * ref - 1
     return xmin, xmax
 
 
