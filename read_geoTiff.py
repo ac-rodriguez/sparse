@@ -121,7 +121,7 @@ def readHR(args, roi_lon_lat):
         print(' [!] The selected image has some blank pixels')
         # sys.exit()
 
-    return data10
+    return data10.astype(np.float32) / 255.0
     # patches.save_numpy(data = data10, args=args,folder=str(pixel_size), view=view, filename='data_complete')
 
 

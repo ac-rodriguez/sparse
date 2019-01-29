@@ -41,7 +41,7 @@ parser.add_argument("--patch-size", default=128, type = int, help="size of the p
 parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
 parser.add_argument("--batch-size",default=10,type=int, help="Batch size for training")
 parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
-parser.add_argument("--model", default="ds2_cube",
+parser.add_argument("--model", default="1",
     help="Model Architecture to be used [deep_sentinel2, ...]")
 parser.add_argument("--sigma-smooth", type=int, default=None,
                         help="Sigma smooth to apply to the GT points data.")

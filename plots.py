@@ -72,6 +72,10 @@ def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, per
         img.save(file + '.png')
         print('{} saved'.format(file + '.png'))
 
+
+
+
+
 def plot_labels(preds, file, colors, return_img=False):
 
     filename = file + '.png'
