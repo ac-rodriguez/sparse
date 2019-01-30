@@ -12,7 +12,9 @@ from data_reader import DataReader
 from utils import save_parameters, add_letter_path
 # from data_utils import input_fn_dummy
 from model import model_fn
-import patches, plots
+import plots
+import patches
+
 
 HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/3000_gsd5.0.tif'
 
@@ -29,7 +31,8 @@ parser.add_argument("--points", default=POINTSFILE)
 parser.add_argument("--roi_lon_lat_tr", default='117.84,8.82,117.92,8.9')
 parser.add_argument("--roi_lon_lat_tr_lb", default='117.8821,8.87414,117.891,8.8654')
 parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
-parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
+# parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
+parser.add_argument("--roi_lon_lat_val_lb", default='117.81,8.82,117.84,8.88')
 parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12",
                     help="Select the bands. Using comma-separated band names.")
 # parser.add_argument("--data", default="dummy",
@@ -49,6 +52,8 @@ parser.add_argument("--normalize", type=str, default='normal',
                         help="type of normalization applied to the data.")
 parser.add_argument("--is-restore", default=False, action="store_true",
                     help="Continue training from a stored model.")
+parser.add_argument("--is-multi-gpu", default=False, action="store_true",
+                    help="Add mirrored strategy for multi gpu training and eval.")
 parser.add_argument("--n-channels", default=12, type=int,
                     help="Number of channels to be used from the features for training")
 parser.add_argument("--scale-points", default=10, type=int,
@@ -93,8 +98,13 @@ def main(unused_args):
     params['model_dir'] = model_dir
     params['args'] = args
 
-    run_config = tf.estimator.RunConfig()
 
+    if args.is_multi_gpu:
+        strategy = tf.contrib.distribute.MirroredStrategy()
+        run_config = tf.estimator.RunConfig(
+            train_distribute=strategy, eval_distribute=strategy)
+    else:
+        run_config = tf.estimator.RunConfig()
 
     model = tf.estimator.Estimator(model_fn=partial(model_fn,params=params),
                                    model_dir=model_dir, config=run_config)
@@ -113,7 +123,7 @@ def main(unused_args):
 
         train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)
         eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps = (val_iters))
-        #
+
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
     else:
         #TODO finish is_Trainign false implementation to predict large areas

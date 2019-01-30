@@ -93,8 +93,8 @@ def inv_preprocess(imgs, num_images, img_mean, scale_luminosity, reorder=True):
         img = (imgs[i] + img_mean) * scale_luminosity
         # img = (imgs[i]) * scale_luminosity
         # img = scale * imgs[i] / (1 - imgs[i])
-        img = plot_rgb(img, file='', return_img=True, reorder=reorder)
-        outputs[i] = np.array(img)[:, :, 0:3]
+        img = plot_rgb(img[...,0:3], file='', return_img=True, reorder=reorder)
+        outputs[i] = np.array(img)
     return outputs
 
 

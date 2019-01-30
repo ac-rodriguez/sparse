@@ -108,7 +108,6 @@ def model_fn(features, labels, mode, params={}):
     mean_train = graph.get_tensor_by_name("mean_train:0")
     scale = graph.get_tensor_by_name("scale_preprocessing:0")
 
-    mean_rgb = mean_train[..., 0:3]
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         predictions = {'y_hat': y_hat}
@@ -121,24 +120,29 @@ def model_fn(features, labels, mode, params={}):
                         tf.zeros_like(y_hat))  ## semi-supervised loss TODO
     loss = tf.reduce_sum(cond_dif)
 
-    # Ploting only rgb and transforming from bgr to rgb.
-    inv_ = lambda x: tf.py_func(inv_preprocess, [x, args.batch_size, mean_rgb, scale],
-                                tf.uint8,
-                                name='inv_preprocess_image_rgb')
+    is_summaries = True
+    if is_summaries and not args.is_multi_gpu:
 
-    inv_reg_ = lambda x: tf.py_func(decode_labels_reg, [x, args.batch_size], tf.uint8,
-                                    name='decode_labels_r')
-    uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
+        mean_rgb = mean_train  # [..., 0:3]
 
-    image_array_top = tf.concat(axis=2, values=[inv_reg_(lab_down), inv_reg_(y_hat)])
-    image_array_mid = tf.concat(axis=2,
-                                values=[inv_(feat_l[..., 0:3]), uint8_(feat_h_down)])
+        # Ploting only rgb and transforming from bgr to rgb.
+        inv_ = lambda x: tf.py_func(inv_preprocess, [x, args.batch_size, mean_rgb, scale],
+                                    tf.uint8,
+                                    name='inv_preprocess_image_rgb')
 
-    image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
+        inv_reg_ = lambda x: tf.py_func(decode_labels_reg, [x, args.batch_size], tf.uint8,
+                                        name='decode_labels_r')
+        uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
 
-    tf.summary.image('all',
-                     image_array,
-                     max_outputs=2)
+        image_array_top = tf.concat(axis=2, values=[inv_reg_(lab_down), inv_reg_(y_hat)])
+        image_array_mid = tf.concat(axis=2,
+                                    values=[inv_(feat_l), uint8_(feat_h_down)])
+
+        image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
+
+        tf.summary.image('all',
+                         image_array,
+                         max_outputs=2)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))

@@ -210,11 +210,15 @@ class DataReader(object):
 
     def normalize(self, img,data_h):
 
-
         img /= self.luminosity_scale
         img -= self.mean_train
 
         return img, data_h
+
+    def reorder_ds(self, data_l, data_h):
+
+        return {'feat_l': data_l, 'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1], axis=-1)
+
 
     def read_data(self, is_training = True):
 
@@ -304,14 +308,15 @@ class DataReader(object):
                 tf.TensorShape([self.patch_h, self.patch_h,
                                 4])
             ))
-        ds = ds.map(self.normalize)
+        ds = ds.map(self.normalize).map(self.reorder_ds)
 
-        ds = ds.batch(self.batch) #.prefetch(buffer_size=10)
-        iter = ds.make_one_shot_iterator()
+        ds = ds.batch(self.batch).prefetch(buffer_size=10)
 
-        f_l, data_h = iter.get_next()
-
-        return {'feat_l': f_l, 'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1],axis=3)
+        return ds # .make_one_shot_iterator().get_next()
+        #
+        # f_l, data_h = iter.get_next()
+        #
+        # return {'feat_l': f_l, 'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1],axis=3)
 
 
 
