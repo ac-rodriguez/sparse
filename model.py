@@ -1,7 +1,7 @@
 import tensorflow as tf
 import sys
 from utils import inv_preprocess, decode_labels_reg
-
+from colorize import colorize, inv_preprocess_tf
 
 def bn_layer(X, activation_fn, is_training=True):
     return tf.contrib.layers.batch_norm(
@@ -94,7 +94,7 @@ def model_fn(features, labels, mode, params={}):
         feat = tf.concat([feat_h_down, feat_l], axis=3)
         y_hat = deep_sentinel2(feat, n_channels=1, is_resid=False)
 
-    elif args.model == '2':  # Baseline
+    elif args.model == '2':
         x_h = tf.layers.conv2d(feat_h_down, 128, 3, activation=tf.nn.relu, padding='same')
         x_l = tf.layers.conv2d(feat_l, 128, 3, activation=tf.nn.relu, padding='same')
         feat = tf.concat([x_h, x_l], axis=3)
@@ -143,6 +143,26 @@ def model_fn(features, labels, mode, params={}):
         tf.summary.image('all',
                          image_array,
                          max_outputs=2)
+    else:
+        mean_rgb = mean_train  # [..., 0:3]
+
+        inv_ = lambda x: inv_preprocess_tf(x, mean_rgb, scale_luminosity=scale)
+
+        inv_reg_ = lambda x: colorize(x,vmin=0,vmax=4,cmap='hot')
+
+        uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
+
+        image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, lab_down), tf.map_fn(inv_reg_,y_hat)])
+        image_array_mid = tf.concat(axis=2,
+                                    values=[tf.map_fn(inv_,feat_l), uint8_(feat_h_down)])
+
+        image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
+
+        tf.summary.image('all',
+                         image_array,
+                         max_outputs=2)
+
+
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))
