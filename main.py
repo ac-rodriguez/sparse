@@ -10,7 +10,7 @@ from functools import partial
 from data_reader import DataReader
 
 from utils import save_parameters, add_letter_path
-from data_utils import input_fn_dummy
+# from data_utils import input_fn_dummy
 from model import model_fn
 import patches, plots
 
