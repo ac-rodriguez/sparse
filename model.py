@@ -120,49 +120,49 @@ def model_fn(features, labels, mode, params={}):
                         tf.zeros_like(y_hat))  ## semi-supervised loss TODO
     loss = tf.reduce_sum(cond_dif)
 
-    is_summaries = True
-    if is_summaries and not args.is_multi_gpu:
+    # is_summaries = True
+    # if is_summaries and not args.is_multi_gpu:
+    #
+    #     mean_rgb = mean_train  # [..., 0:3]
+    #
+    #     # Ploting only rgb and transforming from bgr to rgb.
+    #     inv_ = lambda x: tf.py_func(inv_preprocess, [x, args.batch_size, mean_rgb, scale],
+    #                                 tf.uint8,
+    #                                 name='inv_preprocess_image_rgb')
+    #
+    #     inv_reg_ = lambda x: tf.py_func(decode_labels_reg, [x, args.batch_size], tf.uint8,
+    #                                     name='decode_labels_r')
+    #     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
+    #
+    #     image_array_top = tf.concat(axis=2, values=[inv_reg_(lab_down), inv_reg_(y_hat)])
+    #     image_array_mid = tf.concat(axis=2,
+    #                                 values=[inv_(feat_l), uint8_(feat_h_down)])
+    #
+    #     image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
+    #
+    #     tf.summary.image('all',
+    #                      image_array,
+    #                      max_outputs=2)
+    # else:
+    mean_rgb = mean_train  # [..., 0:3]
+    uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
+    inv_ = lambda x: inv_preprocess_tf(x, mean_rgb, scale_luminosity=scale)
 
-        mean_rgb = mean_train  # [..., 0:3]
-
-        # Ploting only rgb and transforming from bgr to rgb.
-        inv_ = lambda x: tf.py_func(inv_preprocess, [x, args.batch_size, mean_rgb, scale],
-                                    tf.uint8,
-                                    name='inv_preprocess_image_rgb')
-
-        inv_reg_ = lambda x: tf.py_func(decode_labels_reg, [x, args.batch_size], tf.uint8,
-                                        name='decode_labels_r')
-        uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
-
-        image_array_top = tf.concat(axis=2, values=[inv_reg_(lab_down), inv_reg_(y_hat)])
-        image_array_mid = tf.concat(axis=2,
-                                    values=[inv_(feat_l), uint8_(feat_h_down)])
-
-        image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
-
-        tf.summary.image('all',
-                         image_array,
-                         max_outputs=2)
-    else:
-        mean_rgb = mean_train  # [..., 0:3]
-        uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
-        inv_ = lambda x: inv_preprocess_tf(x, mean_rgb, scale_luminosity=scale)
-
-        inv_reg_ = lambda x: uint8_(colorize(x,vmin=0,vmax=4,cmap='hot'))
+    inv_reg_ = lambda x: uint8_(colorize(x,vmin=0,vmax=4,cmap='hot'))
 
 
-        image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, lab_down,dtype=tf.uint8),
-                                                    tf.map_fn(inv_reg_,y_hat,dtype=tf.uint8)])
-        a = tf.map_fn(inv_,feat_l, dtype=tf.uint8)
-        b = uint8_(feat_h_down)
+    image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, lab_down,dtype=tf.uint8),
+                                                tf.map_fn(inv_reg_,y_hat,dtype=tf.uint8)])
+    a = tf.map_fn(inv_,feat_l, dtype=tf.uint8)
+    b = uint8_(feat_h_down)
 
-        image_array_mid = tf.concat(axis=2, values=[a, b])
+    image_array_mid = tf.concat(axis=2, values=[a, b])
 
-        image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
+    image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
 
-        tf.summary.image('all',
-                         image_array,
-                         max_outputs=2)
+    tf.summary.image('all',
+                     image_array,
+                     max_outputs=2)
 
 
 
