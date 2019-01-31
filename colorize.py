@@ -2,7 +2,7 @@ import matplotlib
 import matplotlib.cm
 
 import tensorflow as tf
-
+import numpy as np
 # Taken from: https://gist.github.com/jimfleming/c1adfdb0f526465c99409cc143dea97b
 
 def colorize(value, vmin=None, vmax=None, cmap=None):
@@ -44,10 +44,13 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
 
     # quantize
     indices = tf.to_int32(tf.round(value * 255))
+    # indices = tf.cast(value * 255.0, dtype=tf.uint8)
 
     # gather
     cm = matplotlib.cm.get_cmap(cmap if cmap is not None else 'hot')
-    colors = tf.constant(cm.colors, dtype=tf.float32)
+    colors = cm(np.arange(256))[:, :3]
+    colors = tf.constant(colors, dtype=tf.float32)
+    # colors = tf.constant(cm.colors, dtype=tf.float32)
     value = tf.gather(colors, indices)
 
     return value
@@ -101,8 +104,8 @@ def plot_rgb(value, max_luminance=4000, percentiles = (1,99)):
     mi = tf.contrib.distributions.percentile(value,q=percentiles[0])
     ma = tf.contrib.distributions.percentile(value, q=percentiles[1])
 
-    if mi < max_luminance:
-        ma = tf.minimum(ma, max_luminance)
+    # if mi < max_luminance:
+    ma = tf.minimum(ma, max_luminance)
 
     # normalize
     mi = tf.reduce_min(value) if mi is None else mi
@@ -113,9 +116,20 @@ def plot_rgb(value, max_luminance=4000, percentiles = (1,99)):
     value = tf.squeeze(value)
 
     # quantize
-    value = tf.to_int32(tf.round(value * 255))
+    # value = tf.to_int32(tf.round(value * 255))
+    value = tf.cast(value * 255.0, dtype=tf.uint8)
 
-    return value[:,:,(2,1,0)]
+    return slice_last_dim(value, (2,1,0))
+
+def slice_last_dim(tensor,dims):
+    output = None
+    exp_dim = len(tensor.get_shape().as_list()) -1
+
+    for val in dims:
+        tensor_ = tensor[...,val]
+        tensor_ = tf.expand_dims(tensor_,axis=exp_dim)
+        output = tf.concat([output,tensor_],axis=exp_dim) if output is not None else tensor_
+    return output
 
 
 def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap = 'hot'):

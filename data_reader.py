@@ -128,7 +128,7 @@ class DataReader(object):
         self.args = args
         self.is_training = is_training
         self.run_60 = False
-        self.luminosity_scale = 2000 #9999.0
+        self.luminosity_scale = 2000.0 #9999.0
         self.batch = self.args.batch_size
         self.patch_l = self.args.patch_size
 
@@ -292,9 +292,11 @@ class DataReader(object):
     def input_fn(self, is_train=True):
         # np.random.seed(99)
 
-        tf.Variable(self.mean_train, name='mean_train', trainable=False)
-        tf.Variable(self.luminosity_scale, name='scale_preprocessing', trainable=False)
+        # tf.Variable(self.mean_train, name='mean_train', trainable=False,validate_shape=True, expected_shape=tf.shape([self.n_channels]))
+        # tf.Variable(self.luminosity_scale, name='scale_preprocessing', trainable=False, expected_shape=tf.shape(1))
 
+        tf.constant(self.mean_train.astype(np.float32), name='mean_train')
+        tf.constant(np.float32(self.luminosity_scale), name='scale_preprocessing')
         if is_train:
             gen_func = self.patch_gen.get_iter
         else:
