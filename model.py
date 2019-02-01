@@ -4,13 +4,18 @@ from utils import inv_preprocess, decode_labels_reg
 from colorize import colorize, inv_preprocess_tf
 
 def bn_layer(X, activation_fn, is_training=True):
-    return tf.contrib.layers.batch_norm(
-        X,
-        activation_fn=activation_fn,
-        is_training=is_training,
-        updates_collections=None,
-        scale=True,
-        scope=None)
+
+    if activation_fn is None:
+        activation_fn = lambda x: x
+    return activation_fn(tf.layers.batch_normalization(X,training=is_training))
+
+    # return tf.contrib.layers.batch_norm(
+    #     X,
+    #     activation_fn=activation_fn,
+    #     is_training=is_training,
+    #     updates_collections=None,
+    #     scale=True,
+    #     scope=None)
 
 
 log10 = lambda x: tf.log(x) / tf.log(10.0)
@@ -31,76 +36,79 @@ def snr_metric(a, b):
     return s2n, sd_op
 
 
-def resid_block(X, filters=[64, 128], only_resid=False):
+def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_batch_norm = True):
     Xr = tf.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
-    Xr = bn_layer(Xr, tf.nn.relu)
+    if is_batch_norm:
+        Xr = bn_layer(Xr, tf.nn.relu, is_training=is_training)
     Xr = tf.layers.conv2d(Xr, filters=filters[1], kernel_size=1, activation=tf.nn.relu, padding='same')
-    Xr = bn_layer(Xr, tf.nn.relu)
-    if only_resid:
-        return Xr
-    else:
-        return X + Xr
+    if is_batch_norm:
+        Xr = bn_layer(Xr, tf.nn.relu, is_training=is_training)
+    if is_residual:
+        Xr = X + Xr
+    return X + Xr
 
 
-def resid_block1(X, filters=[64, 128], only_resid=False, scale=0.1):
+def resid_block1(X, filters=[64, 128], is_residual=False, scale=0.1):
     Xr = tf.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
     # Xr = bn_layer(Xr, tf.nn.relu)
     Xr = tf.layers.conv2d(Xr, filters=filters[1], kernel_size=1, activation=tf.nn.relu, padding='same')
 
     Xr = Xr * scale
 
-    if only_resid:
-        return Xr
-    else:
+    if is_residual:
         return X + Xr
+    else:
+        return Xr
 
 
-def deeplab(input, n_channels):
+
+def deeplab(input, n_channels, is_training=True):
     with tf.variable_scope('resnet_blocks'):
-        x = resid_block(input, filters=[128, 128], only_resid=True)
+        x = resid_block(input, filters=[128, 128], is_residual=False, is_training=is_training)
         for i in range(6):
-            x = resid_block(x)
+            x = resid_block(x, is_training=is_training)
 
     hr_hat = tf.layers.conv2d(x, filters=n_channels, kernel_size=3, activation=None,
                               padding='same')
     return hr_hat
 
 
-def deep_sentinel2(input, n_channels, is_resid=True, scope_name = 'resnet_blocks'):
+def deep_sentinel2(input, n_channels, is_residual=True, scope_name='resnet_blocks', is_training= True, is_batch_norm = True):
     feature_size = 128
     with tf.variable_scope(scope_name):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
         x = tf.layers.conv2d(input, feature_size, kernel_size=3, activation=tf.nn.relu, padding='same')
         for i in range(6):
             # features_nn = resid_block(features_nn)
-            x = resid_block1(x, filters=[feature_size, feature_size])
+            x = resid_block(x, filters=[feature_size, feature_size],is_residual=True, is_training=is_training, is_batch_norm=is_batch_norm)
             # features_nn = resid_block(features_nn)
 
     hr_hat = tf.layers.conv2d(x, filters=n_channels, kernel_size=3, activation=None,
                               padding='same')
-    if is_resid:
-        return hr_hat + input[..., 0:3]
+    if is_residual:
+        return hr_hat + input
     else:
         return hr_hat
 
 
 def model_fn(features, labels, mode, params={}):
+    is_training = (mode == tf.estimator.ModeKeys.TRAIN)
     args = params['args']
     feat_l, feat_h = features['feat_l'], features['feat_h']
     feat_h_down = tf.image.resize_bilinear(feat_h, size=[args.patch_size, args.patch_size], name='HR_down')
     lab_down = tf.image.resize_bilinear(labels, size=[args.patch_size, args.patch_size], name='Label_down')
     # features = features[...,0:args.n_channels]
-    if args.model == '1':  # Baseline  No High Res
-        # feat = tf.concat([feat_h_down, feat_l], axis=3)
-        y_hat = deep_sentinel2(feat_l, n_channels=1, is_resid=False)
+    if args.model == '1':  # Baseline  No High Res for training
+        y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
         semi_loss = 0
-    elif args.model == '2':
-
-        # SR as a side task
+    elif args.model == '1a':  # Baseline  No High Res for training without BN
+        y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=False)
+        semi_loss = 0
+    elif args.model == '2':   # SR as a side task
         with tf.variable_scope('SR_task'):
             feat_l_up = tf.image.resize_bilinear(feat_l, size=[int(args.patch_size*args.scale), int(args.patch_size*args.scale)], name='LR_up')
 
-            HR_hat = deep_sentinel2(feat_l_up, n_channels=3, is_resid=False)
+            HR_hat = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training, is_batch_norm=True)
 
             semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
 
@@ -114,9 +122,23 @@ def model_fn(features, labels, mode, params={}):
 
         feat = tf.concat([x_h, x_l], axis=3)
 
-        y_hat = deep_sentinel2(feat, n_channels=1, is_resid=False)
+        y_hat = deep_sentinel2(feat, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
+    elif args.model == '3':   # SR as a side task - leaner version
+        with tf.variable_scope('SR_task'):
+            feat_l_up = tf.image.resize_bilinear(feat_l, size=[int(args.patch_size*args.scale), int(args.patch_size*args.scale)], name='LR_up')
+
+            HR_hat = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training, is_batch_norm=True)
+
+            semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
+
+        HR_hat_down = tf.image.resize_bilinear(HR_hat, size=[int(args.patch_size),
+                                                              int(args.patch_size)])
+
+        # Estimated sup-pixel features from LR
+        y_hat = deep_sentinel2(HR_hat_down, n_channels=1, is_residual=False, is_training=is_training)
 
     else:
+
         print('Model {} not defined'.format(args.model))
         sys.exit(1)
 
@@ -130,7 +152,6 @@ def model_fn(features, labels, mode, params={}):
 
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-    # loss = tf.cond(flat_(tf.greater_equal(lab_down,0)),lambda: flat_(tf.reduce_sum(tf.abs(y_hat - lab_down))), lambda: tf.zeros_like(flat_(y_hat)))
     superv_loss = tf.reduce_sum(tf.where(tf.greater_equal(lab_down, 0),
                         tf.abs(y_hat - lab_down),  ## for wherever i have labels
                         tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
@@ -158,16 +179,27 @@ def model_fn(features, labels, mode, params={}):
                      image_array,
                      max_outputs=2)
 
+    if not '1' in args.model:
+        image_array = tf.concat(axis=1, values=[HR_hat, feat_h])
+
+        tf.summary.image('HR_hat-HR',
+                         image_array,
+                         max_outputs=2)
+
 
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))
         tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
+        tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
+
         tf.summary.scalar('metrics/superv_loss', superv_loss)
         tf.summary.scalar('metrics/semi_loss', semi_loss)
 
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
-        train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+        with tf.control_dependencies(update_ops):
+            train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
     # Compute evaluation metrics.
@@ -176,6 +208,8 @@ def model_fn(features, labels, mode, params={}):
             labels=lab_down, predictions=y_hat),
         'metrics/mse': tf.metrics.mean_squared_error(
             labels=lab_down, predictions=y_hat)}
+    if not '1' in args.model:
+        eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(HR_hat, feat_h)
 
     # Add summary hook for image summary
     eval_summary_hook = tf.train.SummarySaverHook(

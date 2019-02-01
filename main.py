@@ -128,7 +128,7 @@ def main(unused_args):
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
     else:
         #TODO finish is_Trainign false implementation to predict large areas
-        reader = DataReader_zrh1(args,is_training=False)
+        reader = DataReader(args,is_training=False)
 
         preds_gen = model.predict(input_fn=reader.input_fn_test) #,predict_keys=['hr_hat_rgb'])
 
