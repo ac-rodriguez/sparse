@@ -54,7 +54,7 @@ def read_labels(args, roi, roi1):
     lims_H1 = gp.to_xy_box(roi1, dsH, enlarge=2)
 
     labels = gp.rasterize_points_constrained(Input=args.points, refDataset=args.HR_file, lims=lims_H,
-                                                  lims1=lims_H1, scale=2)
+                                                  lims1=lims_H1, scale=1) # DS is already at HR scale we do not need to upsample anything
 
     return np.expand_dims(labels, axis = 2)
 

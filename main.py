@@ -57,8 +57,8 @@ parser.add_argument("--is-multi-gpu", default=False, action="store_true",
                     help="Add mirrored strategy for multi gpu training and eval.")
 parser.add_argument("--n-channels", default=12, type=int,
                     help="Number of channels to be used from the features for training")
-parser.add_argument("--scale-points", default=10, type=int,
-                    help="Original Scale in which the GT points was calculated")
+# parser.add_argument("--scale-points", default=10, type=int,
+#                     help="Original Scale in which the GT points was calculated")
 
 
 # Save args
