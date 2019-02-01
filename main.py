@@ -43,6 +43,7 @@ parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12"
 parser.add_argument("--patch-size", default=128, type = int, help="size of the patches to be created (low-res).")
 parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
 parser.add_argument("--batch-size",default=10,type=int, help="Batch size for training")
+parser.add_argument("--lambda-loss",default=1,type=int, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
 parser.add_argument("--model", default="1",
     help="Model Architecture to be used [deep_sentinel2, ...]")

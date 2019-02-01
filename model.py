@@ -66,9 +66,9 @@ def deeplab(input, n_channels):
     return hr_hat
 
 
-def deep_sentinel2(input, n_channels, is_resid=True):
+def deep_sentinel2(input, n_channels, is_resid=True, scope_name = 'resnet_blocks'):
     feature_size = 128
-    with tf.variable_scope('resnet_blocks'):
+    with tf.variable_scope(scope_name):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
         x = tf.layers.conv2d(input, feature_size, kernel_size=3, activation=tf.nn.relu, padding='same')
         for i in range(6):
@@ -87,17 +87,33 @@ def deep_sentinel2(input, n_channels, is_resid=True):
 def model_fn(features, labels, mode, params={}):
     args = params['args']
     feat_l, feat_h = features['feat_l'], features['feat_h']
-    feat_h_down = tf.image.resize_bilinear(feat_h, size=[args.patch_size, args.patch_size], name='HR_downsampled')
-    lab_down = tf.image.resize_bilinear(labels, size=[args.patch_size, args.patch_size], name='Label_downsampled')
+    feat_h_down = tf.image.resize_bilinear(feat_h, size=[args.patch_size, args.patch_size], name='HR_down')
+    lab_down = tf.image.resize_bilinear(labels, size=[args.patch_size, args.patch_size], name='Label_down')
     # features = features[...,0:args.n_channels]
-    if args.model == '1':  # Baseline
-        feat = tf.concat([feat_h_down, feat_l], axis=3)
-        y_hat = deep_sentinel2(feat, n_channels=1, is_resid=False)
-
+    if args.model == '1':  # Baseline  No High Res
+        # feat = tf.concat([feat_h_down, feat_l], axis=3)
+        y_hat = deep_sentinel2(feat_l, n_channels=1, is_resid=False)
+        semi_loss = 0
     elif args.model == '2':
-        x_h = tf.layers.conv2d(feat_h_down, 128, 3, activation=tf.nn.relu, padding='same')
+
+        # SR as a side task
+        with tf.variable_scope('SR_task'):
+            feat_l_up = tf.image.resize_bilinear(feat_l, size=[int(args.patch_size*args.scale), int(args.patch_size*args.scale)], name='LR_up')
+
+            HR_hat = deep_sentinel2(feat_l_up, n_channels=3, is_resid=False)
+
+            semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
+
+        HR_hat_down = tf.image.resize_bilinear(HR_hat, size=[int(args.patch_size),
+                                                              int(args.patch_size)])
+
+        # Estimated sup-pixel features from LR
+        x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
+
         x_l = tf.layers.conv2d(feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+
         feat = tf.concat([x_h, x_l], axis=3)
+
         y_hat = deep_sentinel2(feat, n_channels=1, is_resid=False)
 
     else:
@@ -115,35 +131,13 @@ def model_fn(features, labels, mode, params={}):
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
     # loss = tf.cond(flat_(tf.greater_equal(lab_down,0)),lambda: flat_(tf.reduce_sum(tf.abs(y_hat - lab_down))), lambda: tf.zeros_like(flat_(y_hat)))
-    cond_dif = tf.where(tf.greater_equal(lab_down, 0),
+    superv_loss = tf.reduce_sum(tf.where(tf.greater_equal(lab_down, 0),
                         tf.abs(y_hat - lab_down),  ## for wherever i have labels
-                        tf.zeros_like(y_hat))  ## semi-supervised loss TODO
-    loss = tf.reduce_sum(cond_dif)
+                        tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
 
-    # is_summaries = True
-    # if is_summaries and not args.is_multi_gpu:
-    #
-    #     mean_rgb = mean_train  # [..., 0:3]
-    #
-    #     # Ploting only rgb and transforming from bgr to rgb.
-    #     inv_ = lambda x: tf.py_func(inv_preprocess, [x, args.batch_size, mean_rgb, scale],
-    #                                 tf.uint8,
-    #                                 name='inv_preprocess_image_rgb')
-    #
-    #     inv_reg_ = lambda x: tf.py_func(decode_labels_reg, [x, args.batch_size], tf.uint8,
-    #                                     name='decode_labels_r')
-    #     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
-    #
-    #     image_array_top = tf.concat(axis=2, values=[inv_reg_(lab_down), inv_reg_(y_hat)])
-    #     image_array_mid = tf.concat(axis=2,
-    #                                 values=[inv_(feat_l), uint8_(feat_h_down)])
-    #
-    #     image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
-    #
-    #     tf.summary.image('all',
-    #                      image_array,
-    #                      max_outputs=2)
-    # else:
+    loss = superv_loss + args.lambda_loss * semi_loss
+
+
     mean_rgb = mean_train  # [..., 0:3]
     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
     inv_ = lambda x: inv_preprocess_tf(x, mean_rgb, scale_luminosity=scale)
@@ -169,6 +163,8 @@ def model_fn(features, labels, mode, params={}):
     if mode == tf.estimator.ModeKeys.TRAIN:
         tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))
         tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
+        tf.summary.scalar('metrics/superv_loss', superv_loss)
+        tf.summary.scalar('metrics/semi_loss', semi_loss)
 
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
         train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
