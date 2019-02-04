@@ -247,22 +247,24 @@ class DataReader(object):
 
             x_shapes, y_shapes = self.compute_shapes(dset_h=self.labels,dset_l=self.train,scale=scale)
 
-            print(' Train shapes: \n ({}x{}) \n ({}x{}) After adjustment'.format(self.train.shape[0],self.train.shape[1],x_shapes,y_shapes))
+            print(' Train shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0],self.train.shape[1],self.train_h.shape[0],self.train_h.shape[1]))
             # Reduce data to the enlarged 10m pixels
             self.train_h = self.train_h[0:int(scale*x_shapes),0:int(scale*y_shapes),:]
             self.train = self.train[0:int(x_shapes), 0:int(y_shapes), :]
             self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+            print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0],self.train.shape[1],self.train_h.shape[0],self.train_h.shape[1]))
 
 
             x_shapes, y_shapes = self.compute_shapes(dset_h=self.labels_val,dset_l=self.val,scale=scale)
 
-            print(' Val shapes: \n ({}x{}) \n ({}x{}) After adjustment'.format(self.val.shape[0],self.val.shape[1],x_shapes,y_shapes))
+            print(' Val shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0],self.val.shape[1],self.val_h.shape[0],self.val_h.shape[1]))
 
             # Reduce data to the enlarged 10m pixels
             self.val_h = self.val_h[0:int(scale*x_shapes),0:int(scale*y_shapes),:]
             self.val = self.val[0:int(x_shapes),0:int(y_shapes),:]
             self.labels_val = self.labels_val[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
-
+            print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
+                                                                             self.val_h.shape[0], self.val_h.shape[1]))
 
 
         else:

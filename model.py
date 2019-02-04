@@ -1,13 +1,14 @@
 import tensorflow as tf
 import sys
 from utils import inv_preprocess, decode_labels_reg
-from colorize import colorize, inv_preprocess_tf
+from colorize import colorize, inv_preprocess_tf, slice_last_dim
+import numpy as np
 
-def bn_layer(X, activation_fn, is_training=True):
 
+def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None:
         activation_fn = lambda x: x
-    return activation_fn(tf.layers.batch_normalization(X,training=is_training))
+    return activation_fn(tf.layers.batch_normalization(X, training=is_training))
 
     # return tf.contrib.layers.batch_norm(
     #     X,
@@ -36,7 +37,7 @@ def snr_metric(a, b):
     return s2n, sd_op
 
 
-def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_batch_norm = True):
+def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_batch_norm=True):
     Xr = tf.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
     if is_batch_norm:
         Xr = bn_layer(Xr, tf.nn.relu, is_training=is_training)
@@ -46,6 +47,16 @@ def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_bat
     if is_residual:
         Xr = X + Xr
     return X + Xr
+
+
+def sum_pool(X, scale, name):
+    return tf.multiply(float(scale),
+                       tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
+                                      strides=(1, scale, scale, 1), padding='VALID'),
+                       name=name)
+def bilinear(X,size, name=None):
+    return tf.image.resize_bilinear(X, size=[int(size), int(size)], name=name)
+
 
 
 def resid_block1(X, filters=[64, 128], is_residual=False, scale=0.1):
@@ -61,7 +72,6 @@ def resid_block1(X, filters=[64, 128], is_residual=False, scale=0.1):
         return Xr
 
 
-
 def deeplab(input, n_channels, is_training=True):
     with tf.variable_scope('resnet_blocks'):
         x = resid_block(input, filters=[128, 128], is_residual=False, is_training=is_training)
@@ -73,14 +83,16 @@ def deeplab(input, n_channels, is_training=True):
     return hr_hat
 
 
-def deep_sentinel2(input, n_channels, is_residual=True, scope_name='resnet_blocks', is_training= True, is_batch_norm = True):
+def deep_sentinel2(input, n_channels, is_residual=True, scope_name='resnet_blocks', is_training=True,
+                   is_batch_norm=True):
     feature_size = 128
     with tf.variable_scope(scope_name):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
         x = tf.layers.conv2d(input, feature_size, kernel_size=3, activation=tf.nn.relu, padding='same')
         for i in range(6):
             # features_nn = resid_block(features_nn)
-            x = resid_block(x, filters=[feature_size, feature_size],is_residual=True, is_training=is_training, is_batch_norm=is_batch_norm)
+            x = resid_block(x, filters=[feature_size, feature_size], is_residual=True, is_training=is_training,
+                            is_batch_norm=is_batch_norm)
             # features_nn = resid_block(features_nn)
 
     hr_hat = tf.layers.conv2d(x, filters=n_channels, kernel_size=3, activation=None,
@@ -91,12 +103,35 @@ def deep_sentinel2(input, n_channels, is_residual=True, scope_name='resnet_block
         return hr_hat
 
 
+def SR_task(feat_l, args,is_batch_norm=True, is_training=True):
+    with tf.variable_scope('SR_task'):
+        feat_l_up = bilinear(feat_l,size=args.patch_size*args.scale,name='LR_up')
+
+        HR_hat1 = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training,
+                                 is_batch_norm=is_batch_norm)
+
+        feat_l_rgb = slice_last_dim(feat_l_up, dims=(2, 1, 0))
+
+        HR_hat1 = tf.nn.sigmoid(HR_hat1) + bn_layer(feat_l_rgb, is_training=is_training)
+
+        HR_hat = tf.layers.conv2d(HR_hat1, 3, 3, activation=tf.nn.sigmoid, padding='same')
+
+        return HR_hat
+
+
 def model_fn(features, labels, mode, params={}):
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
+
+    graph = tf.get_default_graph()
+    mean_train = graph.get_tensor_by_name("mean_train:0")
+    scale = graph.get_tensor_by_name("scale_preprocessing:0")
+
     args = params['args']
     feat_l, feat_h = features['feat_l'], features['feat_h']
-    feat_h_down = tf.image.resize_bilinear(feat_h, size=[args.patch_size, args.patch_size], name='HR_down')
-    lab_down = tf.image.resize_bilinear(labels, size=[args.patch_size, args.patch_size], name='Label_down')
+    feat_h_down = bilinear(feat_h, args.patch_size, name='HR_down')
+
+    lab_down = sum_pool(labels, args.scale, name='Label_down')
+
     # features = features[...,0:args.n_channels]
     if args.model == '1':  # Baseline  No High Res for training
         y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
@@ -104,16 +139,12 @@ def model_fn(features, labels, mode, params={}):
     elif args.model == '1a':  # Baseline  No High Res for training without BN
         y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=False)
         semi_loss = 0
-    elif args.model == '2':   # SR as a side task
-        with tf.variable_scope('SR_task'):
-            feat_l_up = tf.image.resize_bilinear(feat_l, size=[int(args.patch_size*args.scale), int(args.patch_size*args.scale)], name='LR_up')
+    elif args.model == '2':  # SR as a side task
 
-            HR_hat = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training, is_batch_norm=True)
+        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args,is_batch_norm=True, is_training=is_training)
+        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
 
-            semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
-
-        HR_hat_down = tf.image.resize_bilinear(HR_hat, size=[int(args.patch_size),
-                                                              int(args.patch_size)])
+        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
         # Estimated sup-pixel features from LR
         x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
@@ -123,16 +154,26 @@ def model_fn(features, labels, mode, params={}):
         feat = tf.concat([x_h, x_l], axis=3)
 
         y_hat = deep_sentinel2(feat, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
-    elif args.model == '3':   # SR as a side task - leaner version
-        with tf.variable_scope('SR_task'):
-            feat_l_up = tf.image.resize_bilinear(feat_l, size=[int(args.patch_size*args.scale), int(args.patch_size*args.scale)], name='LR_up')
+    elif args.model == '2a':  # SR as a side task without BN
 
-            HR_hat = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training, is_batch_norm=True)
+        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args,is_batch_norm=False, is_training=is_training)
+        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
 
-            semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
+        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
-        HR_hat_down = tf.image.resize_bilinear(HR_hat, size=[int(args.patch_size),
-                                                              int(args.patch_size)])
+        # Estimated sup-pixel features from LR
+        x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
+
+        x_l = tf.layers.conv2d(feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+
+        feat = tf.concat([x_h, x_l], axis=3)
+
+        y_hat = deep_sentinel2(feat, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=False)
+    elif args.model == '3':  # SR as a side task - leaner version
+        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_training=is_training, is_batch_norm=True)
+        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
+
+        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
         # Estimated sup-pixel features from LR
         y_hat = deep_sentinel2(HR_hat_down, n_channels=1, is_residual=False, is_training=is_training)
@@ -142,33 +183,28 @@ def model_fn(features, labels, mode, params={}):
         print('Model {} not defined'.format(args.model))
         sys.exit(1)
 
-    graph = tf.get_default_graph()
-    mean_train = graph.get_tensor_by_name("mean_train:0")
-    scale = graph.get_tensor_by_name("scale_preprocessing:0")
-
-
     if mode == tf.estimator.ModeKeys.PREDICT:
         predictions = {'y_hat': y_hat}
 
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
     superv_loss = tf.reduce_sum(tf.where(tf.greater_equal(lab_down, 0),
-                        tf.abs(y_hat - lab_down),  ## for wherever i have labels
-                        tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
+                                         tf.abs(y_hat - lab_down),  ## for wherever i have labels
+                                         tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
 
     loss = superv_loss + args.lambda_loss * semi_loss
-
+    logging_hook = tf.train.LoggingTensorHook({"superv_loss": superv_loss,
+                                               "semi_loss": semi_loss}, every_n_iter=100)
 
     mean_rgb = mean_train  # [..., 0:3]
     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
     inv_ = lambda x: inv_preprocess_tf(x, mean_rgb, scale_luminosity=scale)
 
-    inv_reg_ = lambda x: uint8_(colorize(x,vmin=0,vmax=4,cmap='hot'))
+    inv_reg_ = lambda x: uint8_(colorize(x, vmin=0, vmax=4, cmap='hot'))
 
-
-    image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, lab_down,dtype=tf.uint8),
-                                                tf.map_fn(inv_reg_,y_hat,dtype=tf.uint8)])
-    a = tf.map_fn(inv_,feat_l, dtype=tf.uint8)
+    image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, lab_down, dtype=tf.uint8),
+                                                tf.map_fn(inv_reg_, y_hat, dtype=tf.uint8)])
+    a = tf.map_fn(inv_, feat_l, dtype=tf.uint8)
     b = uint8_(feat_h_down)
 
     image_array_mid = tf.concat(axis=2, values=[a, b])
@@ -180,13 +216,14 @@ def model_fn(features, labels, mode, params={}):
                      max_outputs=2)
 
     if not '1' in args.model:
-        image_array = tf.concat(axis=1, values=[HR_hat, feat_h])
+        feat_l_up = tf.map_fn(inv_,
+                              bilinear(feat_l, size=args.patch_size * args.scale), dtype=tf.uint8)
+        image_array = tf.concat(axis=2,
+                                values=[feat_l_up, uint8_(HR_hat), uint8_(feat_h)])
 
         tf.summary.image('HR_hat-HR',
                          image_array,
                          max_outputs=2)
-
-
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))
@@ -200,7 +237,7 @@ def model_fn(features, labels, mode, params={}):
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
-        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
+        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[logging_hook])
 
     # Compute evaluation metrics.
     eval_metric_ops = {
@@ -218,4 +255,4 @@ def model_fn(features, labels, mode, params={}):
         summary_op=tf.summary.merge_all())  # tf.get_collection('Images')))
 
     return tf.estimator.EstimatorSpec(
-        mode, loss=loss, eval_metric_ops=eval_metric_ops, evaluation_hooks=[eval_summary_hook])
+        mode, loss=loss, eval_metric_ops=eval_metric_ops, evaluation_hooks=[eval_summary_hook, logging_hook])
