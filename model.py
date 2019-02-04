@@ -193,8 +193,7 @@ def model_fn(features, labels, mode, params={}):
                                          tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
 
     loss = superv_loss + args.lambda_loss * semi_loss
-    logging_hook = tf.train.LoggingTensorHook({"superv_loss": superv_loss,
-                                               "semi_loss": semi_loss}, every_n_iter=100)
+
 
     mean_rgb = mean_train  # [..., 0:3]
     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
@@ -233,11 +232,13 @@ def model_fn(features, labels, mode, params={}):
         tf.summary.scalar('metrics/superv_loss', superv_loss)
         tf.summary.scalar('metrics/semi_loss', semi_loss)
 
+        # logging_hook = tf.train.LoggingTensorHook({"superv_lossv": superv_loss,
+        #                                            "semi_loss2": semi_loss}, every_n_iter=100)
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
-        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op, training_hooks=[logging_hook])
+        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op) #, training_hooks=[logging_hook])
 
     # Compute evaluation metrics.
     eval_metric_ops = {
@@ -255,4 +256,4 @@ def model_fn(features, labels, mode, params={}):
         summary_op=tf.summary.merge_all())  # tf.get_collection('Images')))
 
     return tf.estimator.EstimatorSpec(
-        mode, loss=loss, eval_metric_ops=eval_metric_ops, evaluation_hooks=[eval_summary_hook, logging_hook])
+        mode, loss=loss, eval_metric_ops=eval_metric_ops, evaluation_hooks=[eval_summary_hook]) #, logging_hook])
