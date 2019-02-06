@@ -84,7 +84,7 @@ def main(unused_args):
     if args.HR_file == 'None': args.HR_file = None
 
     # data_name = ''.format(os.path.basename(args.HR_file).replace('.tif',''))
-    model_dir = os.path.join(args.save_dir,'snapshots','model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
+    model_dir = os.path.join(args.save_dir,'model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting trainign from iter 0...')
