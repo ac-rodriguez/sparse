@@ -67,7 +67,7 @@ parser.add_argument("--n-channels", default=12, type=int,
 
 parser.add_argument("--tag", default="",
     help="tag to add to the model directory")
-parser.add_argument("--save-dir", default='/home/pf/pfstaff/projects/andresro/sparse/training',
+parser.add_argument("--save-dir", default='/home/pf/pfstaff/projects/andresro/sparse/training/snapshots',
     help="Path to directory where models should be saved")
 parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="Delete model_dir before starting training from iter 0. Overrides --is-restore flag")

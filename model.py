@@ -216,7 +216,7 @@ def model_fn(features, labels, mode, params={}):
         semi_loss = 0
 
 
-    superv_loss = tf.reduce_sum(tf.where(tf.greater_equal(lab_down, 0),
+    superv_loss = tf.reduce_sum(tf.where(tf.greater_equal(lab_down, 0.0),
                                          tf.abs(y_hat - lab_down),  ## for wherever i have labels
                                          tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
 
@@ -246,8 +246,8 @@ def model_fn(features, labels, mode, params={}):
         return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
     # Semantic Label
-    label_sem = tf.greater_equal(lab_down, 1)
-    y_hat_sem = tf.greater_equal(y_hat, 1)
+    label_sem = tf.greater_equal(lab_down, 1.0)
+    y_hat_sem = tf.greater_equal(y_hat, 1.0)
 
 
     # Compute evaluation metrics.
@@ -257,8 +257,8 @@ def model_fn(features, labels, mode, params={}):
         'metrics/mse': tf.metrics.mean_squared_error(
             labels=lab_down, predictions=y_hat),
         'metrics/iou': tf.metrics.mean_iou(label_sem,y_hat_sem, num_classes=2),
-        'metrics/prec': tf.metrics.precision(label_sem, y_hat_sem, num_classes=2),
-        'metrics/recall': tf.metrics.recall(label_sem, y_hat_sem, num_classes=2)}
+        'metrics/prec': tf.metrics.precision(label_sem, y_hat_sem),
+        'metrics/recall': tf.metrics.recall(label_sem, y_hat_sem)}
 
     if not '1' in args.model:
         eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(HR_hat, feat_h)
