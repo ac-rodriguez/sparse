@@ -10,13 +10,6 @@ def bn_layer(X, activation_fn=None, is_training=True):
         activation_fn = lambda x: x
     return activation_fn(tf.layers.batch_normalization(X, training=is_training))
 
-    # return tf.contrib.layers.batch_norm(
-    #     X,
-    #     activation_fn=activation_fn,
-    #     is_training=is_training,
-    #     updates_collections=None,
-    #     scale=True,
-    #     scope=None)
 
 
 log10 = lambda x: tf.log(x) / tf.log(10.0)
@@ -123,26 +116,30 @@ def model_fn(features, labels, mode, params={}):
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
     graph = tf.get_default_graph()
-    mean_train = graph.get_tensor_by_name("mean_train:0")
-    scale = graph.get_tensor_by_name("scale_preprocessing:0")
+    try:
+        mean_train = graph.get_tensor_by_name("mean_train:0")
+        scale = graph.get_tensor_by_name("scale_preprocessing:0")
+
+    except KeyError:
+        mean_train = tf.Variable(np.zeros(11), name='mean_train', trainable= False, dtype=tf.float32)
+        scale = tf.Variable(10.0, name='scale_preprocessing', trainable = False, dtype=tf.float32)
 
     args = params['args']
-    feat_l, feat_h = features['feat_l'], features['feat_h']
-    feat_h_down = bilinear(feat_h, args.patch_size, name='HR_down')
+    if isinstance(features, dict):
+        feat_l, feat_h = features['feat_l'], features['feat_h']
+    else:
+        feat_l = features
+        feat_h = None
 
-    lab_down = sum_pool(labels, args.scale, name='Label_down')
 
-    # features = features[...,0:args.n_channels]
     if args.model == '1':  # Baseline  No High Res for training
         y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
-        semi_loss = 0
+
     elif args.model == '1a':  # Baseline  No High Res for training without BN
         y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=False)
-        semi_loss = 0
-    elif args.model == '2':  # SR as a side task
 
+    elif args.model == '2':  # SR as a side task
         HR_hat = SR_task(feat_l=feat_l + mean_train, args=args,is_batch_norm=True, is_training=is_training)
-        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
 
         HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
@@ -155,9 +152,7 @@ def model_fn(features, labels, mode, params={}):
 
         y_hat = deep_sentinel2(feat, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
     elif args.model == '2a':  # SR as a side task without BN
-
         HR_hat = SR_task(feat_l=feat_l + mean_train, args=args,is_batch_norm=False, is_training=is_training)
-        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
 
         HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
@@ -169,9 +164,9 @@ def model_fn(features, labels, mode, params={}):
         feat = tf.concat([x_h, x_l], axis=3)
 
         y_hat = deep_sentinel2(feat, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=False)
+
     elif args.model == '3':  # SR as a side task - leaner version
         HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_training=is_training, is_batch_norm=True)
-        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
 
         HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
@@ -179,7 +174,6 @@ def model_fn(features, labels, mode, params={}):
         y_hat = deep_sentinel2(HR_hat_down, n_channels=1, is_residual=False, is_training=is_training)
 
     else:
-
         print('Model {} not defined'.format(args.model))
         sys.exit(1)
 
@@ -188,17 +182,11 @@ def model_fn(features, labels, mode, params={}):
 
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 
-    superv_loss = tf.reduce_sum(tf.where(tf.greater_equal(lab_down, 0),
-                                         tf.abs(y_hat - lab_down),  ## for wherever i have labels
-                                         tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
+    lab_down = sum_pool(labels, args.scale, name='Label_down')
+    feat_h_down = bilinear(feat_h, args.patch_size, name='HR_down')
 
-    loss = superv_loss + args.lambda_loss * semi_loss
-
-
-    mean_rgb = mean_train  # [..., 0:3]
     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
-    inv_ = lambda x: inv_preprocess_tf(x, mean_rgb, scale_luminosity=scale)
-
+    inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
     inv_reg_ = lambda x: uint8_(colorize(x, vmin=0, vmax=4, cmap='hot'))
 
     image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, lab_down, dtype=tf.uint8),
@@ -223,29 +211,55 @@ def model_fn(features, labels, mode, params={}):
         tf.summary.image('HR_hat-HR',
                          image_array,
                          max_outputs=2)
+        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
+    else:
+        semi_loss = 0
 
+
+    superv_loss = tf.reduce_sum(tf.where(tf.greater_equal(lab_down, 0),
+                                         tf.abs(y_hat - lab_down),  ## for wherever i have labels
+                                         tf.zeros_like(y_hat)))  ## ignoring whenever I don't have labels
+
+    l2_losses = [args.weight_decay * tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'kernel' in v.name]
+
+    loss = superv_loss + args.lambda_loss * semi_loss + tf.reduce_sum(l2_losses)
+
+
+
+
+
+
+    # train_hook = tf.train.SessionRunHook().after_run()
     if mode == tf.estimator.ModeKeys.TRAIN:
-        tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))
-        tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
-        tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
+        # tf.summary.scalar('metrics/iou', iou)
+        # tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))
+        # tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
+        # tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
 
         tf.summary.scalar('metrics/superv_loss', superv_loss)
         tf.summary.scalar('metrics/semi_loss', semi_loss)
 
-        # logging_hook = tf.train.LoggingTensorHook({"superv_lossv": superv_loss,
-        #                                            "semi_loss2": semi_loss}, every_n_iter=100)
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
             train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
-        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op) #, training_hooks=[logging_hook])
+        return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
+
+    # Semantic Label
+    label_sem = tf.greater_equal(lab_down, 1)
+    y_hat_sem = tf.greater_equal(y_hat, 1)
+
 
     # Compute evaluation metrics.
     eval_metric_ops = {
         'metrics/mae': tf.metrics.mean_absolute_error(
             labels=lab_down, predictions=y_hat),
         'metrics/mse': tf.metrics.mean_squared_error(
-            labels=lab_down, predictions=y_hat)}
+            labels=lab_down, predictions=y_hat),
+        'metrics/iou': tf.metrics.mean_iou(label_sem,y_hat_sem, num_classes=2),
+        'metrics/prec': tf.metrics.precision(label_sem, y_hat_sem, num_classes=2),
+        'metrics/recall': tf.metrics.recall(label_sem, y_hat_sem, num_classes=2)}
+
     if not '1' in args.model:
         eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(HR_hat, feat_h)
 

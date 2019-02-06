@@ -44,6 +44,8 @@ parser.add_argument("--patch-size", default=128, type = int, help="size of the p
 parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
 parser.add_argument("--batch-size",default=10,type=int, help="Batch size for training")
 parser.add_argument("--lambda-loss",default=1,type=int, help="Lambda for semi-supervised part of the loss")
+parser.add_argument("--weight-decay", type=float, default=0.0005,
+                    help="Regularisation parameter for L2-loss.")
 parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
 parser.add_argument("--model", default="1",
     help="Model Architecture to be used [deep_sentinel2, ...]")
@@ -76,10 +78,13 @@ parser.add_argument("--is-predict", default=False, action="store_true",
 args = parser.parse_args()
 
 
+
 def main(unused_args):
 
-    data_name = ''.format(os.path.basename(args.HR_file).replace('.tif',''))
-    model_dir = os.path.join(args.save_dir,'snapshots',data_name,'model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
+    if args.HR_file == 'None': args.HR_file = None
+
+    # data_name = ''.format(os.path.basename(args.HR_file).replace('.tif',''))
+    model_dir = os.path.join(args.save_dir,'snapshots','model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting trainign from iter 0...')
@@ -127,12 +132,12 @@ def main(unused_args):
 
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
     else:
-        #TODO finish is_Trainign false implementation to predict large areas
+        #TODO check data_recompose output
         reader = DataReader(args,is_training=False)
 
         preds_gen = model.predict(input_fn=reader.input_fn_test) #,predict_keys=['hr_hat_rgb'])
 
-        nr_patches = reader.patch_gen_test.nr_patches[0]
+        nr_patches = reader.patch_gen_test.nr_patches
         batch_idxs = (nr_patches) // args.batch_size
 
         rgb_rec = np.empty(shape=([nr_patches, args.patch_size*args.scale, args.patch_size*args.scale,3]))
@@ -143,7 +148,7 @@ def main(unused_args):
         # for idx in xrange(0,100):
             p_ = preds_gen.next()
             start, stop = idx*args.batch_size, (idx+1)*args.batch_size
-            rgb_rec[start:stop] = p_['hr_hat']
+            rgb_rec[start:stop] = p_['y_hat']
             # pred_c_rec[start:stop] = pc_
             # pred_r_rec[start:stop] = p_
 
@@ -151,7 +156,7 @@ def main(unused_args):
                 print(start)
             # recompose
         border = 4
-        ref_size = (args.scale*(reader.train[0].shape[1]-border*2), args.scale*(reader.train[0].shape[0]-border*2))
+        ref_size = (args.scale*(reader.train.shape[1]-border*2), args.scale*(reader.train.shape[0]-border*2))
         ## Recompose RGB
         data_recomposed = patches.recompose_images(rgb_rec, size=ref_size, border=border)
         plots.plot_rgb(data_recomposed,file=model_dir+'/data_recomposed')
