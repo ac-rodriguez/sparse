@@ -427,13 +427,13 @@ def main():
     # model_dir = os.path.join(args.save_dir,'snapshots','model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
     model_dir = args.model_dir
 
-    if not os.path.exists(model_dir):
-        print(' Choose an existing trained model directory')
-        sys.exit(1)
+    # if not os.path.exists(model_dir):
+    #     print(' Choose an existing trained model directory')
+    #     sys.exit(1)
 
 
 
-    save_parameters(args,model_dir, sys.argv, name='FLAGS_eval')
+    # save_parameters(args,model_dir, sys.argv, name='FLAGS_eval')
     params = {}
 
 

@@ -248,7 +248,7 @@ def readS2(args, roi_lon_lat):
     if len(data20.shape) == 2:
         data20 = np.expand_dims(data20, axis = 2)
 
-    return data10, data20
+    return data10.astype(np.float32), data20.astype(np.float32)
     # patches.save_numpy(data10, data20, labels, select_bands10, select_bands20, args, folder, view, filename='data', points = points)
     # print(" [*] Success.")
 

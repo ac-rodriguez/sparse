@@ -238,7 +238,7 @@ class DataReader(object):
             self.N_pixels = self.train.shape[0] * self.train.shape[1]
 
             self.mean_train = np.sum(sum_train, axis=0) / (np.sum(self.N_pixels) * self.luminosity_scale)
-
+            print(str(self.mean_train))
             self.nb_bands = self.train.shape[-1]
 
             # TODO check why there is a difference in the shapes
@@ -317,11 +317,11 @@ class DataReader(object):
     def input_fn(self, is_train=True):
         # np.random.seed(99)
 
-        # tf.Variable(self.mean_train, name='mean_train', trainable=False,validate_shape=True, expected_shape=tf.shape([self.n_channels]))
-        # tf.Variable(self.luminosity_scale, name='scale_preprocessing', trainable=False, expected_shape=tf.shape(1))
+        tf.Variable(self.mean_train.astype(np.float32), name='mean_train', trainable=False,validate_shape=True, expected_shape=tf.shape([self.n_channels]))
+        tf.Variable(self.luminosity_scale, name='scale_preprocessing', trainable=False, expected_shape=tf.shape(1))
 
-        tf.constant(self.mean_train.astype(np.float32), name='mean_train')
-        tf.constant(np.float32(self.luminosity_scale), name='scale_preprocessing')
+        tf.constant(self.mean_train.astype(np.float32), name='mean_train_k')
+        tf.constant(self.luminosity_scale, name='scale_preprocessing_k')
         if is_train:
             gen_func = self.patch_gen.get_iter
         else:

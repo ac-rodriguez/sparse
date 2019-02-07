@@ -117,10 +117,11 @@ def model_fn(features, labels, mode, params={}):
 
     graph = tf.get_default_graph()
     try:
-        mean_train = graph.get_tensor_by_name("mean_train:0")
-        scale = graph.get_tensor_by_name("scale_preprocessing:0")
-
+        mean_train = graph.get_tensor_by_name("mean_train_k:0")
+        scale = graph.get_tensor_by_name("scale_preprocessing_k:0")
     except KeyError:
+        # if constants are not defined in the graph yet,
+        # after loading pre-trained networks tf.Variables are used with the correct values
         mean_train = tf.Variable(np.zeros(11), name='mean_train', trainable= False, dtype=tf.float32)
         scale = tf.Variable(10.0, name='scale_preprocessing', trainable = False, dtype=tf.float32)
 

@@ -25,7 +25,7 @@ case ${DATASET} in
     ;;
   coco2)
     OBJECT='coco'
-    WEIGHTS='/scratch/andresro/leon_work/sparse/training/snapshots/coco/snapshots/model-1a_size-32_scale-4_nchan12_SR'
+    WEIGHTS='/scratch/andresro/leon_work/sparse/training/snapshots/coco/model-1a_size-32_scale-2_nchan12'
     MODEL='1a'
     IMG='600,300'
     XY_CORNER="20,20"
