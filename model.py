@@ -254,7 +254,8 @@ def model_fn(features, labels, mode, params={}):
         sys.exit(1)
 
     if mode == tf.estimator.ModeKeys.PREDICT:
-        predictions = {'y_hat': y_hat}
+        predictions = {'y_reg': y_hat[0],
+                       'y_sem': y_hat[1]}
 
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
 

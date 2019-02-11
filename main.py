@@ -78,7 +78,8 @@ parser.add_argument("--is-predict", default=False, action="store_true",
                     help="Predict using an already trained model")
 args = parser.parse_args()
 
-
+if args.roi_lon_lat_tr_lb == 'all':
+    args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
 
 def main(unused_args):
 
