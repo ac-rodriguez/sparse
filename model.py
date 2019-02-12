@@ -181,6 +181,8 @@ def model_fn(features, labels, mode, params={}):
     else:
         feat_l = features
         feat_h = None
+
+    args.patch_size = feat_l.shape[1]
     is_SR = True
     if args.model == 'simple':  # Baseline  No High Res for training
         y_hat = simple(feat_l, n_channels=1, is_training=is_training)
@@ -282,7 +284,7 @@ def model_fn(features, labels, mode, params={}):
                                                 tf.map_fn(inv_sem_, pred_class, dtype=tf.uint8)])
 
     a_ = tf.map_fn(inv_, feat_l, dtype=tf.uint8)
-    feat_h_down = uint8_(bilinear(feat_h, feat_l.shape[1], name='HR_down')) if feat_h is not None else a_
+    feat_h_down = uint8_(bilinear(feat_h, args.patch_size, name='HR_down')) if feat_h is not None else a_
 
     image_array_bottom = tf.concat(axis=2, values=[a_,feat_h_down]) #, uint8_(feat_h_down)])
 
