@@ -4,6 +4,7 @@ from utils import inv_preprocess, decode_labels_reg
 from colorize import colorize, inv_preprocess_tf, slice_last_dim
 import numpy as np
 
+# from deeplab_resnet.model import SimpleModel
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None:
@@ -42,7 +43,7 @@ def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_bat
 
 
 def sum_pool(X, scale, name):
-    return tf.multiply(float(scale),
+    return tf.multiply(float(scale**2),
                        tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
                                       strides=(1, scale, scale, 1), padding='VALID'),
                        name=name)
@@ -107,8 +108,7 @@ def block(x, is_training):
     return x2
 
 
-def simple(input, n_channels, is_residual=True, scope_name='simple', is_training=True,
-           is_batch_norm=True):
+def simple(input, n_channels, scope_name='simple', is_training=True):
     feature_size = 128
     with tf.variable_scope(scope_name):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
@@ -142,7 +142,7 @@ def simple(input, n_channels, is_residual=True, scope_name='simple', is_training
         x8b_ = tf.nn.relu(x7_ + x7)
         x8b = tf.layers.conv2d(x8b_, 2, kernel_size=3, use_bias=False, padding='same')
 
-    return (x8a, x8b)
+    return {'reg': x8a, 'sem': x8b}
     # return x8a
 
 
@@ -168,12 +168,12 @@ def model_fn(features, labels, mode, params={}):
     graph = tf.get_default_graph()
     try:
         mean_train = graph.get_tensor_by_name("mean_train_k:0")
-        scale = graph.get_tensor_by_name("scale_preprocessing_k:0")
+        scale = graph.get_tensor_by_name("std_train_k:0")
     except KeyError:
         # if constants are not defined in the graph yet,
         # after loading pre-trained networks tf.Variables are used with the correct values
         mean_train = tf.Variable(np.zeros(11), name='mean_train', trainable=False, dtype=tf.float32)
-        scale = tf.Variable(10.0, name='scale_preprocessing', trainable=False, dtype=tf.float32)
+        scale = tf.Variable(np.ones(11), name='std_train', trainable=False, dtype=tf.float32)
 
     args = params['args']
     if isinstance(features, dict):
@@ -185,6 +185,10 @@ def model_fn(features, labels, mode, params={}):
     if args.model == 'simple':  # Baseline  No High Res for training
         y_hat = simple(feat_l, n_channels=1, is_training=is_training)
         is_SR = False
+    # elif args.model == 'simple_old':  # Baseline  No High Res for training
+    #     net = SimpleModel({'data': feat_l}, num_classes=3, is_training=is_training)
+    #     y_hat = {'reg': net.layers['pred_up_reg'], 'sem': net.layers['pred_up_class']}
+    #     is_SR = False
     elif args.model == 'simple2':  # SR as a side task
         HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_batch_norm=True, is_training=is_training)
 
@@ -254,30 +258,48 @@ def model_fn(features, labels, mode, params={}):
         sys.exit(1)
 
     if mode == tf.estimator.ModeKeys.PREDICT:
-        predictions = {'y_reg': y_hat[0],
-                       'y_sem': y_hat[1]}
+        predictions = y_hat
 
         return tf.estimator.EstimatorSpec(mode, predictions=predictions)
-
-    lab_down = sum_pool(labels, args.scale, name='Label_down')
-    feat_h_down = bilinear(feat_h, args.patch_size, name='HR_down')
 
     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
     inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
     inv_reg_ = lambda x: uint8_(colorize(x, vmin=0, vmax=4, cmap='hot'))
+    inv_sem_ = lambda x: uint8_(colorize(x, vmin=0, vmax=1, cmap='hot'))
+    float_ = lambda x: tf.cast(x, dtype=tf.float32)
+    int_ = lambda x: tf.cast(x, dtype=tf.int64)
+
+    # lab_down = sum_pool(labels, args.scale, name='Label_down')
+    lab_down = labels
+    label_sem = tf.squeeze(int_(tf.greater(lab_down, 0.5)),axis=3)
+
+    pred_class = int_(tf.argmax(y_hat['sem'],axis=3))
 
     image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, lab_down, dtype=tf.uint8),
-                                                tf.map_fn(inv_reg_, y_hat[0], dtype=tf.uint8)])
-    a = tf.map_fn(inv_, feat_l, dtype=tf.uint8)
-    b = uint8_(feat_h_down)
+                                                tf.map_fn(inv_reg_, y_hat['reg'], dtype=tf.uint8)])
 
-    image_array_mid = tf.concat(axis=2, values=[a, b])
+    image_array_mid = tf.concat(axis=2, values=[tf.map_fn(inv_sem_, label_sem, dtype=tf.uint8),
+                                                tf.map_fn(inv_sem_, pred_class, dtype=tf.uint8)])
 
-    image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid])
+    a_ = tf.map_fn(inv_, feat_l, dtype=tf.uint8)
+    feat_h_down = uint8_(bilinear(feat_h, feat_l.shape[1], name='HR_down')) if feat_h is not None else a_
+
+    image_array_bottom = tf.concat(axis=2, values=[a_,feat_h_down]) #, uint8_(feat_h_down)])
+
+    image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
     tf.summary.image('all',
                      image_array,
                      max_outputs=2)
+    # sum_bool_ = lambda x: tf.reduce_sum(int_(x))
+    # TP = sum_bool_(tf.logical_and(y_hat_sem == 1,label_sem == 1))
+    # FP = sum_bool_(tf.logical_and(y_hat_sem == 1,label_sem == 0))
+    # FN = sum_bool_(tf.logical_and(y_hat_sem == 0,label_sem == 1))
+    # TN = sum_bool_(tf.logical_and(y_hat_sem == 0,label_sem == 0))
+    #
+    # tf.summary.scalar('m/Iou',float_(TP) / float_(TP+FP+FN))
+    # tf.summary.scalar('m/Prec',float_(TP) / float_(TP+FP))
+    # tf.summary.scalar('m/Rec',float_(TP) / float_(TP+FN))
 
     if is_SR:
         feat_l_up = tf.map_fn(inv_,
@@ -292,35 +314,25 @@ def model_fn(features, labels, mode, params={}):
     else:
         semi_loss = 0
 
-    float_ = lambda x: tf.cast(x, dtype=tf.float32)
-    int_ = lambda x: tf.cast(x, dtype=tf.int32)
+    w = float_(tf.where(tf.greater_equal(lab_down, 0.0),
+                        tf.ones_like(lab_down),  ## for wherever i have labels
+                        tf.zeros_like(lab_down)))
 
-    a = tf.where(tf.greater_equal(lab_down, 0.0),
-                 tf.ones_like(lab_down),  ## for wherever i have labels
-                 tf.zeros_like(lab_down))
+    loss_reg = tf.losses.mean_squared_error(labels=lab_down, predictions=y_hat['reg'], weights=w)
 
-    loss_reg = tf.reduce_sum(tf.nn.l2_loss(a * (y_hat[0] - lab_down)))
+    loss_sem = tf.losses.sparse_softmax_cross_entropy(labels=label_sem, logits=y_hat['sem'], weights=w)
 
-    label_sem = tf.squeeze(tf.greater_equal(lab_down, 0.5),axis=3)
-
-
-    loss_sem = tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(labels=tf.squeeze(int_(a),axis=3) * int_(label_sem),
-                                                                            logits=float_(a) * y_hat[1]))
-
-    l2_losses = [args.weight_decay * tf.nn.l2_loss(v) for v in tf.trainable_variables() if 'kernel' in v.name]
+    l2_losses = [args.weight_decay * tf.nn.l2_loss(v) for v in tf.trainable_variables() if ('weights' in v.name or 'kernel' in v.name)]
 
     loss = args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_semi * semi_loss + tf.add_n(
         l2_losses)
 
-    # train_hook = tf.train.SessionRunHook().after_run()
-    if mode == tf.estimator.ModeKeys.TRAIN:
-        # tf.summary.scalar('metrics/iou', iou)
-        # tf.summary.scalar('metrics/mse', tf.reduce_mean(tf.squared_difference(lab_down, y_hat)))
-        # tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
-        # tf.summary.scalar('metrics/mae', tf.reduce_mean(tf.abs(lab_down - y_hat)))
 
-        tf.summary.scalar('metrics/loss_reg', loss_reg)
-        tf.summary.scalar('metrics/semi_loss', semi_loss)
+    if mode == tf.estimator.ModeKeys.TRAIN:
+
+        tf.summary.scalar('loss/reg', loss_reg)
+        tf.summary.scalar('loss/sem', loss_sem)
+        tf.summary.scalar('loss/SR', semi_loss)
 
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
@@ -328,20 +340,17 @@ def model_fn(features, labels, mode, params={}):
             train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
-    # Semantic Label
 
-
-    y_hat_sem = tf.argmax(y_hat[0], axis=3)
-    y_hat_sem = tf.cast(y_hat_sem, tf.int64)
     # Compute evaluation metrics.
     eval_metric_ops = {
         'metrics/mae': tf.metrics.mean_absolute_error(
-            labels=lab_down, predictions=y_hat[0]),
+            labels=lab_down, predictions=y_hat['reg'], weights=w),
         'metrics/mse': tf.metrics.mean_squared_error(
-            labels=lab_down, predictions=y_hat[0]),
-        'metrics/iou': tf.metrics.mean_iou(label_sem, y_hat_sem, num_classes=2),
-        'metrics/prec': tf.metrics.precision(label_sem, y_hat_sem),
-        'metrics/recall': tf.metrics.recall(label_sem, y_hat_sem)}
+            labels=lab_down, predictions=y_hat['reg'], weights=w),
+        'metrics/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class, num_classes=2, weights=w),
+        'metrics/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class, weights=w),
+        'metrics/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class, weights=w),
+        'metrics/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class, weights=w)}
 
     if is_SR:
         eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(HR_hat, feat_h)
@@ -350,7 +359,7 @@ def model_fn(features, labels, mode, params={}):
     eval_summary_hook = tf.train.SummarySaverHook(
         save_steps=200,
         output_dir=params['model_dir'] + '/eval',
-        summary_op=tf.summary.merge_all())  # tf.get_collection('Images')))
+        summary_op=tf.summary.merge_all())
 
     return tf.estimator.EstimatorSpec(
-        mode, loss=loss, eval_metric_ops=eval_metric_ops, evaluation_hooks=[eval_summary_hook])  # , logging_hook])
+        mode, loss=loss, eval_metric_ops=eval_metric_ops, evaluation_hooks=[eval_summary_hook])
