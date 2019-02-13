@@ -4,11 +4,22 @@ import numpy as np
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple
-from models_sr import SR_task
-from tools_tf import bilinear
+from models_sr import SR_task, dbpn_SR
+from tools_tf import bilinear, snr_metric
 
 
-def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, mean_train, scale, args, is_training):
+def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, is_training):
+    graph = tf.get_default_graph()
+    try:
+        mean_train = graph.get_tensor_by_name("mean_train_k:0")
+        scale = graph.get_tensor_by_name("std_train_k:0")
+    except KeyError:
+        # if constants are not defined in the graph yet,
+        # after loading pre-trained networks tf.Variables are used with the correct values
+        mean_train = tf.Variable(np.zeros(11), name='mean_train', trainable=False, dtype=tf.float32)
+        scale = tf.Variable(np.ones(11), name='std_train', trainable=False, dtype=tf.float32)
+
+
     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
     inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
     inv_reg_ = lambda x: uint8_(colorize(x, vmin=0, vmax=4, cmap='hot'))
@@ -44,6 +55,7 @@ def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, mean_t
                          image_array,
                          max_outputs=2)
 
+
     if not is_training:
 
         # Compute evaluation metrics.
@@ -59,6 +71,7 @@ def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, mean_t
 
         if is_SR:
             eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(HR_hat, feat_h)
+            eval_metric_ops['metrics/s2nr'] = snr_metric(HR_hat, feat_h)
     else:
         eval_metric_ops = None
 
@@ -67,16 +80,6 @@ def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, mean_t
 
 def model_fn(features, labels, mode, params={}):
     is_training = (mode == tf.estimator.ModeKeys.TRAIN)
-
-    graph = tf.get_default_graph()
-    try:
-        mean_train = graph.get_tensor_by_name("mean_train_k:0")
-        scale = graph.get_tensor_by_name("std_train_k:0")
-    except KeyError:
-        # if constants are not defined in the graph yet,
-        # after loading pre-trained networks tf.Variables are used with the correct values
-        mean_train = tf.Variable(np.zeros(11), name='mean_train', trainable=False, dtype=tf.float32)
-        scale = tf.Variable(np.ones(11), name='std_train', trainable=False, dtype=tf.float32)
 
     args = params['args']
     if isinstance(features, dict):
@@ -133,6 +136,13 @@ def model_fn(features, labels, mode, params={}):
 
         # Estimated sup-pixel features from LR
         y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
+    elif args.model == 'simple4':  # SR as a side task - leaner version
+        HR_hat = dbpn_SR(feat_l=feat_l, is_training=is_training)
+
+        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
+
+        # Estimated sup-pixel features from LR
+        y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
     else:
         print('Model {} not defined'.format(args.model))
         sys.exit(1)
@@ -161,18 +171,18 @@ def model_fn(features, labels, mode, params={}):
                  ('weights' in v.name or 'kernel' in v.name)]
 
     if is_SR:
-        semi_loss = tf.nn.l2_loss(HR_hat - feat_h)
+        loss_sr = tf.nn.l2_loss(HR_hat - feat_h)
     else:
-        semi_loss = 0
+        loss_sr = 0
 
-    loss = args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_semi * semi_loss + tf.add_n(
+    loss = args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_sr * loss_sr + tf.add_n(
         l2_losses)
 
     tf.summary.scalar('loss/reg', loss_reg)
     tf.summary.scalar('loss/sem', loss_sem)
-    tf.summary.scalar('loss/SR', semi_loss)
+    tf.summary.scalar('loss/SR', loss_sr)
 
-    eval_metric_ops = summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, mean_train, scale, args, is_training)
+    eval_metric_ops = summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, is_training)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)

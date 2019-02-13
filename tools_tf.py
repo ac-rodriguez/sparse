@@ -2,8 +2,7 @@ import tensorflow as tf
 
 
 def bn_layer(X, activation_fn=None, is_training=True):
-    if activation_fn is None:
-        activation_fn = lambda x: x
+    if activation_fn is None: activation_fn = lambda x: x
     return activation_fn(tf.layers.batch_normalization(X, training=is_training))
 
 

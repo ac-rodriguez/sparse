@@ -43,7 +43,7 @@ parser.add_argument("--patch-size", default=128, type = int, help="size of the p
 parser.add_argument("--patch-size-eval", default=None, type = int, help="size of the patches to be created (low-res).")
 parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
 parser.add_argument("--batch-size",default=10,type=int, help="Batch size for training")
-parser.add_argument("--lambda-semi",default=1,type=int, help="Lambda for semi-supervised part of the loss")
+parser.add_argument("--lambda-sr",default=1,type=int, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--lambda-reg",default=0.5,type=float, help="Lambda for reg vs semantic task")
 parser.add_argument("--weight-decay", type=float, default=0.0005,
                     help="Regularisation parameter for L2-loss.")
@@ -89,7 +89,7 @@ def main(unused_args):
     if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
 
-    model_dir = os.path.join(args.save_dir,'model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
+    model_dir = os.path.join(args.save_dir,'MODEL-{}_BATCH-{}_{}_SCALE-{}_NCHAN{}{}'.format(args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting trainign from iter 0...')
