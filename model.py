@@ -201,36 +201,7 @@ def model_fn(features, labels, mode, params={}):
         feat = tf.concat([x_h, x_l], axis=3)
 
         y_hat = simple(feat, n_channels=1, is_training=is_training)
-    elif args.model == 'simple3':  # SR as a side task - leaner version
-        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_training=is_training, is_batch_norm=True)
-
-        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
-
-        # Estimated sup-pixel features from LR
-        y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
-
-    elif args.model == '1':  # Baseline  No High Res for training
-        y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
-        is_SR = False
-
-    elif args.model == '1a':  # Baseline  No High Res for training without BN
-        y_hat = deep_sentinel2(feat_l, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=False)
-        is_SR = False
-
-    elif args.model == '2':  # SR as a side task
-        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_batch_norm=True, is_training=is_training)
-
-        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
-
-        # Estimated sup-pixel features from LR
-        x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
-
-        x_l = tf.layers.conv2d(feat_l, 128, 3, activation=tf.nn.relu, padding='same')
-
-        feat = tf.concat([x_h, x_l], axis=3)
-
-        y_hat = deep_sentinel2(feat, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=True)
-    elif args.model == '2a':  # SR as a side task without BN
+    elif args.model == 'simple2a':  # SR as a side task
         HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_batch_norm=False, is_training=is_training)
 
         HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
@@ -242,16 +213,22 @@ def model_fn(features, labels, mode, params={}):
 
         feat = tf.concat([x_h, x_l], axis=3)
 
-        y_hat = deep_sentinel2(feat, n_channels=1, is_residual=False, is_training=is_training, is_batch_norm=False)
-
-    elif args.model == '3':  # SR as a side task - leaner version
+        y_hat = simple(feat, n_channels=1, is_training=is_training)
+    elif args.model == 'simple3':  # SR as a side task - leaner version
         HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_training=is_training, is_batch_norm=True)
 
         HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
         # Estimated sup-pixel features from LR
-        y_hat = deep_sentinel2(HR_hat_down, n_channels=1, is_residual=False, is_training=is_training)
+        y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
 
+    elif args.model == 'simple3a':  # SR as a side task - leaner version
+        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_training=is_training, is_batch_norm=False)
+
+        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
+
+        # Estimated sup-pixel features from LR
+        y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
     else:
         print('Model {} not defined'.format(args.model))
         sys.exit(1)
