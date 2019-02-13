@@ -119,7 +119,7 @@ def model_fn(features, labels, mode, params={}):
 
         y_hat = simple(feat, n_channels=1, is_training=is_training)
     elif args.model == 'simple3':  # SR as a side task - leaner version
-        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_training=is_training, is_batch_norm=True)
+        HR_hat = SR_task(feat_l=feat_l, args=args, is_training=is_training, is_batch_norm=True)
 
         HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
@@ -127,7 +127,7 @@ def model_fn(features, labels, mode, params={}):
         y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
 
     elif args.model == 'simple3a':  # SR as a side task - leaner version
-        HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_training=is_training, is_batch_norm=False)
+        HR_hat = SR_task(feat_l=feat_l, args=args, is_training=is_training, is_batch_norm=False)
 
         HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
 
