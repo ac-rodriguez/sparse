@@ -15,13 +15,10 @@ run_60 = False
 def readHR(args, roi_lon_lat):
     # args = parseargs()
     # roi_lon_lat = args.roi_lon_lat
-
     data_file = args.HR_file
+    print(' [*] Reading HR Data {}'.format(os.path.basename(data_file)))
+
     dsREF = gdal.Open(data_file)
-
-
-    # pixel_size = dsREF.GetGeoTransform()[1]
-
 
     if roi_lon_lat:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
@@ -150,6 +147,9 @@ def readS2(args, roi_lon_lat):
     if not os.path.isfile(dsREFfile):
         print('{} does not exist..'.format(dsREFfile))
         sys.exit(1)
+
+    print(' [*] Reading S2 Data {}'.format(os.path.dirname(os.path.basename(dsREFfile))))
+
     dsREF = gdal.Open(dsREFfile)
 
     if roi_lon_lat:

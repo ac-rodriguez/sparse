@@ -187,10 +187,7 @@ def model_fn(features, labels, mode, params={}):
     if args.model == 'simple':  # Baseline  No High Res for training
         y_hat = simple(feat_l, n_channels=1, is_training=is_training)
         is_SR = False
-    # elif args.model == 'simple_old':  # Baseline  No High Res for training
-    #     net = SimpleModel({'data': feat_l}, num_classes=3, is_training=is_training)
-    #     y_hat = {'reg': net.layers['pred_up_reg'], 'sem': net.layers['pred_up_class']}
-    #     is_SR = False
+
     elif args.model == 'simple2':  # SR as a side task
         HR_hat = SR_task(feat_l=feat_l + mean_train, args=args, is_batch_norm=True, is_training=is_training)
 
@@ -329,12 +326,13 @@ def model_fn(features, labels, mode, params={}):
     loss = args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_semi * semi_loss + tf.add_n(
         l2_losses)
 
+    tf.summary.scalar('loss/reg', loss_reg)
+    tf.summary.scalar('loss/sem', loss_sem)
+    tf.summary.scalar('loss/SR', semi_loss)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
 
-        tf.summary.scalar('loss/reg', loss_reg)
-        tf.summary.scalar('loss/sem', loss_sem)
-        tf.summary.scalar('loss/SR', semi_loss)
+
 
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)

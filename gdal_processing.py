@@ -182,6 +182,8 @@ def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
     mask[:int((ymin1-ymin) / scale),:] = -1
     mask[int((ymax1-ymin) / scale):,:] = -1
 
+    print(' Total points: {}'.format(np.sum(mask[mask>-1])))
+
     return mask
 
 def rasterize_points(Input, refDataset, lims, scale = 10):
@@ -377,6 +379,9 @@ def to_xy_box(lims,dsREF, enlarge = 1):
         lims = [float(x) for x in re.split(',', lims)]
 
     roi_lon1, roi_lat1, roi_lon2, roi_lat2 = lims
+
+    roi_intersection(dsREF,geo_pts_ref= [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)])
+
     x1, y1 = to_xy(roi_lon1, roi_lat1, dsREF)
     x2, y2 = to_xy(roi_lon2, roi_lat2, dsREF)
     xmin = max(min(x1, x2, dsREF.RasterXSize - 1), 0)
