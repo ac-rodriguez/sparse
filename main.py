@@ -37,9 +37,6 @@ parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12"
 #     help="Dataset to be used [dummy, zrh,zrh1,]")
 
 
-# # Input args for old DataReader
-# parser.add_argument("--data-dir", type=str, default='/home/pf/pfstaff/projects/andresro/barry_palm/data/3A/coco_2017',
-#                     help="Path to the directory containing the PASCAL VOC dataset.")
 
 # Training args
 parser.add_argument("--patch-size", default=128, type = int, help="size of the patches to be created (low-res).")
@@ -83,13 +80,14 @@ parser.add_argument("--is-predict", default=False, action="store_true",
 args = parser.parse_args()
 
 
-if args.roi_lon_lat_tr_lb == 'all': args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
-if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
-if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
 
 def main(unused_args):
 
-    if args.HR_file == 'None': args.HR_file = None
+    if args.roi_lon_lat_tr_lb == 'all':
+        args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
+        args.tag = 'allGT'+args.tag
+    if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
+    if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
 
     model_dir = os.path.join(args.save_dir,'model-{}_size-{}_scale-{}_nchan{}{}'.format(args.model,args.patch_size, args.scale,args.n_channels,args.tag))
 
