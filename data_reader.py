@@ -161,7 +161,7 @@ class DataReader(object):
             self.n_channels = self.train[0].shape[-1]
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
-                                            patch_l=self.patch_l, n_workers=8, is_random=True, scale=args.scale)
+                                            patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=True, scale=args.scale)
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
@@ -355,9 +355,9 @@ class DataReader(object):
                 tf.TensorShape([patch_h, patch_h,
                                 n_high])
             ))
-        ds = ds.map(self.reorder_ds).map(self.normalize)
+        ds = ds.batch(self.batch).map(self.reorder_ds, num_parallel_calls=6).map(self.normalize, num_parallel_calls=6)
 
-        ds = ds.batch(self.batch).prefetch(buffer_size=10)
+        ds = ds.prefetch(buffer_size=self.args.batch_size*2)
 
         return ds
 
@@ -429,8 +429,15 @@ class PatchExtractor:
 
         if not self.is_random:
             self.compute_tile_ranges()
-            self.lock = Lock()
 
+        else:
+            n_x, self.n_y = np.subtract(self.d_l.shape[0:2], self.patch_l)
+            # Corner is always computed in low_res data
+            max_patches = min(1e5, n_x*self.n_y)
+            # Corner is always computed in low_res data
+            self.indices = np.random.choice(n_x * self.n_y, size=int(max_patches), replace=False)
+            self.rand_ind = 0
+        self.lock = Lock()
         self.inputs_queue = Queue(maxsize=max_queue_size)
         self._start_batch_makers(n_workers)
 
@@ -510,11 +517,13 @@ class PatchExtractor:
 
     def get_random_patches(self):
 
-        n_x, n_y = np.subtract(self.d_l.shape[0:2], self.patch_l)
-        # Corner is always computed in low_res data
-        ind = np.random.choice(n_x * n_y, 1, replace=False)
 
-        corner_ = divmod(ind, n_y)
+        with self.lock:
+            ind = self.indices[np.mod(self.rand_ind,len(self.indices))]
+            # print ' rand_index={}'.format(self.rand_ind)
+            self.rand_ind+=1
+        # ind = 50
+        corner_ = divmod(ind, self.n_y)
 
         return self.get_patches(corner_)
 
