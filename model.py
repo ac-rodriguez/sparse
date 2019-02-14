@@ -4,7 +4,7 @@ import numpy as np
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple
-from models_sr import SR_task, dbpn_SR
+from models_sr import SR_task, dbpn_SR, slice_last_dim
 from tools_tf import bilinear, snr_metric
 
 
@@ -90,8 +90,11 @@ def model_fn(features, labels, mode, params={}):
 
     if args.is_bilinear:
         down_ = lambda x: bilinear(x,args.patch_size,name='HR_hat_down')
+        up_ = lambda x: bilinear(x,args.patch_size*args.scale,name='HR_hat_down')
+
     else:
         down_ = lambda x: tf.layers.conv2d(x,3,3,strides=args.scale,padding='same')
+        up_ = lambda x: tf.layers.conv2d_transpose(x,3,3,strides=args.scale,padding='same')
     args.patch_size = feat_l.shape[1]
     is_SR = True
     if args.model == 'simple':  # Baseline  No High Res for training
@@ -125,6 +128,36 @@ def model_fn(features, labels, mode, params={}):
         feat = tf.concat([x_h, x_l], axis=3)
 
         y_hat = simple(feat, n_channels=1, is_training=is_training)
+    elif args.model == 'simple2b':  # SR as a side task
+        HR_hat = SR_task(feat_l=feat_l, args=args, is_batch_norm=True, is_training=is_training)
+
+        HR_hat_down = down_(HR_hat)
+
+        feat = tf.concat([HR_hat_down,feat_l[...,3:]], axis=3)
+
+        y_hat = simple(feat, n_channels=1, is_training=is_training)
+    elif args.model == 'simple2c':  # SR as a side task
+        HR_hat = SR_task(feat_l=feat_l, args=args, is_batch_norm=True, is_training=is_training)
+
+        feat_l_up = up_(feat_l[...,3:])
+
+        # Estimated sub-pixel features from LR
+        feat = tf.concat([HR_hat,feat_l_up], axis=3)
+
+        y_hat = simple(feat, n_channels=1, is_training=is_training)
+        y_hat = down_(y_hat)
+
+    elif args.model == 'simple2d':  # SR as a side task
+        HR_hat = SR_task(feat_l=feat_l, args=args, is_batch_norm=True, is_training=is_training)
+
+        feat_l_up = up_(feat_l)
+
+        # Estimated sub-pixel features from LR
+        feat = tf.concat([HR_hat,feat_l_up], axis=3)
+
+        y_hat = simple(feat, n_channels=1, is_training=is_training)
+        y_hat = down_(y_hat)
+
     elif args.model == 'simple3':  # SR as a side task - leaner version
         HR_hat = SR_task(feat_l=feat_l, args=args, is_training=is_training, is_batch_norm=True)
 
