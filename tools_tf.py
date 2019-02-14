@@ -6,7 +6,6 @@ def bn_layer(X, activation_fn=None, is_training=True):
     return activation_fn(tf.layers.batch_normalization(X, training=is_training))
 
 
-
 def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_batch_norm=True):
     Xr = tf.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
     if is_batch_norm:
@@ -31,18 +30,21 @@ def resid_block1(X, filters=[64, 128], is_residual=False, scale=0.1):
     else:
         return Xr
 
-def sum_pool(X, scale, name):
-    return tf.multiply(float(scale**2),
+
+def sum_pool(X, scale, name=None):
+    return tf.multiply(float(scale ** 2),
                        tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
                                       strides=(1, scale, scale, 1), padding='VALID'),
                        name=name)
 
 
+def avg_pool(X, scale, name=None):
+    return tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
+                          strides=(1, scale, scale, 1), padding='VALID', name=name)
+
 
 def bilinear(X, size, name=None):
     return tf.image.resize_bilinear(X, size=[int(size), int(size)], name=name)
-
-
 
 
 log10 = lambda x: tf.log(x) / tf.log(10.0)
@@ -61,6 +63,3 @@ def snr_metric(a, b):
     s2n = 10 * log10(255.0 / sd)
 
     return s2n, sd_op
-
-
-
