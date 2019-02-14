@@ -88,6 +88,10 @@ def model_fn(features, labels, mode, params={}):
         feat_l = features
         feat_h = None
 
+    if args.is_bilinear:
+        down_ = lambda x: bilinear(x,args.patch_size,name='HR_hat_down')
+    else:
+        down_ = lambda x: tf.layers.conv2d(x,3,3,strides=args.scale,padding='same')
     args.patch_size = feat_l.shape[1]
     is_SR = True
     if args.model == 'simple':  # Baseline  No High Res for training
@@ -97,10 +101,10 @@ def model_fn(features, labels, mode, params={}):
     elif args.model == 'simple2':  # SR as a side task
         HR_hat = SR_task(feat_l=feat_l, args=args, is_batch_norm=True, is_training=is_training)
 
-        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
+        HR_hat_down = down_(HR_hat)
         # HR_hat_down = tf.layers.average_pooling2d(HR_hat,args.scale,args.scale)
 
-        # Estimated sup-pixel features from LR
+        # Estimated sub-pixel features from LR
         x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
 
         x_l = tf.layers.conv2d(feat_l, 128, 3, activation=tf.nn.relu, padding='same')
@@ -111,7 +115,7 @@ def model_fn(features, labels, mode, params={}):
     elif args.model == 'simple2a':  # SR as a side task
         HR_hat = SR_task(feat_l=feat_l, args=args, is_batch_norm=False, is_training=is_training)
 
-        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
+        HR_hat_down = down_(HR_hat)
 
         # Estimated sup-pixel features from LR
         x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
@@ -124,7 +128,7 @@ def model_fn(features, labels, mode, params={}):
     elif args.model == 'simple3':  # SR as a side task - leaner version
         HR_hat = SR_task(feat_l=feat_l, args=args, is_training=is_training, is_batch_norm=True)
 
-        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
+        HR_hat_down = down_(HR_hat)
 
         # Estimated sup-pixel features from LR
         y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
@@ -132,14 +136,14 @@ def model_fn(features, labels, mode, params={}):
     elif args.model == 'simple3a':  # SR as a side task - leaner version
         HR_hat = SR_task(feat_l=feat_l, args=args, is_training=is_training, is_batch_norm=False)
 
-        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
+        HR_hat_down = down_(HR_hat)
 
         # Estimated sup-pixel features from LR
         y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
     elif args.model == 'simple4':  # SR as a side task - leaner version
         HR_hat = dbpn_SR(feat_l=feat_l, is_training=is_training)
 
-        HR_hat_down = bilinear(HR_hat, args.patch_size, name='HR_hat_down')
+        HR_hat_down = down_(HR_hat)
 
         # Estimated sup-pixel features from LR
         y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)

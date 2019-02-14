@@ -18,12 +18,12 @@ def block(x, is_training):
 
 
 def simple(input, n_channels, scope_name='simple', is_training=True):
-    feature_size = 128
+    feature_size = 256
     with tf.variable_scope(scope_name):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
-        x1 = tf.layers.conv2d(input, 256, kernel_size=3, use_bias=False, activation=tf.nn.relu, padding='same')
+        x1 = tf.layers.conv2d(input, feature_size, kernel_size=3, use_bias=False, activation=tf.nn.relu, padding='same')
         x1bn = bn_layer(x1, activation_fn=tf.nn.relu, is_training=is_training)
-        x1bn1 = tf.layers.conv2d(x1bn, 256, kernel_size=1, use_bias=False, padding='same')
+        x1bn1 = tf.layers.conv2d(x1bn, feature_size, kernel_size=1, use_bias=False, padding='same')
         x1bn1 = bn_layer(x1bn1, is_training=is_training)
 
         x2 = block(x1bn, is_training)

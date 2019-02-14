@@ -63,7 +63,8 @@ parser.add_argument("--n-channels", default=12, type=int,
                     help="Number of channels to be used from the features for training")
 parser.add_argument("--scale-points", default=10, type=int,
                     help="Original Scale in which the GT points was calculated")
-
+parser.add_argument("--is-bilinear", default=False, action="store_true",
+                    help="downsampling of HR_hat is bilinear (True) or conv (False).")
 
 # Save args
 
@@ -89,7 +90,7 @@ def main(unused_args):
     if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
 
-    model_dir = os.path.join(args.save_dir,'MODEL-{}_BATCH-{}_{}_SCALE-{}_NCHAN{}{}'.format(args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,args.tag))
+    model_dir = os.path.join(args.save_dir,'MODEL-{}_PATCH-{}_{}_SCALE-{}_NCHAN{}{}'.format(args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting trainign from iter 0...')
