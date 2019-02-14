@@ -94,7 +94,7 @@ def model_fn(features, labels, mode, params={}):
     else:
         down_ = lambda x, ch: tf.layers.conv2d(x,ch,3,strides=args.scale,padding='same')
         up_ = lambda x,ch: tf.layers.conv2d_transpose(x,ch,3,strides=args.scale,padding='same')
-    # down_ = lambda x,_: bilinear(x,args.patch_size,name='HR_hat_down')
+
 
     args.patch_size = feat_l.shape[1]
     is_SR = True
@@ -183,6 +183,27 @@ def model_fn(features, labels, mode, params={}):
 
         # Estimated sup-pixel features from LR
         y_hat = simple(HR_hat_down, n_channels=1, is_training=is_training)
+    elif args.model == 'simpleHR':
+        feat_l_up = up_(feat_l,8)
+
+        # Estimated sub-pixel features from LR
+        feat = tf.concat([feat_h,feat_l_up[...,3:]], axis=3)
+
+        y_hat = simple(feat, n_channels=1, is_training=is_training)
+        for key, val in y_hat.iteritems():
+            y_hat[key] = bilinear(val,args.patch_size)
+
+        is_SR = False
+        HR_hat = None
+    elif args.model == 'simpleHR1':
+
+        HR_hat_down = down_(feat_l,3)
+
+        feat = tf.concat([HR_hat_down,feat_l[...,3:]], axis=3)
+
+        y_hat = simple(feat, n_channels=1, is_training=is_training)
+        is_SR = False
+        HR_hat = None
     else:
         print('Model {} not defined'.format(args.model))
         sys.exit(1)
