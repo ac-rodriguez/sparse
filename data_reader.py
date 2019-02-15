@@ -172,14 +172,14 @@ class DataReader(object):
             # im.show()
 
 
-            print('Done')
+            # print('Done')
 
             # self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
             #                                     patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
             #                                     scale=args.scale)
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
-                                                patch_l=self.patch_l_eval, n_workers=1, is_random=True, border=4,
-                                                scale=args.scale)
+                                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=True,border=4,
+                                                scale=args.scale, max_N=1000)
 
             # featl,data_h = self.patch_gen_val.get_inputs()
             # plt.imshow(data_h[...,0:3])
@@ -402,7 +402,7 @@ class DataReader(object):
 
 class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
-                 border=None, scale=None, return_corner=False, keep_edges=True):
+                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4):
 
         self.d_l = dataset_low
         self.d_h = dataset_high
@@ -415,8 +415,7 @@ class PatchExtractor:
         self.is_random = is_random
         self.border = border
         self.scale = scale
-        self.nr_patches = 1e5
-
+        self.nr_patches = max_N
         self.return_corner = return_corner
         self.keep_edges = keep_edges
 
@@ -432,9 +431,13 @@ class PatchExtractor:
             self.compute_tile_ranges()
 
         else:
+
             n_x, self.n_y = np.subtract(self.d_l.shape[0:2], self.patch_l)
+            print('Max N random patches = {}'.format(n_x*self.n_y))
             # Corner is always computed in low_res data
             max_patches = min(self.nr_patches, n_x*self.n_y)
+            print('Extracted random patches = {}'.format(max_patches))
+
             # Corner is always computed in low_res data
             self.indices = np.random.choice(n_x * self.n_y, size=int(max_patches), replace=False)
             self.rand_ind = 0
