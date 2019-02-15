@@ -415,6 +415,7 @@ class PatchExtractor:
         self.is_random = is_random
         self.border = border
         self.scale = scale
+        self.nr_patches = 1e5
 
         self.return_corner = return_corner
         self.keep_edges = keep_edges
@@ -433,7 +434,7 @@ class PatchExtractor:
         else:
             n_x, self.n_y = np.subtract(self.d_l.shape[0:2], self.patch_l)
             # Corner is always computed in low_res data
-            max_patches = min(1e5, n_x*self.n_y)
+            max_patches = min(self.nr_patches, n_x*self.n_y)
             # Corner is always computed in low_res data
             self.indices = np.random.choice(n_x * self.n_y, size=int(max_patches), replace=False)
             self.rand_ind = 0

@@ -127,8 +127,8 @@ def main(unused_args):
 
         reader = DataReader(args, is_training=True)
         input_fn, input_fn_val = reader.get_input_fn()
-        # val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size))
-        val_iters = 10
+        val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size))
+
         # Train model and save summaries into logdir.
         # model.train(input_fn=input_fn, steps=args.train_iters)
         # scores = model.evaluate(input_fn=input_fn_val, steps=(val_iters))
