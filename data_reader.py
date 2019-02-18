@@ -165,6 +165,7 @@ class DataReader(object):
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
+            # plt.imshow(featl[...,-1])
             # im = plot_rgb(featl, file='', return_img=True)
             # im.show()
             #
@@ -221,6 +222,21 @@ class DataReader(object):
 
         return features, labels
 
+
+    def add_spatial_masking(self, features, labels):
+
+        a = tf.random.uniform([2],maxval=int(self.patch_l),dtype=tf.int32)
+        size = int(self.patch_l / 2.0)
+        int_ = lambda x: tf.cast(x, dtype=tf.int32)
+        index = tf.constant(np.arange(0,self.patch_l), dtype=tf.int32)
+        index_x = tf.logical_and(index > a[0],index < (a[0]+size))
+        index_y = tf.logical_and(index > a[1],index < (a[1] + size))
+
+        w = int_(tf.reshape(index_x, [-1,1,1])) * int_(tf.reshape(index_y, [1,-1,1]))
+
+        labels = tf.where(w > 0,-1.0 * tf.ones_like(labels),labels)
+
+        return features, labels
     def reorder_ds(self, data_l, data_h):
         if self.is_HR_labels:
             return {'feat_l': data_l,
@@ -363,7 +379,11 @@ class DataReader(object):
                 tf.TensorShape([patch_h, patch_h,
                                 n_high])
             ))
-        ds = ds.batch(self.batch).map(self.reorder_ds, num_parallel_calls=6).map(self.normalize, num_parallel_calls=6)
+
+        ds = ds.map(self.reorder_ds, num_parallel_calls=6)
+        if is_train and self.args.is_masking:
+            ds = ds.map(self.add_spatial_masking)
+        ds = ds.batch(self.batch).map(self.normalize, num_parallel_calls=6)
 
         ds = ds.prefetch(buffer_size=self.args.batch_size*2)
 

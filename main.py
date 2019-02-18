@@ -67,7 +67,8 @@ parser.add_argument("--scale-points", default=10, type=int,
                     help="Original Scale in which the GT points was calculated")
 parser.add_argument("--is-bilinear", default=False, action="store_true",
                     help="downsampling of HR_hat is bilinear (True) or conv (False).")
-
+parser.add_argument("--is-masking", default=False, action="store_true",
+                    help="adding random spatial masking to labels.")
 # Save args
 
 parser.add_argument("--tag", default="",
@@ -95,7 +96,7 @@ def main(unused_args):
     model_dir = os.path.join(args.save_dir,'MODEL-{}_PATCH-{}_{}_SCALE-{}_NCHAN{}{}'.format(args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
-        print(' [!] Removing exsiting model and starting trainign from iter 0...')
+        print(' [!] Removing exsiting model and starting training from iter 0...')
         shutil.rmtree(model_dir, ignore_errors=True)
     elif not (args.is_restore or args.is_predict):
         model_dir = add_letter_path(model_dir, timestamp=False)

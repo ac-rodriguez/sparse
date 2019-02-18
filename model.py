@@ -22,8 +22,8 @@ def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, 
 
     uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
     inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
-    inv_reg_ = lambda x: uint8_(colorize(x, vmin=0, vmax=4, cmap='hot'))
-    inv_sem_ = lambda x: uint8_(colorize(x, vmin=0, vmax=1, cmap='hot'))
+    inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=4, cmap='hot'))
+    inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1, cmap='hot'))
     int_ = lambda x: tf.cast(x, dtype=tf.int64)
 
     pred_class = int_(tf.argmax(y_hat['sem'], axis=3))
