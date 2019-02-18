@@ -292,7 +292,7 @@ class DataReader(object):
                 self.train =  np.pad(self.train, ((a,a),(a,a),(0,0)), mode='constant', constant_values=0.0)
                 b = a * scale
                 self.train_h = np.pad(self.train_h, ((b,b),(b,b),(0,0)), mode='constant', constant_values = 0.0) if self.train_h is not None else self.train_h
-                self.labels = np.pad(self.labels, ((b,b),(b,b),(0,0)), mode='constant', constant_values = 0.0)
+                self.labels = np.pad(self.labels, ((b,b),(b,b),(0,0)), mode='constant', constant_values = -1.0)
 
                 print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
 
