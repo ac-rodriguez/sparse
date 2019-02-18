@@ -287,6 +287,14 @@ class DataReader(object):
                 print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
                                                                    self.val_h.shape[0], self.val_h.shape[1]))
 
+            if self.args.is_padding:
+                a = self.patch_l - 1
+                self.train =  np.pad(self.train, ((a,a),(a,a),(0,0)), mode='constant', constant_values=0.0)
+                b = a * scale
+                self.train_h = np.pad(self.train_h, ((b,b),(b,b),(0,0)), mode='constant', constant_values = 0.0) if self.train_h is not None else self.train_h
+                self.labels = np.pad(self.labels, ((b,b),(b,b),(0,0)), mode='constant', constant_values = 0.0)
+
+                print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
 
         else:
 

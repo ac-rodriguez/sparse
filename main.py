@@ -33,6 +33,8 @@ parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
 parser.add_argument("--roi_lon_lat_val_lb", default='117.81,8.82,117.84,8.88')
 parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12",
                     help="Select the bands. Using comma-separated band names.")
+parser.add_argument("--is-padding", default=False, action="store_true",
+                    help="padding train data with (patch_size-1)")
 # parser.add_argument("--data", default="dummy",
 #     help="Dataset to be used [dummy, zrh,zrh1,]")
 
