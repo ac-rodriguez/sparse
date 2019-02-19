@@ -228,20 +228,20 @@ def model_fn(features, labels, mode, params={}):
 
     loss_sem = tf.losses.sparse_softmax_cross_entropy(labels=label_sem, logits=y_hat['sem'], weights=w)
 
-    l2_losses = [args.weight_decay * tf.nn.l2_loss(v) for v in tf.trainable_variables() if
-                 ('weights' in v.name or 'kernel' in v.name)]
+    l2_weights = tf.add_n([args.weight_decay * tf.nn.l2_loss(v) for v in tf.trainable_variables() if
+                 ('weights' in v.name or 'kernel' in v.name)])
 
     if is_SR:
         loss_sr = tf.nn.l2_loss(HR_hat - feat_h)
     else:
         loss_sr = 0
 
-    loss = args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_sr * loss_sr + tf.add_n(
-        l2_losses)
+    loss = args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_sr * loss_sr + args.lambda_weights*l2_weights
 
     tf.summary.scalar('loss/reg', loss_reg)
     tf.summary.scalar('loss/sem', loss_sem)
     tf.summary.scalar('loss/SR', loss_sr)
+    tf.summary.scalar('loss/L2Weigths', l2_weights)
 
     eval_metric_ops = summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, is_training)
 

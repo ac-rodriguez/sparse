@@ -47,6 +47,7 @@ parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to trai
 parser.add_argument("--batch-size",default=10,type=int, help="Batch size for training")
 parser.add_argument("--lambda-sr",default=1,type=int, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--lambda-reg",default=0.5,type=float, help="Lambda for reg vs semantic task")
+parser.add_argument("--lambda-weights",default=1,type=float, help="Lambda for L2 weights regularizer")
 parser.add_argument("--weight-decay", type=float, default=0.0005,
                     help="Regularisation parameter for L2-loss.")
 parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
