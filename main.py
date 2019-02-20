@@ -66,6 +66,8 @@ parser.add_argument("--n-channels", default=12, type=int,
                     help="Number of channels to be used from the features for training")
 parser.add_argument("--scale-points", default=10, type=int,
                     help="Original Scale in which the GT points was calculated")
+parser.add_argument("--l2-weights-every", default=None, type=int,
+                    help="How often to update the L2 norm of the weights")
 parser.add_argument("--is-bilinear", default=False, action="store_true",
                     help="downsampling of HR_hat is bilinear (True) or conv (False).")
 parser.add_argument("--is-masking", default=False, action="store_true",

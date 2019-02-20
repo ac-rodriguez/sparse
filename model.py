@@ -235,8 +235,9 @@ def model_fn(features, labels, mode, params={}):
         loss_sr = tf.nn.l2_loss(HR_hat - feat_h)
     else:
         loss_sr = 0
-
-    loss = args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_sr * loss_sr + args.lambda_weights*l2_weights
+    loss123 =args.lambda_reg * loss_reg + (1.0 - args.lambda_reg) * loss_sem + args.lambda_sr * loss_sr
+    loss_w = args.lambda_weights*l2_weights
+    loss = loss123 + loss_w
 
     tf.summary.scalar('loss/reg', loss_reg)
     tf.summary.scalar('loss/sem', loss_sem)
@@ -249,7 +250,16 @@ def model_fn(features, labels, mode, params={}):
         optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
-            train_op = optimizer.minimize(loss, global_step=tf.train.get_global_step())
+            step = tf.train.get_global_step()
+            if args.l2_weights_every is None:
+                train_op = optimizer.minimize(loss, global_step=step)
+            else:
+                train_op1 = optimizer.minimize(loss123, global_step=step)
+                train_op2 = optimizer.minimize(loss_w, global_step=step)
+                train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, args.l2_weights_every))),
+                                   true_fn=lambda: train_op1,
+                                   false_fn=lambda: train_op2)
+
         return tf.estimator.EstimatorSpec(mode, loss=loss, train_op=train_op)
 
     # Add summary hook for image summary
