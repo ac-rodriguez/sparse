@@ -248,9 +248,9 @@ def model_fn(features, labels, mode, params={}):
 
     if mode == tf.estimator.ModeKeys.TRAIN:
         if args.optimizer == 'adagrad':
-            optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
+            optimizer = tf.train.AdagradOptimizer(learning_rate=args.lr)
         elif args.optimizer == 'adam':
-            optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
+            optimizer = tf.train.AdamOptimizer(learning_rate=args.lr)
 
         else:
             print('option not defined')

@@ -74,6 +74,8 @@ parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
 parser.add_argument("--optimizer", type=str, default='adagrad',
                         help="['adagrad', 'adam']")
+parser.add_argument("--lr", type=float, default=0.01,
+                    help="Learning rate for optimizer.")
 # Save args
 
 parser.add_argument("--tag", default="",
