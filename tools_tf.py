@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.python.ops import math_ops
 
 
 def bn_layer(X, activation_fn=None, is_training=True):
@@ -63,3 +64,10 @@ def snr_metric(a, b):
     s2n = 10 * log10(255.0 / sd)
 
     return s2n, sd_op
+
+
+def get_lr_ADAM(optimizer, learning_rate):
+    beta1_power, beta2_power = optimizer._get_beta_accumulators()
+    optim_learning_rate = (learning_rate * math_ops.sqrt(1 - beta2_power) / (1 - beta1_power))
+
+    return optim_learning_rate

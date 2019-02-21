@@ -5,7 +5,7 @@ import numpy as np
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple
 from models_sr import SR_task, dbpn_SR, slice_last_dim
-from tools_tf import bilinear, snr_metric, sum_pool
+from tools_tf import bilinear, snr_metric, sum_pool, get_lr_ADAM
 
 
 def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, is_training):
@@ -247,12 +247,24 @@ def model_fn(features, labels, mode, params={}):
     eval_metric_ops = summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, is_training)
 
     if mode == tf.estimator.ModeKeys.TRAIN:
-        optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
+        if args.optimizer == 'adagrad':
+            optimizer = tf.train.AdagradOptimizer(learning_rate=0.01)
+        elif args.optimizer == 'adam':
+            optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
+
+        else:
+            print('option not defined')
+            sys.exit(1)
+
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+
+
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
             if args.l2_weights_every is None:
                 train_op = optimizer.minimize(loss, global_step=step)
+                lr_adam = get_lr_ADAM(optimizer, learning_rate=0.01)
+                tf.summary.scalar('loss/adam_lr', lr_adam)
             else:
                 train_op1 = optimizer.minimize(loss123, global_step=step)
                 train_op2 = optimizer.minimize(loss_w, global_step=step)

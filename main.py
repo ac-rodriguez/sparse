@@ -72,6 +72,8 @@ parser.add_argument("--is-bilinear", default=False, action="store_true",
                     help="downsampling of HR_hat is bilinear (True) or conv (False).")
 parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
+parser.add_argument("--optimizer", type=str, default='adagrad',
+                        help="['adagrad', 'adam']")
 # Save args
 
 parser.add_argument("--tag", default="",
