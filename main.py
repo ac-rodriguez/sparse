@@ -72,6 +72,8 @@ parser.add_argument("--is-bilinear", default=False, action="store_true",
                     help="downsampling of HR_hat is bilinear (True) or conv (False).")
 parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
+parser.add_argument("--is-lower-bound", default=False, action="store_true",
+                    help="set roi traindata to roi traindata with labels")
 parser.add_argument("--optimizer", type=str, default='adagrad',
                         help="['adagrad', 'adam']")
 parser.add_argument("--lr", type=float, default=0.01,
@@ -93,6 +95,10 @@ args = parser.parse_args()
 
 
 def main(unused_args):
+    if args.is_lower_bound:
+        print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,args.roi_lon_lat_tr_lb))
+        args.roi_lon_lat_tr = args.roi_lon_lat_tr_lb
+        args.tag = 'LOWER'+args.tag
 
     if args.roi_lon_lat_tr_lb == 'all':
         args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
