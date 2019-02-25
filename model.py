@@ -263,8 +263,9 @@ def model_fn(features, labels, mode, params={}):
             step = tf.train.get_global_step()
             if args.l2_weights_every is None:
                 train_op = optimizer.minimize(loss, global_step=step)
-                lr_adam = get_lr_ADAM(optimizer, learning_rate=0.01)
-                tf.summary.scalar('loss/adam_lr', lr_adam)
+                if args.optimizer == 'adam':
+                    lr_adam = get_lr_ADAM(optimizer, learning_rate=0.01)
+                    tf.summary.scalar('loss/adam_lr', lr_adam)
             else:
                 train_op1 = optimizer.minimize(loss123, global_step=step)
                 train_op2 = optimizer.minimize(loss_w, global_step=step)

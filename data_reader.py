@@ -53,24 +53,26 @@ def read_labels(args, roi, roi1, is_HR=False):
     # if args.HR_file is not None:
     if is_HR:
         ds_file = args.HR_file
-        scale = 1
+        scale_smooth = 1
+        scale_lims = args.scale
     else:
         ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
-        scale = 10
+        scale_smooth = 10
+        scale_lims = 1
 
     print(' [*] Reading Labels {}'.format(os.path.basename(args.points)))
 
     ds = gdal.Open(ds_file)
     print(' [*] Reading complete Area')
 
-    lims_H = gp.to_xy_box(roi, ds, enlarge=2)
+    lims_H = gp.to_xy_box(roi, ds, enlarge=scale_lims)
     print(' [*] Reading labeled Area')
 
-    lims_H1 = gp.to_xy_box(roi1, ds, enlarge=2)
+    lims_H1 = gp.to_xy_box(roi1, ds, enlarge=scale_lims)
     # TODO check for predict if we have a smoothing of points
     labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
                                              lims1=lims_H1,
-                                             scale=scale)  # DS is already at HR scale we do not need to upsample anything
+                                             scale=scale_smooth)  # DS is already at HR scale we do not need to upsample anything
 
     return np.expand_dims(labels, axis=2)
 
@@ -283,13 +285,16 @@ class DataReader(object):
                                                                                self.train_h.shape[1]))
                 # Reduce data to the enlarged 10m pixels
                 self.train_h = self.train_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
-                self.train = self.train[0:int(x_shapes), 0:int(y_shapes), :]
+                self.train = self.train[0:x_shapes, 0:y_shapes, :]
                 if self.is_HR_labels:
                     self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+                else:
+                    self.labels = self.labels[0:x_shapes, 0:y_shapes]
+
                 print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
                                                                    self.train_h.shape[0], self.train_h.shape[1]))
 
-                x_shapes, y_shapes = self.compute_shapes(dset_h=self.labels_val, dset_l=self.val, scale=scale)
+                x_shapes, y_shapes = self.compute_shapes(dset_h=self.val_h, dset_l=self.val, scale=scale)
 
                 print(' Val shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
                                                                                    self.val_h.shape[0],
@@ -300,6 +305,9 @@ class DataReader(object):
                 self.val = self.val[0:int(x_shapes), 0:int(y_shapes), :]
                 if self.is_HR_labels:
                     self.labels_val = self.labels_val[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+                else:
+                    self.labels_val = self.labels_val[0:x_shapes, 0:y_shapes]
+
                 print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
                                                                    self.val_h.shape[0], self.val_h.shape[1]))
 
@@ -435,10 +443,8 @@ class PatchExtractor:
         self.d_l = dataset_low
         self.d_h = dataset_high
         self.label = label
-        if self.d_l.shape[0:2] == self.label.shape[0:2]:
-            self.is_HR_label = True
-        else:
-            self.is_HR_label = False
+
+        self.is_HR_label = not (self.d_l.shape[0:2] == self.label.shape[0:2])
 
         self.is_random = is_random
         self.border = border

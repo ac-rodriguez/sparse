@@ -21,7 +21,7 @@ def readHR(args, roi_lon_lat):
     dsREF = gdal.Open(data_file)
 
     if roi_lon_lat:
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(roi_lon_lat)
     else:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -180, -90, 180, 90
 
@@ -34,7 +34,7 @@ def readHR(args, roi_lon_lat):
         sys.exit(0)
 
 
-    xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2),dsREF= dsREF, enlarge=4) # we enlarge from 5m to 20m Bands in S2
+    xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2),dsREF= dsREF, enlarge=args.scale) # we enlarge from 5m to 20m Bands in S2
 
     # elif not roi_lon_lat:
     #     tmxmin = 0
@@ -72,23 +72,23 @@ def readHR(args, roi_lon_lat):
     for band_id in range(3):
         dsBANDS[band_id] = dsREF.GetRasterBand(band_id+1)
 
-    x1_0, y1_0 = gp.to_xy(roi_lon1, roi_lat1, dsREF)
-    x2_0, y2_0 = gp.to_xy(roi_lon2, roi_lat2, dsREF)
+    # x1_0, y1_0 = gp.to_xy(roi_lon1, roi_lat1, dsREF)
+    # x2_0, y2_0 = gp.to_xy(roi_lon2, roi_lat2, dsREF)
 
-    min_coord = np.min([x1_0,y1_0,x2_0,y2_0])
-    xmin_0, xmax_0 = gp.enlarge_pixel(min(x1_0, x2_0), max(x1_0, x2_0), ref = 1)
-    ymin_0, ymax_0 = gp.enlarge_pixel(min(y1_0, y2_0), max(y1_0, y2_0), ref = 1)
-    length_x_0 = xmax_0 - xmin_0 + 1
-    length_y_0 = ymax_0 - ymin_0 + 1
+    # min_coord = np.min([x1_0,y1_0,x2_0,y2_0])
+    # xmin_0, xmax_0 = gp.enlarge_pixel(min(x1_0, x2_0), max(x1_0, x2_0), ref = 1)
+    # ymin_0, ymax_0 = gp.enlarge_pixel(min(y1_0, y2_0), max(y1_0, y2_0), ref = 1)
+    # length_x_0 = xmax_0 - xmin_0 + 1
+    # length_y_0 = ymax_0 - ymin_0 + 1
 
-    complete_image = (length_x_0 == xmax - xmin + 1) & (length_y_0 == ymax - ymin + 1)
-
-    if min_coord < 0:
-        view = '-incomplete'
-    elif complete_image:
-        view = '-complete'
-    else:
-        view = ''
+    # complete_image = (length_x_0 == xmax - xmin + 1) & (length_y_0 == ymax - ymin + 1)
+    #
+    # if min_coord < 0:
+    #     view = '-incomplete'
+    # elif complete_image:
+    #     view = '-complete'
+    # else:
+    #     view = ''
 
     # if only_complete_image and (min_coord < 0) and not complete_image:
     #     print(" [!] Roi is not complete")
@@ -153,7 +153,7 @@ def readS2(args, roi_lon_lat):
     dsREF = gdal.Open(dsREFfile)
 
     if roi_lon_lat:
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(roi_lon_lat)
 
 
 
@@ -176,7 +176,7 @@ def readS2(args, roi_lon_lat):
 
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -180, -90, 180, 90
 
-    xmin, ymin, xmax, ymax = gp.to_xy_box((roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF)
+    xmin, ymin, xmax, ymax = gp.to_xy_box((roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF, enlarge=1)
 
     # xmin, ymin, xmax, ymax = tmxmin, tmymin, tmxmax, tmymax
     utm = 'NaN'

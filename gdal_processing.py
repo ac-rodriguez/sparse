@@ -131,8 +131,8 @@ def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
 
 
     Image = gdal.Open(refDataset)
-    length_x = xmax - xmin + 1
-    length_y = ymax - ymin + 1
+    length_x = xmax - xmin + scale
+    length_y = ymax - ymin + scale
 
     points = read_coords(Input)
 
@@ -183,7 +183,7 @@ def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
     mask[int((ymax1-ymin) / scale):,:] = -1
 
     print(' Total points: {}'.format(np.sum(mask[mask>-1])))
-
+    print('Image size: width={} x height={}'.format(mask.shape[1],mask.shape[0]))
     return mask
 
 def rasterize_points(Input, refDataset, lims, scale = 10):
@@ -373,12 +373,16 @@ def to_xy(lon, lat, ds, is_int = True):
         return (x,y)
 
 
+def split_roi_string(roi_lon_lat):
+    if isinstance(roi_lon_lat,basestring):
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
+    else:
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = roi_lon_lat
+    return max(roi_lon1,roi_lon2), max(roi_lat1,roi_lat2), min(roi_lon1,roi_lon2), min(roi_lat1,roi_lat2)
+
 def to_xy_box(lims,dsREF, enlarge = 1):
-
-    if isinstance(lims,basestring):
-        lims = [float(x) for x in re.split(',', lims)]
-
-    roi_lon1, roi_lat1, roi_lon2, roi_lat2 = lims
+    enlarge = float(enlarge)
+    roi_lon1, roi_lat1, roi_lon2, roi_lat2 = split_roi_string(lims)
 
     roi_intersection(dsREF,geo_pts_ref= [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)])
 
@@ -389,15 +393,21 @@ def to_xy_box(lims,dsREF, enlarge = 1):
     ymin = max(min(y1, y2, dsREF.RasterYSize - 1), 0)
     ymax = min(max(y1, y2, 0), dsREF.RasterYSize - 1)
 
+    of_x = xmax - xmin + 1
+    of_y = ymax - ymin + 1
 
-    xmin = int(xmin / enlarge) * enlarge
-    xmax = int((xmax + 1) / enlarge) * enlarge - 1
+    of_x = np.int(of_x / enlarge) * enlarge
+    of_y = np.int(of_y / enlarge) * enlarge
+    # xmax = int((xmax + 1) / enlarge) * enlarge - 1
+    #
+    # xmin = int(xmin / enlarge) * enlarge
+    # xmax = int((xmax + 1) / enlarge) * enlarge - 1
+    #
+    # ymin = int(ymin / enlarge) * enlarge
+    # ymax = int((ymax + 1) / enlarge) * enlarge - 1
 
-    ymin = int(ymin / enlarge) * enlarge
-    ymax = int((ymax + 1) / enlarge) * enlarge - 1
 
-
-    return (xmin,ymin,xmax,ymax)
+    return map(int,(xmin,ymin,xmin+of_x-1,ymin+of_y-1))
 
 
 def getGeom(inputfile, shapely = False):
