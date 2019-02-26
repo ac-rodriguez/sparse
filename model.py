@@ -102,6 +102,10 @@ def model_fn(features, labels, mode, params={}):
         y_hat = simple(feat_l, n_channels=1, is_training=is_training)
         is_SR = False
         HR_hat = None
+    elif args.model == 'simplebn':  # Baseline  No High Res for training
+        y_hat = simple(feat_l, n_channels=1, is_training=is_training, is_bn=False)
+        is_SR = False
+        HR_hat = None
     elif args.model == 'simple2':  # SR as a side task
         HR_hat = SR_task(feat_l=feat_l, args=args, is_batch_norm=True, is_training=is_training)
 

@@ -14,7 +14,7 @@ import plots
 import patches
 
 
-HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/3000_gsd5.0.tif'
+HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/coco/3000_gsd5.0.tif'
 
 LRFILE = "/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml"
 # POINTSFILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
