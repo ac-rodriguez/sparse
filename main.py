@@ -79,9 +79,9 @@ parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
 parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
-parser.add_argument("--optimizer", type=str, default='adagrad',
+parser.add_argument("--optimizer", type=str, default='adam',
                         help="['adagrad', 'adam']")
-parser.add_argument("--lr", type=float, default=0.01,
+parser.add_argument("--lr", type=float, default=2.5e-4,
                     help="Learning rate for optimizer.")
 # Save args
 
