@@ -46,10 +46,10 @@ parser.add_argument("--val-patches",default=1000,type=int, help="Number of rando
 
 
 # Training args
-parser.add_argument("--patch-size", default=128, type = int, help="size of the patches to be created (low-res).")
-parser.add_argument("--patch-size-eval", default=None, type = int, help="size of the patches to be created (low-res).")
+parser.add_argument("--patch-size", default=32, type = int, help="size of the patches to be created (low-res).")
+parser.add_argument("--patch-size-eval", default=64, type = int, help="size of the patches to be created (low-res).")
 parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
-parser.add_argument("--batch-size",default=10,type=int, help="Batch size for training")
+parser.add_argument("--batch-size",default=8,type=int, help="Batch size for training")
 parser.add_argument("--lambda-sr",default=1,type=int, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--lambda-reg",default=0.5,type=float, help="Lambda for reg vs semantic task")
 parser.add_argument("--lambda-weights",default=1,type=float, help="Lambda for L2 weights regularizer")
