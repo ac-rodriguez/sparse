@@ -1,10 +1,22 @@
 
 import tensorflow as tf
 
+i = 0
+# from tools_tf import bn_layer
 
-from tools_tf import bn_layer
+def bn_layer(X, activation_fn=None, is_training=True):
+    if activation_fn is None: activation_fn = lambda x: x
+    global i
 
+    with tf.variable_scope('batch_norm'+str(i), reuse=False):
+        out =  activation_fn(tf.layers.batch_normalization(X, training=is_training))
 
+        gamma = tf.trainable_variables(tf.get_variable_scope().name)[0]
+        beta = tf.trainable_variables(tf.get_variable_scope().name)[1]
+        tf.summary.histogram('bn/gamma',gamma)
+        tf.summary.histogram('bn/beta',beta)
+        i+=1
+        return out
 
 def block(x, is_training, is_bn = True):
     x2 = tf.layers.conv2d(x, 64, kernel_size=1, use_bias=False, padding='same')
@@ -18,7 +30,11 @@ def block(x, is_training, is_bn = True):
 
 
 def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True):
+
     feature_size = 256
+
+    global i
+    i = 0
     with tf.variable_scope(scope_name):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
         x1 = tf.layers.conv2d(input, feature_size, kernel_size=3, use_bias=False, activation=tf.nn.relu, padding='same')

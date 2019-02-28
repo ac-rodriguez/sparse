@@ -17,7 +17,7 @@ def check_dims(data):
         data = np.expand_dims(data, axis=3)
         data = np.expand_dims(data, axis=0)
     return data
-def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap = 'hot'):
+def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='hot', file=None):
 
     data[np.isnan(data)] = -1
 
@@ -36,7 +36,10 @@ def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap = 'hot'):
     assert len(band_data.shape) == 2, 'For more channels in image use plot_rgb'
 
     cm = plt.get_cmap(cmap)
-    return Image.fromarray(cm(band_data, bytes=True))
+    if file is None:
+        return Image.fromarray(cm(band_data, bytes=True))
+    else:
+        Image.fromarray(cm(band_data, bytes=True)).save(file+'.png')
 
 def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, percentiles = (1,99), bw = False):
 

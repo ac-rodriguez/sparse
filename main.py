@@ -16,7 +16,7 @@ import patches
 
 HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/coco/3000_gsd5.0.tif'
 
-LRFILE = "/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml"
+LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
 # POINTSFILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
 POINTSFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_detections.kml'
 
@@ -35,6 +35,11 @@ parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12"
                     help="Select the bands. Using comma-separated band names.")
 parser.add_argument("--is-padding", default=False, action="store_true",
                     help="padding train data with (patch_size-1)")
+parser.add_argument("--is-empty-aerial", default=False, action="store_true",
+                    help="remove aerial data for areas without label")
+parser.add_argument("--train-patches",default=1000,type=int, help="Number of random patches extracted from train area")
+parser.add_argument("--val-patches",default=1000,type=int, help="Number of random patches extracted from train area")
+
 # parser.add_argument("--data", default="dummy",
 #     help="Dataset to be used [dummy, zrh,zrh1,]")
 
@@ -52,13 +57,13 @@ parser.add_argument("--weight-decay", type=float, default=0.0005,
                     help="Regularisation parameter for L2-loss.")
 parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
 parser.add_argument("--eval-every",default=600,type=int, help="Number of seconds between evaluations")
-parser.add_argument("--model", default="1",
+parser.add_argument("--model", default="simple",
     help="Model Architecture to be used [deep_sentinel2, ...]")
 parser.add_argument("--sigma-smooth", type=int, default=None,
                         help="Sigma smooth to apply to the GT points data.")
 parser.add_argument("--normalize", type=str, default='normal',
                         help="type of normalization applied to the data.")
-parser.add_argument("--is-restore", default=False, action="store_true",
+parser.add_argument("--is-restore","--is-reload",dest="is_restore", default=False, action="store_true",
                     help="Continue training from a stored model.")
 parser.add_argument("--is-multi-gpu", default=False, action="store_true",
                     help="Add mirrored strategy for multi gpu training and eval.")
@@ -153,6 +158,13 @@ def main(unused_args):
         eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps = (val_iters), throttle_secs = args.eval_every)
 
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
+        try:
+            plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/train_data_recomposed')
+            plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/val_data_recomposed')
+            plots.plot_heatmap(reader.patch_gen.label_1, file=model_dir + '/train_label_recomposed',min=-1,max=1)
+            plots.plot_heatmap(reader.patch_gen_val.label_1, file=model_dir + '/val_label_recomposed',min=-1,max=1)
+        except AttributeError:
+            pass
     else:
         #TODO check data_recompose output
         reader = DataReader(args,is_training=False)

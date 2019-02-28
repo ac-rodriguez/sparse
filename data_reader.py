@@ -14,7 +14,7 @@ from plots import check_dims, plot_rgb
 from read_geoTiff import readHR, readS2
 import gdal_processing as gp
 
-
+IS_DEBUG=True
 ### ZRH 1 Sentinel-2 and Google-high res data
 
 def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
@@ -163,7 +163,8 @@ class DataReader(object):
             self.n_channels = self.train[0].shape[-1]
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
-                                            patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=True, scale=args.scale)
+                                            patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=True,
+                                            scale=args.scale, max_N=args.train_patches)
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
@@ -182,7 +183,7 @@ class DataReader(object):
             #                                     scale=args.scale)
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                 patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=True,border=4,
-                                                scale=args.scale, max_N=1000)
+                                                scale=args.scale, max_N=args.val_patches)
 
             # featl,data_h = self.patch_gen_val.get_inputs()
             # plt.imshow(data_h[...,0:3])
@@ -270,7 +271,8 @@ class DataReader(object):
 
             self.mean_train = self.train.mean(axis=(0, 1))
             self.std_train = self.train.std(axis=(0, 1))
-
+            if self.args.is_empty_aerial:
+                self.train[(self.labels == -1)[..., 0], :] = 2000.0
             print(str(self.mean_train))
             self.nb_bands = self.train.shape[-1]
 
@@ -443,7 +445,9 @@ class PatchExtractor:
         self.d_l = dataset_low
         self.d_h = dataset_high
         self.label = label
-
+        if IS_DEBUG:
+            self.d_l1 = np.zeros_like(self.d_l)
+            self.label_1 = np.zeros_like(self.label)
         self.is_HR_label = not (self.d_l.shape[0:2] == self.label.shape[0:2])
 
         self.is_random = is_random
@@ -529,7 +533,9 @@ class PatchExtractor:
             else:
                 label = self.label[x_l:x_l + self.patch_l,
                         y_l:y_l + self.patch_l]
-
+                if IS_DEBUG:
+                    self.label_1[x_l:x_l + self.patch_l,
+                        y_l:y_l + self.patch_l] = label
                 assert label.shape == (self.patch_l, self.patch_l, self.label.shape[-1],), \
                     'Shapes: Dataset={} Patch={} xy_corner={}'.format(self.label.shape, label.shape, (x_h, y_h))
 
@@ -539,6 +545,9 @@ class PatchExtractor:
 
             patch_l = self.d_l[x_l:x_l + self.patch_l,
                       y_l:y_l + self.patch_l]
+            if IS_DEBUG:
+                self.d_l1[x_l:x_l + self.patch_l,
+                      y_l:y_l + self.patch_l]=patch_l
         else:
             patch_l = None
 

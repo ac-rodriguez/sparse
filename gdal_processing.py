@@ -175,14 +175,15 @@ def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
         mask = block_reduce(mask, (scale, scale), np.sum)
         # mask = mask[::scale,::scale]
         print('GT points were smoothed on High resolution with a Gaussian \sigma = {:.2f} and downsampled {} times'.format(sigma, scale))
-
+    scale_f = float(scale)
     # Set points outside of constraint to -1
-    mask[:,:int((xmin1-xmin) / scale)] = -1
-    mask[:,int((xmax1-xmin) / scale):] = -1
-    mask[:int((ymin1-ymin) / scale),:] = -1
-    mask[int((ymax1-ymin) / scale):,:] = -1
+    mask[:,:int((xmin1-xmin) / scale_f)] = -1
+    mask[:,int(np.ceil((xmax1-xmin+1) / scale_f)):] = -1
+    mask[:int((ymin1-ymin) / scale_f),:] = -1
+    mask[int(np.ceil((ymax1-ymin+1) / scale_f)):,:] = -1
 
     print(' Total points: {}'.format(np.sum(mask[mask>-1])))
+    print(' Masked pixels: {} / {} ({:.2f}%)'.format(np.sum(mask == -1),mask.shape[0]*mask.shape[1],100.* np.sum(mask == -1) /float(mask.shape[0]*mask.shape[1])))
     print('Image size: width={} x height={}'.format(mask.shape[1],mask.shape[0]))
     return mask
 
