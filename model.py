@@ -242,7 +242,7 @@ def model_fn(features, labels, mode, params={}):
 
     W = [v for v in tf.trainable_variables() if ('weights' in v.name or 'kernel' in v.name)]
 
-    l2_weights = tf.add_n([args.weight_decay * tf.nn.l2_loss(v) for v in W])
+    l2_weights = tf.add_n([0.0005 * tf.nn.l2_loss(v) for v in W])
 
     if is_SR:
         loss_sr = tf.nn.l2_loss(HR_hat - feat_h)
