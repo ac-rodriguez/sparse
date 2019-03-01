@@ -111,7 +111,9 @@ def main(unused_args):
     if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
 
-    model_dir = os.path.join(args.save_dir,'MODEL-{}_PATCH-{}_{}_SCALE-{}_NCHAN{}{}'.format(args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,args.tag))
+    lambdas='Lr{:.1f}_Lsr{:.1f}_Lw{:.1f}'.format(args.lambda_reg,args.lambda_reg,args.lambda_weights)
+    model_dir = os.path.join(args.save_dir,'MODEL{}_PATCH{}_{}_SCALE{}_CH{}_{}{}'.format(
+        args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,lambdas,args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting training from iter 0...')
