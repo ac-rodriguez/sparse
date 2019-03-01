@@ -39,6 +39,7 @@ parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
 parser.add_argument("--train-patches",default=1000,type=int, help="Number of random patches extracted from train area")
 parser.add_argument("--val-patches",default=1000,type=int, help="Number of random patches extracted from train area")
+parser.add_argument("--numpy-seed",default=None,type=int, help="Random seed for random patches extraction")
 
 # parser.add_argument("--data", default="dummy",
 #     help="Dataset to be used [dummy, zrh,zrh1,]")
@@ -50,6 +51,7 @@ parser.add_argument("--patch-size", default=32, type = int, help="size of the pa
 parser.add_argument("--patch-size-eval", default=64, type = int, help="size of the patches to be created (low-res).")
 parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
 parser.add_argument("--batch-size",default=8,type=int, help="Batch size for training")
+parser.add_argument("--batch-size-eval",default=None,type=int, help="Batch size for eval")
 parser.add_argument("--lambda-sr",default=1.0,type=float, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--lambda-reg",default=0.5,type=float, help="Lambda for reg vs semantic task")
 parser.add_argument("--lambda-weights",default=1.0,type=float, help="Lambda for L2 weights regularizer")
@@ -110,6 +112,7 @@ def main(unused_args):
         args.tag = 'allGT'+args.tag
     if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
+    if args.batch_size_eval is None: args.batch_size_eval = args.batch_size
 
     lambdas='Lr{:.1f}_Lsr{:.1f}_Lw{:.1f}'.format(args.lambda_reg,args.lambda_reg,args.lambda_weights)
     model_dir = os.path.join(args.save_dir,'MODEL{}_PATCH{}_{}_SCALE{}_CH{}_{}{}'.format(
@@ -150,7 +153,7 @@ def main(unused_args):
 
         reader = DataReader(args, is_training=True)
         input_fn, input_fn_val = reader.get_input_fn()
-        val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size))
+        val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size_eval))
 
         # Train model and save summaries into logdir.
         # model.train(input_fn=input_fn, steps=args.train_iters)

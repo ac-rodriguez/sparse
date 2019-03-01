@@ -156,7 +156,7 @@ class DataReader(object):
 
         self.read_data(self.is_training)
         if self.is_training:
-
+            if self.args.numpy_seed: np.random.seed(self.args.numpy_seed)
             if args.sigma_smooth:
                 self.labels = map(lambda x: ndimage.gaussian_filter(x, sigma=args.sigma_smooth), self.labels)
 
