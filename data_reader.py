@@ -166,8 +166,8 @@ class DataReader(object):
                                             patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=True,
                                             scale=args.scale, max_N=args.train_patches)
 
-            featl,datah = self.patch_gen.get_inputs()
-            plt.imshow(datah[...,0:3])
+            # featl,datah = self.patch_gen.get_inputs()
+            # plt.imshow(datah[...,0:3])
             # plt.imshow(featl[...,-1])
             # im = plot_rgb(featl, file='', return_img=True)
             # im.show()
