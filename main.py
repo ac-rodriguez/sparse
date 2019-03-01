@@ -122,7 +122,7 @@ def main(unused_args):
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
 
-
+    args.model_dir = model_dir
     save_parameters(args,model_dir, sys.argv)
     params = {}
 

@@ -1,6 +1,7 @@
 import tensorflow as tf
 import sys
 import numpy as np
+import pprint
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple
@@ -55,6 +56,13 @@ def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, 
                          image_array,
                          max_outputs=2)
 
+    args_tensor = tf.make_tensor_proto([([k, str(v)]) for k, v in sorted(args.__dict__.items())])
+    meta = tf.SummaryMetadata()
+    meta.plugin_data.plugin_name = "text"
+    summary = tf.Summary()
+    summary.value.add(tag="FLAGS", metadata=meta, tensor=args_tensor)
+    summary_writer = tf.summary.FileWriter(args.model_dir)
+    summary_writer.add_summary(summary)
 
     if not is_training:
 
