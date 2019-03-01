@@ -185,7 +185,7 @@ def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
     print(' Total points: {}'.format(np.sum(mask[mask>-1])))
     print(' Masked pixels: {} / {} ({:.2f}%)'.format(np.sum(mask == -1),mask.shape[0]*mask.shape[1],100.* np.sum(mask == -1) /float(mask.shape[0]*mask.shape[1])))
     print('Image size: width={} x height={}'.format(mask.shape[1],mask.shape[0]))
-    return mask
+    return mask.astype(np.float32)
 
 def rasterize_points(Input, refDataset, lims, scale = 10):
 

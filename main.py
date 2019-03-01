@@ -35,6 +35,8 @@ parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12"
                     help="Select the bands. Using comma-separated band names.")
 parser.add_argument("--is-padding", default=False, action="store_true",
                     help="padding train data with (patch_size-1)")
+parser.add_argument("--is-hr-label", default=False, action="store_true",
+                    help="compute label on the HR resolultion")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
 parser.add_argument("--train-patches",default=1000,type=int, help="Number of random patches extracted from train area")

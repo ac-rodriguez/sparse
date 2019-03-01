@@ -35,10 +35,18 @@ def summaries(feat_h, feat_l, labels, label_sem, w, y_hat, HR_hat, is_SR, args, 
     image_array_mid = tf.concat(axis=2, values=[tf.map_fn(inv_sem_, label_sem, dtype=tf.uint8),
                                                 tf.map_fn(inv_sem_, pred_class, dtype=tf.uint8)])
 
-    a_ = tf.map_fn(inv_, feat_l, dtype=tf.uint8)
-    feat_h_down = uint8_(bilinear(feat_h, args.patch_size, name='HR_down')) if feat_h is not None else a_
 
-    image_array_bottom = tf.concat(axis=2, values=[a_, feat_h_down])  # , uint8_(feat_h_down)])
+    is_HR_lab = (labels.shape[1:3] == feat_h.shape[1:3])
+
+    if is_HR_lab:
+        feat_l_up =  tf.map_fn(inv_, bilinear(feat_l, size=args.patch_size * args.scale), dtype=tf.uint8)
+        image_array_bottom = tf.concat(axis=2, values=[feat_l_up,uint8_(feat_h)])
+    else:
+        feat_l_ = tf.map_fn(inv_, feat_l, dtype=tf.uint8)
+        feat_h_down = uint8_(bilinear(feat_h, args.patch_size, name='HR_down')) if feat_h is not None else feat_l_
+        image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down])
+
+    # image_array_bottom = tf.concat(axis=2, values=[feat_l1, feat_h_down])  # , uint8_(feat_h_down)])
 
     image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
@@ -106,6 +114,7 @@ def model_fn(features, labels, mode, params={}):
 
     args.patch_size = feat_l.shape[1]
     is_SR = True
+    loss_in_HR = False
     if args.model == 'simple':  # Baseline  No High Res for training
         y_hat = simple(feat_l, n_channels=1, is_training=is_training)
         is_SR = False
@@ -202,9 +211,11 @@ def model_fn(features, labels, mode, params={}):
         feat = tf.concat([feat_h,feat_l_up[...,3:]], axis=3)
 
         y_hat = simple(feat, n_channels=1, is_training=is_training)
-        for key, val in y_hat.iteritems():
-            y_hat[key] = bilinear(val,args.patch_size)
-
+        if not args.is_hr_label:
+            for key, val in y_hat.iteritems():
+                y_hat[key] = bilinear(val,args.patch_size)
+        else:
+            loss_in_HR = True
         is_SR = False
         HR_hat = None
     elif args.model == 'simpleHR1':
@@ -227,8 +238,9 @@ def model_fn(features, labels, mode, params={}):
 
     int_ = lambda x: tf.cast(x, dtype=tf.int64)
 
-    # labels = sum_pool(labels, args.scale, name='Label_down')
-    # labels = labels
+    if args.is_hr_label and not loss_in_HR:
+        labels = sum_pool(labels, args.scale, name='Label_down')
+
     label_sem = tf.squeeze(int_(tf.greater(labels, 0.5)), axis=3)
     float_ = lambda x: tf.cast(x, dtype=tf.float32)
 
@@ -257,7 +269,7 @@ def model_fn(features, labels, mode, params={}):
 
     tf.summary.scalar('loss/reg', loss_reg)
     tf.summary.scalar('loss/sem', loss_sem)
-    tf.summary.scalar('loss/SR', loss_sr)
+    if is_SR: tf.summary.scalar('loss/SR', loss_sr)
     tf.summary.scalar('loss/L2Weigths', l2_weights)
     tf.summary.scalar('loss/L2Grad', norm)
 

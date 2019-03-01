@@ -158,7 +158,7 @@ class DataReader(object):
         if self.is_training:
             if self.args.numpy_seed: np.random.seed(self.args.numpy_seed)
             if args.sigma_smooth:
-                self.labels = map(lambda x: ndimage.gaussian_filter(x, sigma=args.sigma_smooth), self.labels)
+                self.labels = ndimage.gaussian_filter(self.labels, sigma=args.sigma_smooth)
 
             self.n_channels = self.train[0].shape[-1]
 
@@ -166,8 +166,8 @@ class DataReader(object):
                                             patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=True,
                                             scale=args.scale, max_N=args.train_patches)
 
-            # featl,datah = self.patch_gen.get_inputs()
-            # plt.imshow(datah[...,0:3])
+            featl,datah = self.patch_gen.get_inputs()
+            plt.imshow(datah[...,0:3])
             # plt.imshow(featl[...,-1])
             # im = plot_rgb(featl, file='', return_img=True)
             # im.show()
@@ -251,7 +251,7 @@ class DataReader(object):
     def read_data(self, is_training=True):
 
         if is_training:
-            self.is_HR_labels = False
+            self.is_HR_labels = self.args.is_hr_label
             print(' [*] Loading Train data ')
             self.train_h = readHR(self.args,
                                   roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
@@ -318,7 +318,8 @@ class DataReader(object):
                 self.train =  np.pad(self.train, ((a,a),(a,a),(0,0)), mode='constant', constant_values=0.0)
                 b = a * scale
                 self.train_h = np.pad(self.train_h, ((b,b),(b,b),(0,0)), mode='constant', constant_values = 0.0) if self.train_h is not None else self.train_h
-                self.labels = np.pad(self.labels, ((b,b),(b,b),(0,0)), mode='constant', constant_values = -1.0)
+                c = b if self.is_HR_labels else a
+                self.labels = np.pad(self.labels, ((c,c),(c,c),(0,0)), mode='constant', constant_values = -1.0)
 
                 print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
 
@@ -506,6 +507,15 @@ class PatchExtractor:
                             i += 1
                     print 'starting over Val set {}'.format(i)
 
+    def get_patch_corner(self,data, x,y,size):
+        if data is not None:
+            patch = data[x:x + size, y:y+size]
+
+            assert patch.shape == (size, size, data.shape[-1],), \
+                'Shapes: Dataset={} Patch={} xy_corner={}'.format(data.shape, patch.shape, (x, y))
+        else:
+            patch=None
+        return patch
     def get_patches(self, xy_corner):
 
         if self.scale is None:
@@ -514,42 +524,20 @@ class PatchExtractor:
             scale = self.scale
         x_l, y_l = map(int, xy_corner)
         x_h, y_h = x_l * scale, y_l * scale
+        x_lab,y_lab, patch_lab = (x_h,y_h,self.patch_h) if self.is_HR_label else (x_l,y_l,self.patch_l)
 
-        if self.d_h is not None:
-            patch_h = self.d_h[x_h:x_h + self.patch_h,
-                      y_h:y_h + self.patch_h]
+        patch_h = self.get_patch_corner(self.d_h,x_h,y_h,self.patch_h)
+        label = self.get_patch_corner(self.label,x_lab,y_lab,patch_lab)
+        # if self.scale is not None:
+        patch_l = self.get_patch_corner(self.d_l, x_l, y_l, self.patch_l)
 
-            assert patch_h.shape == (self.patch_h, self.patch_h, self.d_h.shape[-1],), \
-                'Shapes: Dataset={} Patch={} xy_corner={}'.format(self.d_h.shape, patch_h.shape, (x_h, y_h))
-        else:
-            patch_h = None
-        if self.label is not None:
-            if self.is_HR_label:
-                label = self.label[x_h:x_h + self.patch_h,
-                        y_h:y_h + self.patch_h]
+        if IS_DEBUG and label is not None:
+            self.label_1[x_lab:x_lab + patch_lab,
+                y_lab:y_lab + patch_lab] = label
 
-                assert label.shape == (self.patch_h, self.patch_h, self.label.shape[-1],), \
-                    'Shapes: Dataset={} Patch={} xy_corner={}'.format(self.label.shape, label.shape, (x_h, y_h))
-            else:
-                label = self.label[x_l:x_l + self.patch_l,
-                        y_l:y_l + self.patch_l]
-                if IS_DEBUG:
-                    self.label_1[x_l:x_l + self.patch_l,
-                        y_l:y_l + self.patch_l] = label
-                assert label.shape == (self.patch_l, self.patch_l, self.label.shape[-1],), \
-                    'Shapes: Dataset={} Patch={} xy_corner={}'.format(self.label.shape, label.shape, (x_h, y_h))
-
-        else:
-            label = None
-        if self.scale is not None:
-
-            patch_l = self.d_l[x_l:x_l + self.patch_l,
-                      y_l:y_l + self.patch_l]
-            if IS_DEBUG:
+        if IS_DEBUG and patch_l is not None:
                 self.d_l1[x_l:x_l + self.patch_l,
                       y_l:y_l + self.patch_l]=patch_l
-        else:
-            patch_l = None
 
         if self.is_HR_label:
             data_h = np.dstack((patch_h, label)) if patch_h is not None else label
@@ -559,11 +547,9 @@ class PatchExtractor:
         if self.return_corner:
             return patch_l, data_h, xy_corner
         else:
-
             return patch_l, data_h
 
     def get_random_patches(self):
-
 
         with self.lock:
             ind = self.indices[np.mod(self.rand_ind,len(self.indices))]
