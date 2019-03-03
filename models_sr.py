@@ -49,9 +49,9 @@ def SR_task_old(feat_l, args, is_batch_norm=True, is_training=True):
         HR_hat = tf.layers.conv2d(HR_hat1, 3, 3, activation=tf.nn.sigmoid, padding='same')
 
         return HR_hat
-def SR_task(feat_l, args, is_batch_norm=True, is_training=True):
+def SR_task(feat_l, size, is_batch_norm=True, is_training=True):
     with tf.variable_scope('SR_task'):
-        feat_l_up = bilinear(feat_l, size=args.patch_size * args.scale, name='LR_up')
+        feat_l_up = bilinear(feat_l, size=size, name='LR_up')
 
         HR_hat1 = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training,
                                  is_batch_norm=is_batch_norm)
@@ -68,9 +68,9 @@ def SR_task(feat_l, args, is_batch_norm=True, is_training=True):
 
         return HR_hat
 
-def SR_task1(feat_l, args, is_batch_norm=True, is_training=True):
+def SR_task1(feat_l, size, is_batch_norm=True, is_training=True):
     with tf.variable_scope('SR_task'):
-        feat_l_up = bilinear(feat_l, size=args.patch_size * args.scale, name='LR_up')
+        feat_l_up = bilinear(feat_l, size=size, name='LR_up')
 
         HR_hat1 = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training,
                                  is_batch_norm=is_batch_norm)

@@ -40,6 +40,7 @@ def sum_pool(X, scale, name=None):
 
 
 def avg_pool(X, scale, name=None):
+    if len(X.shape) == 3: X = tf.expand_dims(X,-1)
     return tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
                           strides=(1, scale, scale, 1), padding='VALID', name=name)
 
