@@ -119,20 +119,20 @@ def read_coords(Input):
 
     return points
 
-def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
+def rasterize_points_constrained(Input, refDataset, lims, lims1, up_scale=10, sigma=None):
 
-    lims = [i*scale for i in lims]
+    lims = [i * up_scale for i in lims]
 
     xmin, ymin, xmax, ymax = lims # points come already ordered
 
-    lims1 = [i*scale for i in lims1]
+    lims1 = [i * up_scale for i in lims1]
 
     xmin1, ymin1, xmax1, ymax1 = lims1
 
 
     Image = gdal.Open(refDataset)
-    length_x = xmax - xmin + scale
-    length_y = ymax - ymin + scale
+    length_x = xmax - xmin + up_scale
+    length_y = ymax - ymin + up_scale
 
     points = read_coords(Input)
 
@@ -146,8 +146,8 @@ def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
     ct = osr.CoordinateTransformation(srsLatLon, srs)
 
 
-    a = a / scale
-    e = e / scale
+    a = a / up_scale
+    e = e / up_scale
 
     for i in points:
 
@@ -167,15 +167,17 @@ def rasterize_points_constrained(Input, refDataset, lims,lims1, scale = 10):
 
                 mask[y1,x1]+=1
 
-    if scale > 1:
+    if up_scale > 1:
         # sigma = scale
-        sigma = scale / np.pi
+        if sigma is None:
+            sigma = up_scale / np.pi
         mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
 
-        mask = block_reduce(mask, (scale, scale), np.sum)
+        mask = block_reduce(mask, (up_scale, up_scale), np.sum)
         # mask = mask[::scale,::scale]
-        print('GT points were smoothed on High resolution with a Gaussian \sigma = {:.2f} and downsampled {} times'.format(sigma, scale))
-    scale_f = float(scale)
+        print('GT points were computed on a {} times larger area than RefData\n'
+              'smoothed with a Gaussian \sigma = {:.2f} and downsampled to original res'.format(up_scale,sigma))
+    scale_f = float(up_scale)
     # Set points outside of constraint to -1
     mask[:,:int((xmin1-xmin) / scale_f)] = -1
     mask[:,int(np.ceil((xmax1-xmin+1) / scale_f)):] = -1

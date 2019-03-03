@@ -79,7 +79,8 @@ lims_H1 = gp.to_xy_box(roi_lon_lat_lb,dsH, enlarge=2)
 
 
 
-hr_mask1 = gp.rasterize_points_constrained(Input=Points_FILE,refDataset=HR_file,lims=lims_H,lims1=lims_H1,scale = 2)
+hr_mask1 = gp.rasterize_points_constrained(Input=Points_FILE, refDataset=HR_file, lims=lims_H, lims1=lims_H1,
+                                           up_scale=2)
 
 
 
@@ -94,7 +95,8 @@ lims_L1 = gp.to_xy_box(roi_lon_lat_lb,dsL)
 
 
 
-lr_mask1 = gp.rasterize_points_constrained(Input=Points_FILE,refDataset=LR_file,lims=lims_L,lims1=lims_L1,scale = 10)
+lr_mask1 = gp.rasterize_points_constrained(Input=Points_FILE, refDataset=LR_file, lims=lims_L, lims1=lims_L1,
+                                           up_scale=10)
 
 # lr_mask = np.zeros((y_max,x_max))
 # for key,val in enumerate(lr_coords):

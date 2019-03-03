@@ -51,13 +51,14 @@ def read_and_upsample_sen2(args, roi_lon_lat):
 
 def read_labels(args, roi, roi1, is_HR=False):
     # if args.HR_file is not None:
+    ref_scale=16 # 10m -> 0.625m
+    sigma = ref_scale/np.pi
     if is_HR:
         ds_file = args.HR_file
-        scale_smooth = 10//args.scale #TODO CHECK
+        ref_scale = ref_scale//args.scale
         scale_lims = args.scale
     else:
         ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
-        scale_smooth = 10
         scale_lims = 1
 
     print(' [*] Reading Labels {}'.format(os.path.basename(args.points)))
@@ -70,9 +71,8 @@ def read_labels(args, roi, roi1, is_HR=False):
 
     lims_H1 = gp.to_xy_box(roi1, ds, enlarge=scale_lims)
     # TODO check for predict if we have a smoothing of points
-    labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
-                                             lims1=lims_H1,
-                                             scale=scale_smooth)  # DS is already at HR scale we do not need to upsample anything
+    labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H, lims1=lims_H1,
+                                             up_scale=ref_scale,sigma=sigma)  # DS is already at HR scale we do not need to upsample anything
 
     return np.expand_dims(labels, axis=2)
 
