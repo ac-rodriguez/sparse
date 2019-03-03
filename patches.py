@@ -255,6 +255,9 @@ def save_test_patches(d10, d20, file, filename = 'data', patch=128, border=4, in
 
 def recompose_images(a, border= 4, size=None, show_image=False):
 
+    if len(a.shape) == 3:
+        a = np.expand_dims(a,axis=-1)
+
     if a.shape[0] == 1:
         images = a[0]
     else:
@@ -262,7 +265,7 @@ def recompose_images(a, border= 4, size=None, show_image=False):
         # size = [s - border * 2 for s in size]
         patch_size = a.shape[2]-border*2
 
-        print('Patch has dimension {}'.format(patch_size))
+        print('Patch w/o borders has dimension {}'.format(patch_size))
         print('Prediction has shape {}'.format(a.shape))
         x_tiles = int(ceil(size[0]/float(patch_size)))
         y_tiles = int(ceil(size[1]/float(patch_size)))
@@ -270,7 +273,7 @@ def recompose_images(a, border= 4, size=None, show_image=False):
 
         # Initialize image
         print('Image size is: {}'.format(size))
-        images = np.zeros((size[1], size[0],a.shape[3])).astype(np.float32)
+        images = np.zeros((size[1], size[0],a.shape[-1])).astype(np.float32)
 
         print(images.shape)
         current_patch = 0

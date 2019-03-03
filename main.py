@@ -9,7 +9,7 @@ from functools import partial
 from data_reader import DataReader
 # from deeplab_resnet.data_reader import DataReader as DataReader1
 from utils import save_parameters, add_letter_path
-from model import model_fn
+from model import Model
 import plots
 import patches
 
@@ -97,7 +97,7 @@ parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="Delete model_dir before starting training from iter 0. Overrides --is-restore flag")
 
 
-parser.add_argument("--is-predict", default=False, action="store_true",
+parser.add_argument("--is-predict",dest='is_train', default=True, action="store_false",
                     help="Predict using an already trained model")
 args = parser.parse_args()
 
@@ -123,14 +123,15 @@ def main(unused_args):
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting training from iter 0...')
         shutil.rmtree(model_dir, ignore_errors=True)
-    elif not (args.is_restore or args.is_predict):
+    elif not args.is_restore and args.is_train:
         model_dir = add_letter_path(model_dir, timestamp=False)
 
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
 
     args.model_dir = model_dir
-    save_parameters(args,model_dir, sys.argv)
+    filename = 'FLAGS' if args.is_train else 'FLAGS_pred'
+    save_parameters(args,model_dir, sys.argv, name=filename)
     params = {}
 
 
@@ -145,13 +146,13 @@ def main(unused_args):
             train_distribute=strategy, eval_distribute=strategy)
     else:
         run_config = tf.estimator.RunConfig(save_checkpoints_secs=args.eval_every)
-
-    model = tf.estimator.Estimator(model_fn=partial(model_fn,params=params),
+    Model_fn = Model(params)
+    model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
                                    model_dir=model_dir, config=run_config)
 
     tf.logging.set_verbosity(tf.logging.INFO)# Show training logs.
 
-    if not args.is_predict:
+    if args.is_train:
 
         reader = DataReader(args, is_training=True)
         input_fn, input_fn_val = reader.get_input_fn()
@@ -165,44 +166,123 @@ def main(unused_args):
         eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps = (val_iters), throttle_secs = args.eval_every)
 
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
+
         try:
-            plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/train_data_recomposed')
-            plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/val_data_recomposed')
-            plots.plot_heatmap(reader.patch_gen.label_1, file=model_dir + '/train_label_recomposed',min=-1,max=1)
-            plots.plot_heatmap(reader.patch_gen_val.label_1, file=model_dir + '/val_label_recomposed',min=-1,max=1)
+            plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/sample_train_LR')
+            plots.plot_heatmap(reader.patch_gen.label_1, file=model_dir + '/sample_train_reg_label', min=-1, max=1)
         except AttributeError:
             pass
+        try:
+            plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/sample_val_LR')
+            plots.plot_heatmap(reader.patch_gen_val.label_1, file=model_dir + '/sample_val_reg_label', min=-1, max=1)
+        except AttributeError:
+            pass
+
     else:
-        #TODO check data_recompose output
+
         reader = DataReader(args,is_training=False)
 
-        preds_gen = model.predict(input_fn=reader.input_fn_test) #,predict_keys=['hr_hat_rgb'])
+    reader.non_random_patches()
 
-        nr_patches = reader.patch_gen_test.nr_patches
+    input_fn, input_fn_val = reader.get_input_fn()
+
+    def predict(input_fn, patch_gen, sufix):
+        nr_patches = patch_gen.nr_patches
+
         batch_idxs = (nr_patches) // args.batch_size
 
-        rgb_rec = np.empty(shape=([nr_patches, args.patch_size*args.scale, args.patch_size*args.scale,3]))
-        # pred_c_rec = np.empty(shape=([nr_patches, args.patch_size, args.patch_size]))
-        # pred_r_rec = np.empty(shape=([nr_patches, args.patch_size, args.patch_size,1]))
+        if is_hr_pred:
+            patch = patch_gen.patch_h
+            border = patch_gen.border_lab
+            if 'val' in sufix:
+                ref_data = reader.val_h
+            else:
+                ref_data = reader.train_h
+        else:
+            patch = patch_gen.patch_l
+            border = patch_gen.border
+
+            if 'val' in sufix:
+                ref_data = reader.val
+            else:
+                ref_data = reader.train
+
+        pred_r_rec = np.empty(shape=([nr_patches, patch, patch,1]))
+        pred_c_rec = np.empty(shape=([nr_patches, patch, patch]))
+
+        preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False)  # ,predict_keys=['hr_hat_rgb'])
+
         print('Predicting {} Patches...'.format(nr_patches))
         for idx in xrange(0, batch_idxs):
-        # for idx in xrange(0,100):
-            p_ = preds_gen.next()
+            p_ = preds_iter.next()
             start, stop = idx*args.batch_size, (idx+1)*args.batch_size
-            rgb_rec[start:stop] = p_['y_hat']
-            # pred_c_rec[start:stop] = pc_
-            # pred_r_rec[start:stop] = p_
 
-            if start % 1000 == 0:
+            pred_r_rec[start:stop] = p_['reg']
+            pred_c_rec[start:stop] = np.argmax(p_['sem'],axis=-1)
+
+            if start % 100 == 0:
                 print(start)
-            # recompose
-        border = 4
-        ref_size = (args.scale*(reader.train.shape[1]-border*2), args.scale*(reader.train.shape[0]-border*2))
-        ## Recompose RGB
-        data_recomposed = patches.recompose_images(rgb_rec, size=ref_size, border=border)
-        plots.plot_rgb(data_recomposed,file=model_dir+'/data_recomposed')
 
-        # save
+        ref_size = (ref_data.shape[1], ref_data.shape[0])
+        print ref_size
+        ## Recompose RGB
+        data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
+        plots.plot_heatmap(data_recomposed,file='{}/{}_reg_pred'.format(model_dir,sufix),min=-1,max=4)
+        data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
+        plots.plot_heatmap(data_recomposed,file='{}/{}_sem_pred'.format(model_dir,sufix),min=-1,max=1)
+
+    is_hr_pred = (args.model == 'simpleHR' and args.is_hr_label)
+
+    if args.is_train:
+        predict(input_fn,reader.patch_gen, sufix='train')
+        predict(input_fn_val,reader.patch_gen_val, sufix='val')
+    else:
+        predict(input_fn,reader.patch_gen, sufix='test')
+
+    try:
+        plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/train_LR')
+        plots.plot_heatmap(reader.patch_gen.label_1, file=model_dir + '/train_reg_label', min=-1, max=4)
+    except AttributeError:
+        pass
+    try:
+        plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/val_LR')
+        plots.plot_heatmap(reader.patch_gen_val.label_1, file=model_dir + '/val_reg_label', min=-1,
+                           max=1)
+    except AttributeError:
+        pass
+
+                # plots.plot_rgb(data_recomposed,file=model_dir+'/data_recomposed')
+#         nr_patches = reader1.patch_gen.nr_patches
+#
+#         batch_idxs = (nr_patches) // args.batch_size
+#
+#
+#         pred_r_rec = np.empty(shape=([nr_patches, reader.patch_gen.patch_lab, reader.patch_gen.patch_lab,1]))
+#         pred_c_rec = np.empty(shape=([nr_patches, reader.patch_gen.patch_lab, reader.patch_gen.patch_lab]))
+#
+#         print('Predicting {} Patches...'.format(nr_patches))
+#         for idx in xrange(0, batch_idxs):
+#             p_ = preds_gen.next()
+#             start, stop = idx*args.batch_size, (idx+1)*args.batch_size
+#
+#             pred_r_rec[start:stop] = p_['reg']
+#             pred_c_rec[start:stop] = np.argmax(p_['sem'],axis=-1)
+#
+#             if start % 100 == 0:
+#                 print(start)
+#         border = 4
+#         ref_size = (reader.train_h.shape[1], reader.train_h.shape[0]) #TODO change for lr_lab
+#         print ref_size
+#         ## Recompose RGB
+#         data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border*args.scale)
+#         plots.plot_heatmap(data_recomposed,file=model_dir+'/pred_reg_recomposed') #,min=-1,max=1)
+#         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border*args.scale)
+#         plots.plot_heatmap(data_recomposed,file=model_dir+'/pred_sem_recomposed') #,min=-1,max=1)
+#         # plots.plot_rgb(data_recomposed,file=model_dir+'/data_recomposed')
+
+
+
+
 
 if __name__ == '__main__':
     tf.app.run()

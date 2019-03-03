@@ -53,7 +53,7 @@ def read_labels(args, roi, roi1, is_HR=False):
     # if args.HR_file is not None:
     if is_HR:
         ds_file = args.HR_file
-        scale_smooth = 1
+        scale_smooth = 10//args.scale #TODO CHECK
         scale_lims = args.scale
     else:
         ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
@@ -133,7 +133,7 @@ class DataReader(object):
        masks from the disk, and enqueues them into a TensorFlow queue.
     '''
 
-    def __init__(self, args, is_training):
+    def __init__(self, args, is_training, is_random_patches = True):
         '''Initialise a DataReader.
 
         Args:
@@ -163,7 +163,7 @@ class DataReader(object):
             self.n_channels = self.train[0].shape[-1]
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
-                                            patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=True,
+                                            patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=is_random_patches,
                                             scale=args.scale, max_N=args.train_patches)
 
             # featl,datah = self.patch_gen.get_inputs()
@@ -182,7 +182,7 @@ class DataReader(object):
             #                                     patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
             #                                     scale=args.scale)
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
-                                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=True,border=4,
+                                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=is_random_patches,border=4,
                                                 scale=args.scale, max_N=args.val_patches)
 
             # featl,data_h = self.patch_gen_val.get_inputs()
@@ -203,11 +203,15 @@ class DataReader(object):
 
         else:
 
-            self.patch_gen_test = PatchExtractor(dataset_low=self.train, dataset_high=None, label=self.labels,
+            self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                                  patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
                                                  scale=args.scale)
 
             self.n_channels = self.train[0].shape[-1]
+
+            # self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=None, label=self.labels_val,
+            #                                      patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
+            #                                      scale=args.scale)
 
             # for _ in range(10):
             #     feat,_ = self.patch_gen_test.get_inputs()
@@ -217,6 +221,40 @@ class DataReader(object):
             #     im.show()
             #
             # print('done')
+            if False:
+                nr_patches = self.patch_gen.nr_patches
+                rgb_rec = np.empty(shape=[nr_patches, args.patch_size*args.scale, args.patch_size*args.scale,3])
+
+                for idx in xrange(0, nr_patches):
+                    # for idx in xrange(0,100):
+                    lr, hr = self.patch_gen.get_inputs()
+
+                    rgb_rec[idx] = hr[...,0:3]
+                    # pred_c_rec[start:stop] = pc_
+
+
+                    if idx % 1000 == 0:
+                        print(idx)
+                        # recompose
+                border = 4
+                ref_size = (self.train_h.shape[1],self.train_h.shape[0])
+                print ref_size
+                ## Recompose RGB
+                import patches
+                data_recomposed = patches.recompose_images(rgb_rec, size=ref_size, border=border*args.scale)
+                # plots.plot_heatmap(data_recomposed, file=model_dir + '/pred_reg_recomposed')  # ,min=-1,max=1)
+                plot_rgb(data_recomposed,file='data_recomposed')
+
+    def non_random_patches(self):
+        self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
+                                        patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
+                                        scale=self.args.scale)
+        if self.is_training:
+
+            self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
+                                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                                is_random=False, border=4,
+                                                scale=self.args.scale)
 
     def normalize(self, features, labels):
 
@@ -249,9 +287,8 @@ class DataReader(object):
                     'feat_h': data_h}, tf.expand_dims(data_l[..., -1], axis=-1)
 
     def read_data(self, is_training=True):
-
+        self.is_HR_labels = self.args.is_hr_label
         if is_training:
-            self.is_HR_labels = self.args.is_hr_label
             print(' [*] Loading Train data ')
             self.train_h = readHR(self.args,
                                   roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
@@ -324,14 +361,45 @@ class DataReader(object):
                 print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
 
         else:
+            self.train_h = readHR(self.args,
+                                  roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
+            self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
+            self.labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr, roi1=self.args.roi_lon_lat_tr_lb,
+                                      is_HR=self.is_HR_labels)
 
+            self.nb_bands = self.train.shape[-1]
+            self.mean_train = np.zeros(self.nb_bands)
+            self.std_train = np.ones(self.nb_bands)
+
+            scale = self.args.scale
+            if self.train_h is not None:
+                x_shapes, y_shapes = self.compute_shapes(dset_h=self.train_h, dset_l=self.train, scale=scale)
+
+                print(
+                    ' Predict shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0],
+                                                                                   self.train.shape[1],
+                                                                                   self.train_h.shape[0],
+                                                                                   self.train_h.shape[1]))
+                # Reduce data to the enlarged 10m pixels
+                self.train_h = self.train_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
+                self.train = self.train[0:x_shapes, 0:y_shapes, :]
+                if self.is_HR_labels:
+                    self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+                else:
+                    self.labels = self.labels[0:x_shapes, 0:y_shapes]
+
+                print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
+                                                                   self.train_h.shape[0], self.train_h.shape[1]))
+
+
+        if False:
             print(' [*] Loading data for Prediction ')
             # self.train_h = readHR(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
             self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-            if self.args.points is not None:
-                self.labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr, roi1=self.args.roi_lon_lat_tr_lb)
-            else:
-                self.labels = None
+
+            self.labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr, roi1=self.args.roi_lon_lat_tr_lb)  if self.args.points is not None else None
+            self.train_h = readHR(self.args,
+                                  roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
 
             self.nb_bands = self.train.shape[-1]
 
@@ -357,18 +425,20 @@ class DataReader(object):
         x_shape, y_shape = min(int(x_h / scale), x_l), min(int(y_h / scale), y_l)
         return x_shape, y_shape
 
-    def input_fn(self, is_train=True):
-        # np.random.seed(99)
-
+    def init_constants_normalization(self):
         tf.Variable(self.mean_train.astype(np.float32), name='mean_train', trainable=False, validate_shape=True,
                     expected_shape=tf.shape([self.n_channels]))
-        # tf.Variable(self.luminosity_scale, name='scale_preprocessing', trainable=False, expected_shape=tf.shape(1))
+
         tf.Variable(self.std_train.astype(np.float32), name='std_train', trainable=False,
                     expected_shape=tf.shape([self.n_channels]))
 
         tf.constant(self.mean_train.astype(np.float32), name='mean_train_k')
-        # tf.constant(self.luminosity_scale, name='scale_preprocessing_k')
+
         tf.constant(self.std_train.astype(np.float32), name='std_train_k')
+    def input_fn(self, is_train=True):
+        # np.random.seed(99)
+        self.init_constants_normalization()
+
         if is_train:
             gen_func = self.patch_gen.get_iter
             patch_l, patch_h = self.patch_l, self.patch_h
@@ -407,36 +477,33 @@ class DataReader(object):
 
         return input_fn, input_fn_val
 
-    def input_fn_test(self):
-
-        self.mean_train = tf.Variable(np.zeros(self.train.shape[-1]), name='mean_train', trainable=False,
-                                      dtype=tf.float32)
-        self.luminosity_scale = tf.Variable(9999.0, name='scale_preprocessing', trainable=False, dtype=tf.float32)
-        gen_func = self.patch_gen_test.get_iter
-
-        if self.labels is not None:
-            ds = tf.data.Dataset.from_generator(
-                gen_func, (tf.float32, tf.float32),
-                (
-                    tf.TensorShape([self.patch_l, self.patch_l,
-                                    self.n_channels]),
-                    tf.TensorShape([self.patch_h, self.patch_h,
-                                    1])
-                ))
-            ds = ds.map(self.reorder_ds).map(self.normalize)
-        else:
-            ds = tf.data.Dataset.from_generator(
-                gen_func, (tf.float32, tf.float32),
-                (
-                    tf.TensorShape([self.patch_l, self.patch_l,
-                                    self.n_channels]),
-                    tf.TensorShape([None])
-                ))
-            ds = ds.map(self.normalize)
-
-        ds = ds.batch(self.batch).prefetch(buffer_size=10)
-
-        return ds
+    # def input_fn_test(self):
+    #     self.init_constants_normalization()
+    #     gen_func = self.patch_gen_test.get_iter
+    #
+    #     if self.labels is not None:
+    #         ds = tf.data.Dataset.from_generator(
+    #             gen_func, (tf.float32, tf.float32),
+    #             (
+    #                 tf.TensorShape([self.patch_l, self.patch_l,
+    #                                 self.n_channels]),
+    #                 tf.TensorShape([self.patch_h, self.patch_h,
+    #                                 1])
+    #             ))
+    #         ds = ds.map(self.reorder_ds)
+    #     else:
+    #         ds = tf.data.Dataset.from_generator(
+    #             gen_func, (tf.float32, tf.float32),
+    #             (
+    #                 tf.TensorShape([self.patch_l, self.patch_l,
+    #                                 self.n_channels]),
+    #                 tf.TensorShape([None])
+    #             ))
+    #         ds = ds.map(self.normalize)
+    #
+    #     ds = ds.batch(self.batch).prefetch(buffer_size=10)
+    #
+    #     return ds
 
 
 class PatchExtractor:
@@ -463,9 +530,12 @@ class PatchExtractor:
             ' patch of size {} is bigger than ds_l {}'.format(self.patch_l, self.d_l.shape)
 
         self.patch_h = patch_l * scale
+        self.patch_lab = self.patch_h if self.is_HR_label else self.patch_l
+
+
         if self.border is not None:
             assert self.patch_l > self.border * 2
-
+            self.border_lab = self.border * self.scale if self.is_HR_label else self.border
         if not self.is_random:
             self.compute_tile_ranges()
 
@@ -524,16 +594,16 @@ class PatchExtractor:
             scale = self.scale
         x_l, y_l = map(int, xy_corner)
         x_h, y_h = x_l * scale, y_l * scale
-        x_lab,y_lab, patch_lab = (x_h,y_h,self.patch_h) if self.is_HR_label else (x_l,y_l,self.patch_l)
+        x_lab,y_lab = (x_h,y_h) if self.is_HR_label else (x_l,y_l)
 
         patch_h = self.get_patch_corner(self.d_h,x_h,y_h,self.patch_h)
-        label = self.get_patch_corner(self.label,x_lab,y_lab,patch_lab)
+        label = self.get_patch_corner(self.label,x_lab,y_lab,self.patch_lab)
         # if self.scale is not None:
         patch_l = self.get_patch_corner(self.d_l, x_l, y_l, self.patch_l)
 
         if IS_DEBUG and label is not None:
-            self.label_1[x_lab:x_lab + patch_lab,
-                y_lab:y_lab + patch_lab] = label
+            self.label_1[x_lab:x_lab + self.patch_lab,
+                y_lab:y_lab + self.patch_lab] = label
 
         if IS_DEBUG and patch_l is not None:
                 self.d_l1[x_l:x_l + self.patch_l,
@@ -564,7 +634,7 @@ class PatchExtractor:
 
         borders = (self.border, self.border)
         borders_h = (self.border * self.scale, self.border * self.scale)
-
+        borders_lab = (self.border_lab, self.border_lab)
         self.range_i = [None] * len(self.d_l)
         self.range_j = [None] * len(self.d_l)
         self.nr_patches = [None] * len(self.d_l)
@@ -607,13 +677,13 @@ class PatchExtractor:
 
         self.d_h = np.pad(self.d_h, (borders_h, borders_h, (0, 0)), mode='symmetric') if self.d_h is not None else None
 
-        if self.is_HR_label:
-            self.label = np.pad(self.label, (borders_h, borders_h, (0, 0)),
-                                mode='symmetric') if self.label is not None else None
-        else:
-            self.label = np.pad(self.label, (borders, borders, (0, 0)),
-                                mode='symmetric') if self.label is not None else None
+        self.label = np.pad(self.label, (borders_lab, borders_lab, (0, 0)),
+                            mode='symmetric') if self.label is not None else None
 
+
+        if IS_DEBUG:
+            self.d_l1 = np.zeros_like(self.d_l)
+            self.label_1 = np.zeros_like(self.label)
     def get_inputs(self):
         return self.inputs_queue.get()
 

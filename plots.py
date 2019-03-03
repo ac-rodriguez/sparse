@@ -20,7 +20,7 @@ def check_dims(data):
 def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='hot', file=None):
 
     data[np.isnan(data)] = -1
-
+    data = np.float32(data)
     mi, ma = np.nanpercentile(data, percentiles)
     if min is None:
         min = mi
