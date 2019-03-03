@@ -148,7 +148,7 @@ class DataReader(object):
         self.patch_l_eval = self.args.patch_size_eval
 
         self.scale = self.args.scale
-        self.gsd = '{:.1f}'.format(10.0/self.scale)
+        self.gsd = str(10.0/self.scale)
         self.args.HR_file = os.path.join(self.args.HR_file,'3000_gsd{}.tif'.format(self.gsd))
         self.patch_h = self.args.patch_size * self.scale
 
