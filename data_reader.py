@@ -147,9 +147,9 @@ class DataReader(object):
         self.patch_l = self.args.patch_size
         self.patch_l_eval = self.args.patch_size_eval
 
-        # TODO compute scale from the data
         self.scale = self.args.scale
-
+        self.gsd = '{:.1f}'.format(10.0/self.scale)
+        self.args.HR_file = os.path.join(self.args.HR_file,'3000_gsd{}.tif'.format(self.gsd))
         self.patch_h = self.args.patch_size * self.scale
 
         self.args.max_N = 1e5
@@ -416,8 +416,8 @@ class DataReader(object):
                 self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
                 print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
                                                                    self.labels.shape[0], self.labels.shape[1]))
-
-    def compute_shapes(self, scale, dset_h, dset_l):
+    @staticmethod
+    def compute_shapes(scale, dset_h, dset_l):
 
         enlarge = lambda x: int(x / scale) * scale
         x_h, y_h, _ = map(enlarge, dset_h.shape)
