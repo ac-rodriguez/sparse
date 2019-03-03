@@ -79,6 +79,8 @@ parser.add_argument("--l2-weights-every", default=None, type=int,
                     help="How often to update the L2 norm of the weights")
 parser.add_argument("--is-bilinear", default=False, action="store_true",
                     help="downsampling of HR_hat is bilinear (True) or conv (False).")
+parser.add_argument("--is-out-relu", default=False, action="store_true",
+                    help="Adds a Relu to the output of the reg prediction")
 parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
 parser.add_argument("--is-lower-bound", default=False, action="store_true",

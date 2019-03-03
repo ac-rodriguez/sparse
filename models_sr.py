@@ -1,4 +1,5 @@
 import tensorflow as tf
+import sys
 
 from colorize import slice_last_dim
 from tools_tf import bilinear, bn_layer, resid_block
@@ -133,11 +134,22 @@ def prelu(_x):
     return tf.nn.relu(_x)
 
 
-def dbpn_SR(feat_l, is_training=True):
-    feat = 256
-    kernel = 6
-    stride = 2
+def dbpn_SR(feat_l,scale=2, is_training=True, deep=1):
 
+    if scale == 2:
+        kernel = 6
+        stride = 2
+    elif scale == 4:
+        kernel = 8
+        stride = 4
+    elif scale == 8:
+        kernel = 12
+        stride = 8
+    else:
+        print('scale {} not defined'.format(scale))
+        sys.exit(1)
+
+    feat = 256
     base_filter = 64
 
     X = ConvBlock(feat_l, filters=feat, kernel=kernel, stride=1, padding='SAME', activation_fn=prelu, is_training=is_training)
@@ -153,7 +165,7 @@ def dbpn_SR(feat_l, is_training=True):
     concat_l = tf.concat([l, l1],axis=3)
     h = UpBlock(concat_l, filters=base_filter*3,kernel=kernel,stride=stride,padding='SAME', activation_fn=prelu, is_training=is_training)
 
-    for _ in range(1):
+    for _ in range(deep):
         concat_h = tf.concat([h, concat_h],axis=3)
         l = DownBlock(concat_h, filters=concat_h.shape[-1], kernel=kernel, stride=stride, padding='SAME',
                       activation_fn=prelu, is_training=is_training)

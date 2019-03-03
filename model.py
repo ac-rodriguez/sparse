@@ -127,8 +127,11 @@ class Model:
             feat = tf.concat([HR_hat, feat_l_up], axis=3)
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-            for key, val in y_hat.iteritems():
-                y_hat[key] = bilinear(val, self.patch_size)
+            if not self.is_hr_label:
+                for key, val in y_hat.iteritems():
+                    y_hat[key] = bilinear(val, self.patch_size)
+            else:
+                self.loss_in_HR = True
 
         elif self.model == 'simple3':  # SR as a side task - leaner version
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=True)
@@ -146,12 +149,38 @@ class Model:
             # Estimated sup-pixel features from LR
             y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
         elif self.model == 'simple4':  # SR as a side task - leaner version
-            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training)
+            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale)
 
             HR_hat_down = self.down_(HR_hat, 3)
 
             # Estimated sup-pixel features from LR
             y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
+        elif self.model == 'simple4a':  # SR as a side task
+            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
+
+            HR_hat_down = self.down_(HR_hat, 3)
+
+            # Estimated sub-pixel features from LR
+            x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
+
+            x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+
+            feat = tf.concat([x_h, x_l], axis=3)
+            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
+
+        elif self.model == 'simple4b':  # SR as a side task
+            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
+
+            HR_hat_down = self.down_(HR_hat, 3)
+
+            # Estimated sub-pixel features from LR
+            x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
+
+            x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+
+            feat = tf.concat([x_h, x_l], axis=3)
+            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
+
         elif self.model == 'simpleHR':
             feat_l_up = self.up_(self.feat_l, 8)
 
@@ -161,7 +190,20 @@ class Model:
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
             if not self.is_hr_label:
                 for key, val in y_hat.iteritems():
-                    y_hat[key] = bilinear(val, self.patch_size)
+                    y_hat[key] = sum_pool(val, self.scale)
+            else:
+                self.loss_in_HR = True
+        elif self.model == 'simpleHRa':
+            feat_l_up = self.up_(self.feat_l, 8)
+
+            # Estimated sub-pixel features from LR
+            feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
+
+            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
+            if not self.is_hr_label:
+                for key, val in y_hat.iteritems():
+                    val_ = sum_pool(val, self.scale)
+                    y_hat[key] = tf.layers.conv2d(val_, 128, 1, activation=None, padding='same')
             else:
                 self.loss_in_HR = True
         elif self.model == 'simpleHR1':
@@ -174,6 +216,8 @@ class Model:
         else:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
+        if self.args.is_out_relu:
+            y_hat['reg'] = tf.nn.relu(y_hat['reg'])
         return y_hat, HR_hat
 
     def compute_loss(self, y_hat,HR_hat):
