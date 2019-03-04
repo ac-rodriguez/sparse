@@ -119,15 +119,15 @@ def read_coords(Input):
 
     return points
 
-def rasterize_points_constrained(Input, refDataset, lims, lims1, up_scale=10, sigma=None):
+def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_scale=10, sigma=None):
 
     lims = [i * up_scale for i in lims]
 
     xmin, ymin, xmax, ymax = lims # points come already ordered
 
-    lims1 = [i * up_scale for i in lims1]
+    lims_with_labels = [i * up_scale for i in lims_with_labels]
 
-    xmin1, ymin1, xmax1, ymax1 = lims1
+    xmin1, ymin1, xmax1, ymax1 = lims_with_labels
 
 
     Image = gdal.Open(refDataset)

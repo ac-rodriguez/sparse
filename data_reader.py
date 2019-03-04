@@ -49,7 +49,7 @@ def read_and_upsample_sen2(args, roi_lon_lat):
     return data
 
 
-def read_labels(args, roi, roi1, is_HR=False):
+def read_labels(args, roi, roi_with_labels, is_HR=False):
     # if args.HR_file is not None:
     ref_scale=16 # 10m -> 0.625m
     sigma = ref_scale/np.pi
@@ -69,12 +69,16 @@ def read_labels(args, roi, roi1, is_HR=False):
     lims_H = gp.to_xy_box(roi, ds, enlarge=scale_lims)
     print(' [*] Reading labeled Area')
 
-    lims_H1 = gp.to_xy_box(roi1, ds, enlarge=scale_lims)
-    # TODO check for predict if we have a smoothing of points
-    labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H, lims1=lims_H1,
-                                             up_scale=ref_scale,sigma=sigma)  # DS is already at HR scale we do not need to upsample anything
+    lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
 
-    return np.expand_dims(labels, axis=2)
+    labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
+                                             lims_with_labels=lims_with_labels, up_scale=ref_scale,
+                                             sigma=sigma)  # DS is already at HR scale we do not need to upsample anything
+    # TODO Check
+    (xmin,ymin,xmax,ymax) = lims_with_labels
+    xmin, xmax = xmin -lims_H[0], xmax - lims_H[0]
+    ymin, ymax = ymin -lims_H[1], ymax - lims_H[1]
+    return np.expand_dims(labels, axis=2), (xmin,ymin,xmax,ymax)
 
 
 def read_and_upsample_test_file(path):
@@ -164,7 +168,7 @@ class DataReader(object):
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                             patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=is_random_patches,
-                                            scale=args.scale, max_N=args.train_patches)
+                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels)
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
@@ -183,7 +187,7 @@ class DataReader(object):
             #                                     scale=args.scale)
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                 patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=is_random_patches,border=4,
-                                                scale=args.scale, max_N=args.val_patches)
+                                                scale=args.scale, max_N=args.val_patches, lims_with_labels=self.lims_labels_val)
 
             # featl,data_h = self.patch_gen_val.get_inputs()
             # plt.imshow(data_h[...,0:3])
@@ -205,7 +209,7 @@ class DataReader(object):
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                                  patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                                 scale=args.scale)
+                                                 scale=args.scale, lims_with_labels=self.lims_labels)
 
             self.n_channels = self.train[0].shape[-1]
 
@@ -248,13 +252,13 @@ class DataReader(object):
     def non_random_patches(self):
         self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                         patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                        scale=self.args.scale)
+                                        scale=self.args.scale, lims_with_labels=self.lims_labels)
         if self.is_training:
 
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                 patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
                                                 is_random=False, border=4,
-                                                scale=self.args.scale)
+                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val)
 
     def normalize(self, features, labels):
 
@@ -293,15 +297,15 @@ class DataReader(object):
             self.train_h = readHR(self.args,
                                   roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
             self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-            self.labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr, roi1=self.args.roi_lon_lat_tr_lb,
-                                      is_HR=self.is_HR_labels)
+            self.labels, self.lims_labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
+                                      roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
             print(' [*] Loading Validation data ')
             self.val_h = readHR(self.args,
                                 roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
             self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
-            self.labels_val = read_labels(self.args, roi=self.args.roi_lon_lat_val, roi1=self.args.roi_lon_lat_val_lb,
-                                          is_HR=self.is_HR_labels)
+            self.labels_val,self.lims_labels_val = read_labels(self.args, roi=self.args.roi_lon_lat_val,
+                                          roi_with_labels=self.args.roi_lon_lat_val_lb, is_HR=self.is_HR_labels)
 
             # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
             # self.N_pixels = self.train.shape[0] * self.train.shape[1]
@@ -364,8 +368,8 @@ class DataReader(object):
             self.train_h = readHR(self.args,
                                   roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
             self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-            self.labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr, roi1=self.args.roi_lon_lat_tr_lb,
-                                      is_HR=self.is_HR_labels)
+            self.labels, _ = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
+                                      roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
             self.nb_bands = self.train.shape[-1]
             self.mean_train = np.zeros(self.nb_bands)
@@ -397,7 +401,8 @@ class DataReader(object):
             # self.train_h = readHR(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
             self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
 
-            self.labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr, roi1=self.args.roi_lon_lat_tr_lb)  if self.args.points is not None else None
+            self.labels,_ = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
+                                      roi_with_labels=self.args.roi_lon_lat_tr_lb) if self.args.points is not None else None
             self.train_h = readHR(self.args,
                                   roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
 
@@ -508,11 +513,12 @@ class DataReader(object):
 
 class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
-                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4):
+                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None):
 
         self.d_l = dataset_low
         self.d_h = dataset_high
         self.label = label
+        self.lims_lab = lims_with_labels
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
             self.label_1 = np.zeros_like(self.label)
@@ -547,8 +553,32 @@ class PatchExtractor:
             max_patches = min(self.nr_patches, n_x*self.n_y)
             print('Extracted random patches = {}'.format(max_patches))
 
+            # Patches with ground truth
+            buffer_size = self.patch_l
+            ymin,xmin,ymax,xmax = self.lims_lab
+            xmax,ymax = min(xmax, n_x-self.patch_l), min(ymax, self.n_y-self.patch_l)
+            xmin,ymin = max(xmin-buffer_size,0),max(ymin-buffer_size,0)
+            area_labels = (xmax-xmin+buffer_size,ymax-ymin+buffer_size)
+            # area_labels = (50,50)
+
+            indices = np.random.choice(area_labels[0]*area_labels[1],size=int(max_patches*0.1),replace=False)
+            dx, dy, n_y_lab = max(0,xmin -buffer_size//2), max(0,ymin -buffer_size//2), area_labels[1]
+
+            coords = np.array(map(lambda x: divmod(x,n_y_lab),indices))
+
+            coords1 = coords + (dx,dy)
+
+            indices = coords1[:,0]*self.n_y + coords1[:,1]
+            assert np.max(indices) < (n_x*self.n_y), (np.max(indices), (n_x*self.n_y))
+
             # Corner is always computed in low_res data
-            self.indices = np.random.choice(n_x * self.n_y, size=int(max_patches), replace=False)
+            indices1 = np.random.choice(n_x * self.n_y, size=int(max_patches)-len(indices), replace=False)
+
+            self.indices = np.concatenate((indices,indices1))
+            np.random.shuffle(self.indices)
+
+            print(' {}/{} are patches with GT'.format(len(indices),len(self.indices)))
+
             self.rand_ind = 0
         self.lock = Lock()
         self.inputs_queue = Queue(maxsize=max_queue_size)

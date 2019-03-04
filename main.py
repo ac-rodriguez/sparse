@@ -233,7 +233,7 @@ def main(unused_args):
         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
         plots.plot_heatmap(data_recomposed,file='{}/{}_sem_pred'.format(model_dir,sufix),min=-1,max=1)
 
-    is_hr_pred = (args.model == 'simpleHR' and args.is_hr_label)
+    is_hr_pred = Model_fn.loss_in_HR
 
     if args.is_train:
         predict(input_fn,reader.patch_gen, sufix='train')
