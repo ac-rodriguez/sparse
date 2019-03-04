@@ -73,8 +73,7 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
 
     labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
                                              lims_with_labels=lims_with_labels, up_scale=ref_scale,
-                                             sigma=sigma)  # DS is already at HR scale we do not need to upsample anything
-    # TODO Check
+                                             sigma=None)
     (xmin,ymin,xmax,ymax) = lims_with_labels
     xmin, xmax = xmin -lims_H[0], xmax - lims_H[0]
     ymin, ymax = ymin -lims_H[1], ymax - lims_H[1]
