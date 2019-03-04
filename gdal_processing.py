@@ -166,7 +166,8 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
                 y1 = y - ymin
 
                 mask[y1,x1]+=1
-
+    z_norm = np.sum(mask)
+    print(' max density = {}'.format(mask.max()))
     if up_scale > 1:
         # sigma = scale
         if sigma is None:
@@ -174,9 +175,13 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
         mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
 
         mask = block_reduce(mask, (up_scale, up_scale), np.sum)
+        # clean reg
+        mask[mask<1e-5]=0
+        mask = mask * (z_norm / np.sum(mask))
         # mask = mask[::scale,::scale]
         print('GT points were computed on a {} times larger area than RefData\n'
               'smoothed with a Gaussian \sigma = {:.2f} and downsampled to original res'.format(up_scale,sigma))
+    print(' max density = {}'.format(mask.max()))
     scale_f = float(up_scale)
     # Set points outside of constraint to -1
     mask[:,:int((xmin1-xmin) / scale_f)] = -1

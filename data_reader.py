@@ -73,7 +73,7 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
 
     labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
                                              lims_with_labels=lims_with_labels, up_scale=ref_scale,
-                                             sigma=None)
+                                             sigma=sigma)
     (xmin,ymin,xmax,ymax) = lims_with_labels
     xmin, xmax = xmin -lims_H[0], xmax - lims_H[0]
     ymin, ymax = ymin -lims_H[1], ymax - lims_H[1]
@@ -512,7 +512,7 @@ class DataReader(object):
 
 class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
-                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1):
+                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, parent = None):
 
         self.d_l = dataset_low
         self.d_h = dataset_high

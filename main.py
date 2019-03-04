@@ -13,7 +13,7 @@ from model import Model
 import plots
 import patches
 
-
+# colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/coco'
 
 LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
@@ -230,7 +230,7 @@ def main(unused_args):
         print ref_size
         ## Recompose RGB
         data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-        plots.plot_heatmap(data_recomposed,file='{}/{}_reg_pred'.format(model_dir,sufix),min=-1,max=4)
+        plots.plot_heatmap(data_recomposed,file='{}/{}_reg_pred'.format(model_dir,sufix),min=-1,max=None)
         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
         plots.plot_heatmap(data_recomposed,file='{}/{}_sem_pred'.format(model_dir,sufix),min=-1,max=1)
 
@@ -241,16 +241,17 @@ def main(unused_args):
         predict(input_fn_val,reader.patch_gen_val, sufix='val')
     else:
         predict(input_fn,reader.patch_gen, sufix='test')
-
+    f1 = lambda x: np.where(x == -1, x, x * (2.0 / np.max(x)))
     try:
         plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/train_LR')
-        plots.plot_heatmap(reader.patch_gen.label_1, file=model_dir + '/train_reg_label', min=-1, max=4)
+        plots.plot_heatmap(f1(reader.patch_gen.label_1), file=model_dir + '/train_reg_label', min=-1, max=None)
+        plots.plot_heatmap(np.int32(reader.patch_gen.label_1 > Model_fn.sem_threshold), file=model_dir + '/val_reg_label', min=-1,max=1)
     except AttributeError:
         pass
     try:
         plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/val_LR')
-        plots.plot_heatmap(reader.patch_gen_val.label_1, file=model_dir + '/val_reg_label', min=-1,
-                           max=1)
+        plots.plot_heatmap(f1(reader.patch_gen_val.label_1), file=model_dir + '/val_reg_label', min=-1,max=None)
+        plots.plot_heatmap(reader.patch_gen_val.label_1 > Model_fn.sem_threshold, file=model_dir + '/val_reg_label', min=-1,max=1)
     except AttributeError:
         pass
 

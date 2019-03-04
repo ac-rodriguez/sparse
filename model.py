@@ -7,7 +7,7 @@ from models_reg import simple
 from models_sr import SR_task, dbpn_SR, slice_last_dim
 from tools_tf import bilinear, snr_metric, sum_pool,avg_pool, get_lr_ADAM
 
-
+colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 
 class Model:
     def __init__(self, params):
@@ -25,7 +25,7 @@ class Model:
 
         self.float_ = lambda x: tf.cast(x, dtype=tf.float32)
         self.loss_in_HR = False
-
+        self.sem_threshold = 0.5
         self.model = self.args.model
 
     def model_fn(self,features, labels, mode):
@@ -46,7 +46,8 @@ class Model:
 
         if mode == tf.estimator.ModeKeys.PREDICT:
             return tf.estimator.EstimatorSpec(mode, predictions=y_hat)
-
+        if self.loss_in_HR:
+            self.sem_threshold = 1e-5
         self.compute_loss(y_hat,HR_hat)
         self.compute_summaries(y_hat,HR_hat)
 
@@ -228,7 +229,7 @@ class Model:
             #TODO check what happens with labels == -1
             self.labels = sum_pool(self.labels, self.scale, name='Label_down')
 
-        self.label_sem = tf.squeeze(int_(tf.greater(self.labels, 0.5)), axis=3)
+        self.label_sem = tf.squeeze(int_(tf.greater(self.labels, self.sem_threshold)), axis=3)
 
         self.w = self.float_(tf.where(tf.greater_equal(self.labels, 0.0),
                             tf.ones_like(self.labels),  ## for wherever i have labels
@@ -273,7 +274,11 @@ class Model:
 
         uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
         inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
-        inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=4, cmap='hot'))
+        if self.loss_in_HR:
+            f1 = lambda x: tf.where(x ==-1,x,x*(2.0/tf.reduce_max(x)))
+            inv_reg_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='hot'))
+        else:
+            inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1,vmax=2.0, cmap='hot'))
         inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1, cmap='hot'))
         int_ = lambda x: tf.cast(x, dtype=tf.int64)
 
@@ -311,12 +316,13 @@ class Model:
             labels = sum_pool(self.labels, self.scale, name='Label_down')
             y_hat_reg = sum_pool(y_hat['reg'], self.scale, name='y_reg_down')
 
-            label_sem = tf.squeeze(int_(tf.greater(labels, 0.5)), axis=3)
+            label_sem = tf.squeeze(int_(tf.greater(labels, self.sem_threshold)), axis=3)
             pred_class= tf.squeeze(tf.round(avg_pool(self.float_(pred_class),self.scale,name='sem_down')),axis=3)
 
             w = self.float_(tf.where(tf.greater_equal(labels, 0.0),
                                      tf.ones_like(labels),  ## for wherever i have labels
                                      tf.zeros_like(labels)))
+            inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='hot'))
 
             image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, labels, dtype=tf.uint8),
                                                         tf.map_fn(inv_reg_, y_hat_reg, dtype=tf.uint8)])
