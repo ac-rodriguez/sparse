@@ -168,7 +168,7 @@ class DataReader(object):
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                             patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=is_random_patches,
-                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels)
+                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels)
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
@@ -187,7 +187,7 @@ class DataReader(object):
             #                                     scale=args.scale)
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                 patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=is_random_patches,border=4,
-                                                scale=args.scale, max_N=args.val_patches, lims_with_labels=self.lims_labels_val)
+                                                scale=args.scale, max_N=args.val_patches, lims_with_labels=self.lims_labels_val, patches_with_labels=self.args.patches_with_labels)
 
             # featl,data_h = self.patch_gen_val.get_inputs()
             # plt.imshow(data_h[...,0:3])
@@ -209,7 +209,7 @@ class DataReader(object):
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                                  patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                                 scale=args.scale, lims_with_labels=self.lims_labels)
+                                                 scale=args.scale, lims_with_labels=self.lims_labels, patches_with_labels=self.args.patches_with_labels)
 
             self.n_channels = self.train[0].shape[-1]
 
@@ -252,13 +252,13 @@ class DataReader(object):
     def non_random_patches(self):
         self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                         patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                        scale=self.args.scale, lims_with_labels=self.lims_labels)
+                                        scale=self.args.scale, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels)
         if self.is_training:
 
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                 patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
                                                 is_random=False, border=4,
-                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val)
+                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val,  patches_with_labels=self.args.patches_with_labels)
 
     def normalize(self, features, labels):
 
@@ -513,11 +513,12 @@ class DataReader(object):
 
 class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
-                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None):
+                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1):
 
         self.d_l = dataset_low
         self.d_h = dataset_high
         self.label = label
+        self.patches_with_labels = patches_with_labels
         self.lims_lab = lims_with_labels
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
@@ -561,7 +562,7 @@ class PatchExtractor:
             area_labels = (xmax-xmin+buffer_size,ymax-ymin+buffer_size)
             # area_labels = (50,50)
 
-            indices = np.random.choice(area_labels[0]*area_labels[1],size=int(max_patches*0.1),replace=False)
+            indices = np.random.choice(area_labels[0]*area_labels[1],size=int(max_patches*self.patches_with_labels),replace=False)
             dx, dy, n_y_lab = max(0,xmin -buffer_size//2), max(0,ymin -buffer_size//2), area_labels[1]
 
             coords = np.array(map(lambda x: divmod(x,n_y_lab),indices))
