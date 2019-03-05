@@ -5,9 +5,8 @@ import numpy as np
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple
 from models_sr import SR_task, dbpn_SR, slice_last_dim
-from tools_tf import bilinear, snr_metric, sum_pool,avg_pool, get_lr_ADAM
+from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, get_lr_ADAM
 
-colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 
 class Model:
     def __init__(self, params):
@@ -17,18 +16,23 @@ class Model:
         self.scale = self.args.scale
         self.is_hr_label = self.args.is_hr_label
         if self.args.is_bilinear:
-            self.down_ = lambda x, _: bilinear(x,self.patch_size, name='HR_hat_down')
+            self.down_ = lambda x, _: bilinear(x, self.patch_size, name='HR_hat_down')
             self.up_ = lambda x, _: bilinear(x, self.patch_size * self.scale, name='HR_hat_down')
         else:
             self.down_ = lambda x, ch: tf.layers.conv2d(x, ch, 3, strides=self.scale, padding='same')
             self.up_ = lambda x, ch: tf.layers.conv2d_transpose(x, ch, 3, strides=self.scale, padding='same')
 
         self.float_ = lambda x: tf.cast(x, dtype=tf.float32)
-        self.loss_in_HR = False
+
         self.sem_threshold = 0.5
+        self.max_output_img = 1
         self.model = self.args.model
 
-    def model_fn(self,features, labels, mode):
+        self.loss_in_HR = False
+        if self.model in ['simple2d','simpleHR','simpleHR1'] and self.args.is_hr_label:
+            self.loss_in_HR = True
+
+    def model_fn(self, features, labels, mode):
         self.is_training = (mode == tf.estimator.ModeKeys.TRAIN)
 
         # self.features = features
@@ -48,8 +52,8 @@ class Model:
             return tf.estimator.EstimatorSpec(mode, predictions=y_hat)
         if self.loss_in_HR:
             self.sem_threshold = 1e-5
-        self.compute_loss(y_hat,HR_hat)
-        self.compute_summaries(y_hat,HR_hat)
+        self.compute_loss(y_hat, HR_hat)
+        self.compute_summaries(y_hat, HR_hat)
 
         if mode == tf.estimator.ModeKeys.TRAIN:
             self.compute_train_op()
@@ -65,8 +69,8 @@ class Model:
             mode, loss=self.loss, eval_metric_ops=self.eval_metric_ops, evaluation_hooks=[eval_summary_hook])
 
     def get_predicitons(self):
-        HR_hat=None
-        size=self.patch_size*self.args.scale
+        HR_hat = None
+        size = self.patch_size * self.args.scale
         if self.model == 'simple':  # Baseline  No High Res for training
             y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training)
 
@@ -132,7 +136,7 @@ class Model:
                 for key, val in y_hat.iteritems():
                     y_hat[key] = bilinear(val, self.patch_size)
             else:
-                self.loss_in_HR = True
+                assert self.loss_in_HR == True
 
         elif self.model == 'simple3':  # SR as a side task - leaner version
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=True)
@@ -193,7 +197,7 @@ class Model:
                 for key, val in y_hat.iteritems():
                     y_hat[key] = sum_pool(val, self.scale)
             else:
-                self.loss_in_HR = True
+                assert self.loss_in_HR == True
         elif self.model == 'simpleHRa':
             feat_l_up = self.up_(self.feat_l, 8)
 
@@ -206,7 +210,7 @@ class Model:
                     val_ = sum_pool(val, self.scale)
                     y_hat[key] = tf.layers.conv2d(val_, 128, 1, activation=None, padding='same')
             else:
-                self.loss_in_HR = True
+                assert self.loss_in_HR == True
         elif self.model == 'simpleHR1':
 
             HR_hat_down = self.down_(self.feat_l, 3)
@@ -221,19 +225,18 @@ class Model:
             y_hat['reg'] = tf.nn.relu(y_hat['reg'])
         return y_hat, HR_hat
 
-    def compute_loss(self, y_hat,HR_hat):
+    def compute_loss(self, y_hat, HR_hat):
 
         int_ = lambda x: tf.cast(x, dtype=tf.int64)
 
         if self.is_hr_label and not self.loss_in_HR:
-            #TODO check what happens with labels == -1
             self.labels = sum_pool(self.labels, self.scale, name='Label_down')
 
         self.label_sem = tf.squeeze(int_(tf.greater(self.labels, self.sem_threshold)), axis=3)
 
         self.w = self.float_(tf.where(tf.greater_equal(self.labels, 0.0),
-                            tf.ones_like(self.labels),  ## for wherever i have labels
-                            tf.zeros_like(self.labels)))
+                                      tf.ones_like(self.labels),  ## for wherever i have labels
+                                      tf.zeros_like(self.labels)))
 
         loss_reg = tf.losses.mean_squared_error(labels=self.labels, predictions=y_hat['reg'], weights=self.w)
 
@@ -248,7 +251,9 @@ class Model:
             loss_sr = tf.nn.l2_loss(HR_hat - self.feat_h)
         else:
             loss_sr = 0
-        self.loss123 = self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem + self.args.lambda_sr * loss_sr
+        self.loss123 = self.args.lambda_reg * loss_reg + \
+                       (1.0 - self.args.lambda_reg) * loss_sem + \
+                       self.args.lambda_sr * loss_sr
         self.loss_w = self.args.lambda_weights * l2_weights
         self.loss = self.loss123 + self.loss_w
 
@@ -261,31 +266,34 @@ class Model:
         tf.summary.scalar('loss/L2Weigths', l2_weights)
         tf.summary.scalar('loss/L2Grad', norm)
 
-    def compute_summaries(self,y_hat,HR_hat):
+    def compute_summaries(self, y_hat, HR_hat):
         graph = tf.get_default_graph()
         try:
             mean_train = graph.get_tensor_by_name("mean_train_k:0")
             scale = graph.get_tensor_by_name("std_train_k:0")
+            max_dens = graph.get_tensor_by_name("max_dens_k:0")
         except KeyError:
             # if constants are not defined in the graph yet,
             # after loading pre-trained networks tf.Variables are used with the correct values
             mean_train = tf.Variable(np.zeros(11), name='mean_train', trainable=False, dtype=tf.float32)
             scale = tf.Variable(np.ones(11), name='std_train', trainable=False, dtype=tf.float32)
+            max_dens = tf.Variable(np.ones(1), name='max_dens', trainable=False, dtype=tf.float32)
 
         uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
         inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
         if self.loss_in_HR:
-            f1 = lambda x: tf.where(x ==-1,x,x*(2.0/tf.reduce_max(x)))
-            inv_reg_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='hot'))
+            f1 = lambda x: tf.where(x == -1, x, x * (2.0 / max_dens))
+            inv_reg_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='jet'))
         else:
-            inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1,vmax=2.0, cmap='hot'))
-        inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1, cmap='hot'))
+            inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
+        inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
         int_ = lambda x: tf.cast(x, dtype=tf.int64)
 
         pred_class = tf.argmax(y_hat['sem'], axis=3)
-        labels = self.labels
-        label_sem = self.label_sem
         w = self.w
+        labels = self.labels
+        label_sem = tf.where(tf.squeeze(tf.greater(self.w, 0), axis=3), self.label_sem,
+                             tf.ones_like(self.label_sem, dtype=tf.int64) * -1)
         y_hat_reg = y_hat['reg']
 
         feat_l_up = tf.map_fn(inv_, bilinear(self.feat_l, size=self.patch_size * self.scale), dtype=tf.uint8)
@@ -293,64 +301,55 @@ class Model:
         feat_l_ = tf.map_fn(inv_, self.feat_l, dtype=tf.uint8)
 
         feat_h_down = uint8_(
-                bilinear(self.feat_h, self.patch_size, name='HR_down')) if self.feat_h is not None else feat_l_
+            bilinear(self.feat_h, self.patch_size, name='HR_down')) if self.feat_h is not None else feat_l_
 
-        image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, labels, dtype=tf.uint8),
-                                                    tf.map_fn(inv_reg_, y_hat_reg, dtype=tf.uint8)])
-
-        image_array_mid = tf.concat(axis=2, values=[tf.map_fn(inv_sem_, label_sem, dtype=tf.uint8),
-                                                    tf.map_fn(inv_sem_, int_(pred_class), dtype=tf.uint8)])
-
+        image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
+        image_array_mid = tf.map_fn(inv_sem_, tf.concat(axis=2, values=[label_sem, int_(pred_class)]), dtype=tf.uint8)
         if self.loss_in_HR:
             assert (self.labels.shape[1:3] == self.feat_h.shape[1:3])
 
             image_array_bottom = tf.concat(axis=2, values=[feat_l_up, uint8_(self.feat_h)])
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
-            tf.summary.image('HR_Loss/HR',
-                             image_array,
-                             max_outputs=2)
+            tf.summary.image('HR_Loss/HR', image_array, max_outputs=self.max_output_img)
 
             # Compute summaries in LR space
 
             labels = sum_pool(self.labels, self.scale, name='Label_down')
             y_hat_reg = sum_pool(y_hat['reg'], self.scale, name='y_reg_down')
 
-            label_sem = tf.squeeze(int_(tf.greater(labels, self.sem_threshold)), axis=3)
-            pred_class= tf.squeeze(tf.round(avg_pool(self.float_(pred_class),self.scale,name='sem_down')),axis=3)
-
             w = self.float_(tf.where(tf.greater_equal(labels, 0.0),
                                      tf.ones_like(labels),  ## for wherever i have labels
                                      tf.zeros_like(labels)))
-            inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='hot'))
 
-            image_array_top = tf.concat(axis=2, values=[tf.map_fn(inv_reg_, labels, dtype=tf.uint8),
-                                                        tf.map_fn(inv_reg_, y_hat_reg, dtype=tf.uint8)])
-            image_array_mid = tf.concat(axis=2, values=[tf.map_fn(inv_sem_, label_sem, dtype=tf.uint8),
-                                                        tf.map_fn(inv_sem_, int_(pred_class), dtype=tf.uint8)])
+            label_sem = tf.squeeze(int_(tf.greater(labels, self.sem_threshold)), axis=3)
+            label_sem = tf.where(tf.squeeze(tf.equal(w, 1), axis=3), label_sem,
+                                 tf.ones_like(label_sem, dtype=tf.int64) * -1)
+
+            pred_class = tf.squeeze(tf.round(avg_pool(self.float_(pred_class), self.scale, name='sem_down')), axis=3)
+
+            inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
+
+            image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
+            image_array_mid = tf.map_fn(inv_sem_, tf.concat(axis=2, values=[label_sem, int_(pred_class)]),
+                                        dtype=tf.uint8)
             image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down])
+
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
-            tf.summary.image('HR_Loss/LR',
-                             image_array,
-                             max_outputs=2)
+            tf.summary.image('HR_Loss/LR', image_array, max_outputs=self.max_output_img)
 
         else:
 
             image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down])
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
-            tf.summary.image('LR_Loss/LR',
-                             image_array,
-                             max_outputs=2)
+            tf.summary.image('LR_Loss/LR', image_array, max_outputs=self.max_output_img)
 
         if HR_hat is not None:
-            image_array = tf.concat(axis=2,
-                                    values=[feat_l_up, uint8_(HR_hat), uint8_(self.feat_h)])
+            image_array = tf.concat(axis=2, values=[feat_l_up, uint8_(HR_hat), uint8_(self.feat_h)])
 
-            tf.summary.image('HR_hat-HR',
-                             image_array,
-                             max_outputs=2)
+            tf.summary.image('HR_hat-HR', image_array, max_outputs=self.max_output_img)
 
         args_tensor = tf.make_tensor_proto([([k, str(v)]) for k, v in sorted(self.args.__dict__.items())])
         meta = tf.SummaryMetadata()
@@ -363,12 +362,9 @@ class Model:
         if not self.is_training:
             # Compute evaluation metrics.
             self.eval_metric_ops = {
-                'metrics/mae': tf.metrics.mean_absolute_error(
-                    labels=labels, predictions=y_hat_reg, weights=w),
-                'metrics/mse': tf.metrics.mean_squared_error(
-                    labels=labels, predictions=y_hat_reg, weights=w),
-                'metrics/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class, num_classes=2,
-                                                   weights=w),
+                'metrics/mae': tf.metrics.mean_absolute_error(labels=labels, predictions=y_hat_reg, weights=w),
+                'metrics/mse': tf.metrics.mean_squared_error(labels=labels, predictions=y_hat_reg, weights=w),
+                'metrics/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class, num_classes=2, weights=w),
                 'metrics/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class, weights=w),
                 'metrics/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class, weights=w),
                 'metrics/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class, weights=w)}
@@ -385,7 +381,6 @@ class Model:
             optimizer = tf.train.AdagradOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'adam':
             optimizer = tf.train.AdamOptimizer(learning_rate=self.args.lr)
-
         else:
             print('option not defined')
             sys.exit(1)
@@ -403,6 +398,5 @@ class Model:
                 train_op1 = optimizer.minimize(self.loss123, global_step=step)
                 train_op2 = optimizer.minimize(self.loss_w, global_step=step)
                 self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, self.args.l2_weights_every))),
-                                   true_fn=lambda: train_op1,
-                                   false_fn=lambda: train_op2)
-
+                                        true_fn=lambda: train_op1,
+                                        false_fn=lambda: train_op2)

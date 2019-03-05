@@ -4,7 +4,7 @@ import argparse
 import sys
 import shutil
 import tensorflow as tf
-from functools import partial
+from tqdm import tqdm
 
 from data_reader import DataReader
 # from deeplab_resnet.data_reader import DataReader as DataReader1
@@ -44,8 +44,6 @@ parser.add_argument("--patches-with-labels",default=0.1,type=float, help="Percen
 parser.add_argument("--val-patches",default=1000,type=int, help="Number of random patches extracted from train area")
 parser.add_argument("--numpy-seed",default=None,type=int, help="Random seed for random patches extraction")
 
-# parser.add_argument("--data", default="dummy",
-#     help="Dataset to be used [dummy, zrh,zrh1,]")
 
 
 
@@ -152,6 +150,9 @@ def main(unused_args):
     Model_fn = Model(params)
     model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
                                    model_dir=model_dir, config=run_config)
+    is_hr_pred = Model_fn.loss_in_HR
+    f1 = lambda x: (np.where(x == -1, x, x * (2.0 / np.percentile(x,99))) if is_hr_pred else x)
+    plt_reg = lambda x,file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
 
     tf.logging.set_verbosity(tf.logging.INFO)# Show training logs.
 
@@ -172,12 +173,12 @@ def main(unused_args):
 
         try:
             plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/sample_train_LR')
-            plots.plot_heatmap(reader.patch_gen.label_1, file=model_dir + '/sample_train_reg_label', min=-1, max=1)
+            plt_reg(reader.patch_gen.label_1, model_dir + '/sample_train_reg_label')
         except AttributeError:
             pass
         try:
             plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/sample_val_LR')
-            plots.plot_heatmap(reader.patch_gen_val.label_1, file=model_dir + '/sample_val_reg_label', min=-1, max=1)
+            plt_reg(reader.patch_gen_val.label_1, model_dir + '/sample_val_reg_label')
         except AttributeError:
             pass
 
@@ -189,21 +190,21 @@ def main(unused_args):
 
     input_fn, input_fn_val = reader.get_input_fn()
 
-    def predict(input_fn, patch_gen, sufix):
-        nr_patches = patch_gen.nr_patches
+    def predict(input_fn, patch_generator, sufix):
+        nr_patches = patch_generator.nr_patches
 
         batch_idxs = (nr_patches) // args.batch_size
 
         if is_hr_pred:
-            patch = patch_gen.patch_h
-            border = patch_gen.border_lab
+            patch = patch_generator.patch_h
+            border = patch_generator.border_lab
             if 'val' in sufix:
                 ref_data = reader.val_h
             else:
                 ref_data = reader.train_h
         else:
-            patch = patch_gen.patch_l
-            border = patch_gen.border
+            patch = patch_generator.patch_l
+            border = patch_generator.border
 
             if 'val' in sufix:
                 ref_data = reader.val
@@ -216,73 +217,41 @@ def main(unused_args):
         preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False)  # ,predict_keys=['hr_hat_rgb'])
 
         print('Predicting {} Patches...'.format(nr_patches))
-        for idx in xrange(0, batch_idxs):
+        for idx in tqdm(xrange(0, batch_idxs)):
             p_ = preds_iter.next()
             start, stop = idx*args.batch_size, (idx+1)*args.batch_size
 
             pred_r_rec[start:stop] = p_['reg']
             pred_c_rec[start:stop] = np.argmax(p_['sem'],axis=-1)
 
-            if start % 100 == 0:
-                print(start)
 
         ref_size = (ref_data.shape[1], ref_data.shape[0])
         print ref_size
         ## Recompose RGB
         data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-        plots.plot_heatmap(data_recomposed,file='{}/{}_reg_pred'.format(model_dir,sufix),min=-1,max=None)
+        plt_reg(data_recomposed,'{}/{}_reg_pred'.format(model_dir,sufix))
         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
-        plots.plot_heatmap(data_recomposed,file='{}/{}_sem_pred'.format(model_dir,sufix),min=-1,max=1)
-
-    is_hr_pred = Model_fn.loss_in_HR
+        plt_reg(data_recomposed,'{}/{}_sem_pred'.format(model_dir,sufix))
 
     if args.is_train:
         predict(input_fn,reader.patch_gen, sufix='train')
         predict(input_fn_val,reader.patch_gen_val, sufix='val')
     else:
         predict(input_fn,reader.patch_gen, sufix='test')
-    f1 = lambda x: np.where(x == -1, x, x * (2.0 / np.max(x)))
+
+
     try:
         plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/train_LR')
-        plots.plot_heatmap(f1(reader.patch_gen.label_1), file=model_dir + '/train_reg_label', min=-1, max=None)
-        plots.plot_heatmap(np.int32(reader.patch_gen.label_1 > Model_fn.sem_threshold), file=model_dir + '/val_reg_label', min=-1,max=1)
+        plt_reg(reader.patch_gen.label_1,model_dir + '/train_reg_label')
+        plots.plot_heatmap(np.int32(reader.patch_gen.label_1 > Model_fn.sem_threshold), file=model_dir + '/train_sem_label', min=-1,max=1)
     except AttributeError:
         pass
     try:
         plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/val_LR')
-        plots.plot_heatmap(f1(reader.patch_gen_val.label_1), file=model_dir + '/val_reg_label', min=-1,max=None)
-        plots.plot_heatmap(reader.patch_gen_val.label_1 > Model_fn.sem_threshold, file=model_dir + '/val_reg_label', min=-1,max=1)
+        plt_reg(reader.patch_gen_val.label_1, model_dir + '/val_reg_label')
+        plots.plot_heatmap(reader.patch_gen_val.label_1 > Model_fn.sem_threshold, file=model_dir + '/val_sem_label', min=-1,max=1)
     except AttributeError:
         pass
-
-                # plots.plot_rgb(data_recomposed,file=model_dir+'/data_recomposed')
-#         nr_patches = reader1.patch_gen.nr_patches
-#
-#         batch_idxs = (nr_patches) // args.batch_size
-#
-#
-#         pred_r_rec = np.empty(shape=([nr_patches, reader.patch_gen.patch_lab, reader.patch_gen.patch_lab,1]))
-#         pred_c_rec = np.empty(shape=([nr_patches, reader.patch_gen.patch_lab, reader.patch_gen.patch_lab]))
-#
-#         print('Predicting {} Patches...'.format(nr_patches))
-#         for idx in xrange(0, batch_idxs):
-#             p_ = preds_gen.next()
-#             start, stop = idx*args.batch_size, (idx+1)*args.batch_size
-#
-#             pred_r_rec[start:stop] = p_['reg']
-#             pred_c_rec[start:stop] = np.argmax(p_['sem'],axis=-1)
-#
-#             if start % 100 == 0:
-#                 print(start)
-#         border = 4
-#         ref_size = (reader.train_h.shape[1], reader.train_h.shape[0]) #TODO change for lr_lab
-#         print ref_size
-#         ## Recompose RGB
-#         data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border*args.scale)
-#         plots.plot_heatmap(data_recomposed,file=model_dir+'/pred_reg_recomposed') #,min=-1,max=1)
-#         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border*args.scale)
-#         plots.plot_heatmap(data_recomposed,file=model_dir+'/pred_sem_recomposed') #,min=-1,max=1)
-#         # plots.plot_rgb(data_recomposed,file=model_dir+'/data_recomposed')
 
 
 

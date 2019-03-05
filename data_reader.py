@@ -310,6 +310,7 @@ class DataReader(object):
             # self.N_pixels = self.train.shape[0] * self.train.shape[1]
 
             self.mean_train = self.train.mean(axis=(0, 1))
+            self.max_dens = self.labels.max()
             self.std_train = self.train.std(axis=(0, 1))
             if self.args.is_empty_aerial:
                 self.train[(self.labels == -1)[..., 0], :] = 2000.0
@@ -435,10 +436,13 @@ class DataReader(object):
 
         tf.Variable(self.std_train.astype(np.float32), name='std_train', trainable=False,
                     expected_shape=tf.shape([self.n_channels]))
+        tf.Variable(self.max_dens.astype(np.float32), name='max_dens', trainable=False,
+                    expected_shape=tf.shape([1]))
 
         tf.constant(self.mean_train.astype(np.float32), name='mean_train_k')
 
         tf.constant(self.std_train.astype(np.float32), name='std_train_k')
+        tf.constant(self.max_dens.astype(np.float32), name='max_dens_k')
     def input_fn(self, is_train=True):
         # np.random.seed(99)
         self.init_constants_normalization()
