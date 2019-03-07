@@ -228,7 +228,7 @@ class Model:
 
     def compute_loss(self, y_hat, HR_hat):
 
-        int_ = lambda x: tf.cast(x, dtype=tf.int64)
+        int_ = lambda x: tf.cast(x, dtype=tf.int32)
 
         if self.is_hr_label and not self.loss_in_HR:
             self.labels = sum_pool(self.labels, self.scale, name='Label_down')
@@ -251,10 +251,15 @@ class Model:
         if HR_hat is not None:
             loss_sr = tf.nn.l2_loss(HR_hat - self.feat_h)
         else:
-            loss_sr = 0
+            loss_sr = 0.
+        if self.args.sr_after is not None:
+            w1 = tf.where(tf.greater(self.args.sr_after,tf.train.get_global_step()), 0., 1.)
+        else:
+            w1 = 1.
+
         self.loss123 = self.args.lambda_reg * loss_reg + \
                        (1.0 - self.args.lambda_reg) * loss_sem + \
-                       self.args.lambda_sr * loss_sr
+                       self.args.lambda_sr * w1*loss_sr
         self.loss_w = self.args.lambda_weights * l2_weights
         self.loss = self.loss123 + self.loss_w
 
@@ -288,13 +293,13 @@ class Model:
         else:
             inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
         inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
-        int_ = lambda x: tf.cast(x, dtype=tf.int64)
+        int_ = lambda x: tf.cast(x, dtype=tf.int32)
 
         pred_class = tf.argmax(y_hat['sem'], axis=3)
         w = self.w
         labels = self.labels
         label_sem = tf.where(tf.squeeze(tf.greater(self.w, 0), axis=3), self.label_sem,
-                             tf.ones_like(self.label_sem, dtype=tf.int64) * -1)
+                             tf.ones_like(self.label_sem, dtype=tf.int32) * -1)
         y_hat_reg = y_hat['reg']
 
         feat_l_up = tf.map_fn(inv_, bilinear(self.feat_l, size=self.patch_size * self.scale), dtype=tf.uint8)
@@ -325,7 +330,7 @@ class Model:
 
             label_sem = tf.squeeze(int_(tf.greater(labels, self.sem_threshold)), axis=3)
             label_sem = tf.where(tf.squeeze(tf.equal(w, 1), axis=3), label_sem,
-                                 tf.ones_like(label_sem, dtype=tf.int64) * -1)
+                                 tf.ones_like(label_sem, dtype=tf.int32) * -1)
 
             pred_class = tf.squeeze(tf.round(avg_pool(self.float_(pred_class), self.scale, name='sem_down')), axis=3)
 

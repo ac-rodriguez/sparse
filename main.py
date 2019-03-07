@@ -59,6 +59,7 @@ parser.add_argument("--lambda-weights",default=1.0,type=float, help="Lambda for 
 # parser.add_argument("--weight-decay", type=float, default=0.0005,
 #                     help="Regularisation parameter for L2-loss.")
 parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
+parser.add_argument("--sr-after",default=None,type=np.int64, help="Start SR task after number of iterations")
 parser.add_argument("--eval-every",default=600,type=int, help="Number of seconds between evaluations")
 parser.add_argument("--model", default="simple",
     help="Model Architecture to be used [deep_sentinel2, ...]")
@@ -117,7 +118,7 @@ def main(unused_args):
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
     if args.batch_size_eval is None: args.batch_size_eval = args.batch_size
 
-    lambdas='Lr{:.1f}_Lsr{:.1f}_Lw{:.1f}'.format(args.lambda_reg,args.lambda_reg,args.lambda_weights)
+    lambdas='Lr{:.1f}_Lsr{:.1f}_Lw{:.1f}'.format(args.lambda_reg,args.lambda_sr,args.lambda_weights)
     model_dir = os.path.join(args.save_dir,'MODEL{}_PATCH{}_{}_SCALE{}_CH{}_{}{}'.format(
         args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,lambdas,args.tag))
 

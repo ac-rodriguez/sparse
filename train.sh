@@ -10,7 +10,7 @@ array=( $@ )
 len=${#array[@]}
 EXTRA_ARGS=${array[@]:1:$len}
 
-GSD=5.0
+GSD="${GSD:-5.0}"
 
 
 case ${DATASET} in
@@ -32,6 +32,24 @@ case ${DATASET} in
     ROI_VAL='101.45,0.53,101.62,0.55'
     ROI_VAL_LB='101.45,0.53,101.62,0.55'
     ;;
+  palm1)
+    OBJECT='palm'
+    LRFILE='/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml'
+    POINTSFILE='/home/pf/pfstaff/projects/andresro/barry_palm/obj_det/palm/detections_inference/default/kml_geoproposals'
+    ROI_TR='101.45,0.48,101.62,0.53'
+    ROI_TR_LB='101.55,0.51,101.58,0.52'
+    ROI_VAL='101.45,0.53,101.62,0.55'
+    ROI_VAL_LB='101.45,0.53,101.62,0.55'
+    ;;
+  palm2)
+    OBJECT='palm'
+    LRFILE='/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml'
+    POINTSFILE='/home/pf/pfstaff/projects/andresro/barry_palm/obj_det/palm/detections_inference/default/kml_geoproposals'
+    ROI_TR='101.45,0.48,101.62,0.53'
+    ROI_TR_LB='101.48,0.51,101.58,0.52'
+    ROI_VAL='101.45,0.53,101.62,0.55'
+    ROI_VAL_LB='101.45,0.53,101.62,0.55'
+    ;;
   *)
     echo "Option not defined"
     exit
@@ -41,7 +59,7 @@ esac
 
 
 SCALE=$(bc <<< "10/$GSD")
-HR=$PF/sparse/data/${OBJECT}/3000_gsd${GSD}.tif
+HR=$PF/sparse/data/${OBJECT}
 
 
 SAVE_DIR=/home/pf/pfstaff/projects/andresro/sparse/training/snapshots
@@ -63,11 +81,11 @@ python2 -u main.py \
     --roi_lon_lat_val=$ROI_VAL \
     --roi_lon_lat_val_lb=$ROI_VAL_LB \
     --save-dir=$SAVE_DIR_OBJECT \
-    --scale=2 \
+    --scale=$SCALE \
     --is-bilinear \
     --optimizer=adam \
     --lr=2.5e-4 \
-    --lambda-weights=0 \
+    --lambda-weights=1 \
     --batch-size=8 \
     --patch-size=32 \
     --patch-size-eval=64 \
