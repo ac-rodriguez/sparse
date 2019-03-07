@@ -50,7 +50,8 @@ class Model:
 
         if mode == tf.estimator.ModeKeys.PREDICT:
             return tf.estimator.EstimatorSpec(mode, predictions=y_hat)
-        if self.loss_in_HR:
+        # if self.loss_in_HR:
+        if self.is_hr_label:
             self.sem_threshold = 1e-5
         self.compute_loss(y_hat, HR_hat)
         self.compute_summaries(y_hat, HR_hat)
