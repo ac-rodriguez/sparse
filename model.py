@@ -253,7 +253,11 @@ class Model:
         else:
             loss_sr = 0.
         if self.args.sr_after is not None:
-            w1 = tf.where(tf.greater(self.args.sr_after,tf.train.get_global_step()), 0., 1.)
+            if self.args.sr_after > 0:
+                w1 = tf.where(tf.greater(self.args.sr_after,tf.train.get_global_step()), 0., 1.)
+            else:
+                w1 = tf.where(tf.greater(self.args.sr_after,tf.train.get_global_step()), 1., 0.)
+
         else:
             w1 = 1.
 
