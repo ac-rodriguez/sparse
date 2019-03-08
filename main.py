@@ -39,35 +39,35 @@ parser.add_argument("--is-hr-label", default=False, action="store_true",
                     help="compute label on the HR resolultion")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
-parser.add_argument("--train-patches",default=4000,type=int, help="Number of random patches extracted from train area")
-parser.add_argument("--patches-with-labels",default=0.1,type=float, help="Percent of patches with labels")
-parser.add_argument("--val-patches",default=1000,type=int, help="Number of random patches extracted from train area")
-parser.add_argument("--numpy-seed",default=None,type=int, help="Random seed for random patches extraction")
-
-
-
+parser.add_argument("--train-patches", default=4000, type=int,
+                    help="Number of random patches extracted from train area")
+parser.add_argument("--patches-with-labels", default=0.1, type=float, help="Percent of patches with labels")
+parser.add_argument("--val-patches", default=1000, type=int, help="Number of random patches extracted from train area")
+parser.add_argument("--numpy-seed", default=None, type=int, help="Random seed for random patches extraction")
 
 # Training args
-parser.add_argument("--patch-size", default=32, type = int, help="size of the patches to be created (low-res).")
-parser.add_argument("--patch-size-eval", default=64, type = int, help="size of the patches to be created (low-res).")
-parser.add_argument("--scale",default=2,type=int, help="Upsampling scale to train")
-parser.add_argument("--batch-size",default=8,type=int, help="Batch size for training")
-parser.add_argument("--batch-size-eval",default=None,type=int, help="Batch size for eval")
-parser.add_argument("--lambda-sr",default=1.0,type=float, help="Lambda for semi-supervised part of the loss")
-parser.add_argument("--lambda-reg",default=0.5,type=float, help="Lambda for reg vs semantic task")
-parser.add_argument("--lambda-weights",default=1.0,type=float, help="Lambda for L2 weights regularizer")
+parser.add_argument("--patch-size", default=32, type=int, help="size of the patches to be created (low-res).")
+parser.add_argument("--patch-size-eval", default=64, type=int, help="size of the patches to be created (low-res).")
+parser.add_argument("--scale", default=2, type=int, help="Upsampling scale to train")
+parser.add_argument("--batch-size", default=8, type=int, help="Batch size for training")
+parser.add_argument("--batch-size-eval", default=None, type=int, help="Batch size for eval")
+parser.add_argument("--lambda-sr", default=1.0, type=float, help="Lambda for semi-supervised part of the loss")
+parser.add_argument("--lambda-reg", default=0.5, type=float, help="Lambda for reg vs semantic task")
+parser.add_argument("--lambda-weights", default=1.0, type=float, help="Lambda for L2 weights regularizer")
 # parser.add_argument("--weight-decay", type=float, default=0.0005,
 #                     help="Regularisation parameter for L2-loss.")
-parser.add_argument("--train-iters",default=1000,type=int, help="Number of iterations to train")
-parser.add_argument("--sr-after",default=None,type=np.int64, help="Start SR task after number of iterations")
-parser.add_argument("--eval-every",default=600,type=int, help="Number of seconds between evaluations")
+parser.add_argument("--train-iters", default=1000, type=int, help="Number of iterations to train")
+parser.add_argument("--sr-after", default=None, type=np.int64, help="Start SR task after number of iterations")
+parser.add_argument("--eval-every", default=600, type=int, help="Number of seconds between evaluations")
 parser.add_argument("--model", default="simple",
-    help="Model Architecture to be used [deep_sentinel2, ...]")
+                    help="Model Architecture to be used [deep_sentinel2, ...]")
 parser.add_argument("--sigma-smooth", type=int, default=None,
-                        help="Sigma smooth to apply to the GT points data.")
+                    help="Sigma smooth to apply to the GT points data.")
+parser.add_argument("--sq-kernel", type=int, default=None,
+                    help="Smooth with a squared kernel of N 10m pixels N instead of gaussian.")
 parser.add_argument("--normalize", type=str, default='normal',
-                        help="type of normalization applied to the data.")
-parser.add_argument("--is-restore","--is-reload",dest="is_restore", default=False, action="store_true",
+                    help="type of normalization applied to the data.")
+parser.add_argument("--is-restore", "--is-reload", dest="is_restore", default=False, action="store_true",
                     help="Continue training from a stored model.")
 parser.add_argument("--is-multi-gpu", default=False, action="store_true",
                     help="Add mirrored strategy for multi gpu training and eval.")
@@ -86,41 +86,44 @@ parser.add_argument("--is-masking", default=False, action="store_true",
 parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--optimizer", type=str, default='adam',
-                        help="['adagrad', 'adam']")
+                    help="['adagrad', 'adam']")
 parser.add_argument("--lr", type=float, default=2.5e-4,
                     help="Learning rate for optimizer.")
 # Save args
 
 parser.add_argument("--tag", default="",
-    help="tag to add to the model directory")
+                    help="tag to add to the model directory")
 parser.add_argument("--save-dir", default='/home/pf/pfstaff/projects/andresro/sparse/training/snapshots',
-    help="Path to directory where models should be saved")
+                    help="Path to directory where models should be saved")
 parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="Delete model_dir before starting training from iter 0. Overrides --is-restore flag")
 
-
-parser.add_argument("--is-predict",dest='is_train', default=True, action="store_false",
+parser.add_argument("--is-predict", dest='is_train', default=True, action="store_false",
                     help="Predict using an already trained model")
 args = parser.parse_args()
 
 
-
 def main(unused_args):
+    if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
+    if args.is_hr_label is not None: args.tag = '_hrlab' + args.tag
+
     if args.is_lower_bound:
-        print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,args.roi_lon_lat_tr_lb))
+        print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,
+                                                                                     args.roi_lon_lat_tr_lb))
         args.roi_lon_lat_tr = args.roi_lon_lat_tr_lb
-        args.tag = 'LOWER'+args.tag
+        args.tag = 'LOWER' + args.tag
 
     if args.roi_lon_lat_tr_lb == 'all':
         args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
-        args.tag = 'allGT'+args.tag
+        args.tag = 'allGT' + args.tag
+
     if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
     if args.batch_size_eval is None: args.batch_size_eval = args.batch_size
 
-    lambdas='Lr{:.1f}_Lsr{:.1f}_Lw{:.1f}'.format(args.lambda_reg,args.lambda_sr,args.lambda_weights)
-    model_dir = os.path.join(args.save_dir,'MODEL{}_PATCH{}_{}_SCALE{}_CH{}_{}{}'.format(
-        args.model,args.patch_size,args.patch_size_eval,args.scale,args.n_channels,lambdas,args.tag))
+    lambdas = 'Lr{:.1f}_Lsr{:.1f}_Lw{:.1f}'.format(args.lambda_reg, args.lambda_sr, args.lambda_weights)
+    model_dir = os.path.join(args.save_dir, 'MODEL{}_PATCH{}_{}_SCALE{}_CH{}_{}{}'.format(
+        args.model, args.patch_size, args.patch_size_eval, args.scale, args.n_channels, lambdas, args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting training from iter 0...')
@@ -130,17 +133,13 @@ def main(unused_args):
 
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
-
     args.model_dir = model_dir
     filename = 'FLAGS' if args.is_train else 'FLAGS_pred'
-    save_parameters(args,model_dir, sys.argv, name=filename)
+    save_parameters(args, model_dir, sys.argv, name=filename)
     params = {}
-
-
 
     params['model_dir'] = model_dir
     params['args'] = args
-
 
     if args.is_multi_gpu:
         strategy = tf.contrib.distribute.MirroredStrategy()
@@ -152,10 +151,8 @@ def main(unused_args):
     model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
                                    model_dir=model_dir, config=run_config)
     is_hr_pred = Model_fn.loss_in_HR
-    f1 = lambda x: (np.where(x == -1, x, x * (2.0 / np.percentile(x,99))) if is_hr_pred else x)
-    plt_reg = lambda x,file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
 
-    tf.logging.set_verbosity(tf.logging.INFO)# Show training logs.
+    tf.logging.set_verbosity(tf.logging.INFO)  # Show training logs.
 
     if args.is_train:
 
@@ -168,9 +165,12 @@ def main(unused_args):
         # scores = model.evaluate(input_fn=input_fn_val, steps=(val_iters))
 
         train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)
-        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps = (val_iters), throttle_secs = args.eval_every)
+        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every)
 
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
+
+        f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
+        plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
 
         try:
             plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/sample_train_LR')
@@ -185,7 +185,7 @@ def main(unused_args):
 
     else:
 
-        reader = DataReader(args,is_training=False)
+        reader = DataReader(args, is_training=False)
 
     reader.non_random_patches()
 
@@ -212,7 +212,7 @@ def main(unused_args):
             else:
                 ref_data = reader.train
 
-        pred_r_rec = np.empty(shape=([nr_patches, patch, patch,1]))
+        pred_r_rec = np.empty(shape=([nr_patches, patch, patch, 1]))
         pred_c_rec = np.empty(shape=([nr_patches, patch, patch]))
 
         preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False)  # ,predict_keys=['hr_hat_rgb'])
@@ -220,47 +220,41 @@ def main(unused_args):
         print('Predicting {} Patches...'.format(nr_patches))
         for idx in tqdm(xrange(0, batch_idxs)):
             p_ = preds_iter.next()
-            start, stop = idx*args.batch_size, (idx+1)*args.batch_size
+            start, stop = idx * args.batch_size, (idx + 1) * args.batch_size
 
             pred_r_rec[start:stop] = p_['reg']
-            pred_c_rec[start:stop] = np.argmax(p_['sem'],axis=-1)
-
+            pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
 
         ref_size = (ref_data.shape[1], ref_data.shape[0])
         print ref_size
         ## Recompose RGB
         data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-        plt_reg(data_recomposed,'{}/{}_reg_pred'.format(model_dir,sufix))
+        plt_reg(data_recomposed, '{}/{}_reg_pred'.format(model_dir, sufix))
         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
-        plt_reg(data_recomposed,'{}/{}_sem_pred'.format(model_dir,sufix))
+        plt_reg(data_recomposed, '{}/{}_sem_pred'.format(model_dir, sufix))
 
-    if args.is_train:
-        predict(input_fn,reader.patch_gen, sufix='train')
-        predict(input_fn_val,reader.patch_gen_val, sufix='val')
-    else:
-        predict(input_fn,reader.patch_gen, sufix='test')
+    # if args.is_train:
+    #     predict(input_fn,reader.patch_gen, sufix='train')
+    #     predict(input_fn_val,reader.patch_gen_val, sufix='val')
+    # else:
+    #     predict(input_fn,reader.patch_gen, sufix='test')
 
+    plots.plot_rgb(reader.train_h, file=model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
+    plots.plot_rgb(reader.train, file=model_dir + '/train_LR')
+    plt_reg(reader.labels, model_dir + '/train_reg_label')
+    plots.plot_heatmap(np.int32(reader.labels > Model_fn.sem_threshold), file=model_dir + '/train_sem_label',
+                       min=-1, max=1)
 
-    try:
-        plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/train_LR')
-        plt_reg(reader.patch_gen.label_1,model_dir + '/train_reg_label')
-        plots.plot_heatmap(np.int32(reader.patch_gen.label_1 > Model_fn.sem_threshold), file=model_dir + '/train_sem_label', min=-1,max=1)
-    except AttributeError:
-        pass
     try:
         plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/val_LR')
-        plt_reg(reader.patch_gen_val.label_1, model_dir + '/val_reg_label')
-        plots.plot_heatmap(reader.patch_gen_val.label_1 > Model_fn.sem_threshold, file=model_dir + '/val_sem_label', min=-1,max=1)
+        plots.plot_rgb(reader.val_h, file=model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
+        plt_reg(reader.labels_val, model_dir + '/val_reg_label')
+        plots.plot_heatmap(reader.labels_val > Model_fn.sem_threshold, file=model_dir + '/val_sem_label', min=-1, max=1)
     except AttributeError:
         pass
-
-
-
 
 
 if __name__ == '__main__':
     tf.app.run()
-
-
 
 print('Done!')

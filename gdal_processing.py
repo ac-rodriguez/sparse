@@ -119,8 +119,9 @@ def read_coords(Input):
 
     return points
 
-def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_scale=10, sigma=None):
+def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_scale=10, sigma=None, sq_kernel=False):
 
+    is_sq_kernel = sq_kernel is not None
     lims = [i * up_scale for i in lims]
 
     xmin, ymin, xmax, ymax = lims # points come already ordered
@@ -136,7 +137,7 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
 
     points = read_coords(Input)
 
-    mask = np.zeros((length_y, length_x), dtype=np.int32)
+    mask = np.zeros((length_y, length_x), dtype=np.float32)
 
     xoff, a, b, yoff, d, e = Image.GetGeoTransform()
     srs = osr.SpatialReference()
@@ -145,6 +146,8 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
     srsLatLon.SetWellKnownGeogCS("WGS84")
     ct = osr.CoordinateTransformation(srsLatLon, srs)
 
+    if sq_kernel:
+        w = sq_kernel * 16 // 2
 
     a = a / up_scale
     e = e / up_scale
@@ -164,35 +167,45 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
             if x >= xmin1 and x <= xmax1 and y >= ymin1 and y <= ymax1:
                 x1 = x - xmin
                 y1 = y - ymin
-
-                mask[y1,x1]+=1
+                if is_sq_kernel:
+                    mask[max(0,y1-w):(y1+w),max(0,x1-w):(x1+w)] += 1/float((w*2)**2)
+                else:
+                    mask[y1,x1] += 1
     z_norm = np.sum(mask)
     print(' max density = {}'.format(mask.max()))
     if up_scale > 1:
         # sigma = scale
-        if sigma is None:
-            sigma = up_scale / np.pi
-        mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
+        if not is_sq_kernel:
+            if sigma is None:
+                sigma = up_scale / np.pi
+            mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
 
         mask = block_reduce(mask, (up_scale, up_scale), np.sum)
         # clean reg
-        mask[mask<1e-5]=0
-        mask = mask * (z_norm / np.sum(mask))
+        if not is_sq_kernel:
+            mask[mask<1e-5] = 0
+            mask = mask * (z_norm / np.sum(mask))
         # mask = mask[::scale,::scale]
-        print('GT points were computed on a {} times larger area than RefData\n'
-              'smoothed with a Gaussian \sigma = {:.2f} and downsampled to original res'.format(up_scale,sigma))
+    print('GT points were computed on a {} times larger area than RefData'.format(up_scale))
+
+    if is_sq_kernel :
+        print('smoothed with a Squared Kernel of size = {:.2f} and downsampled to original res'.format(w))
+    else:
+        print('smoothed with a Gaussian \sigma = {:.2f} and downsampled to original res'.format(sigma))
+
     print(' max density = {}'.format(mask.max()))
     scale_f = float(up_scale)
     # Set points outside of constraint to -1
-    mask[:,:int((xmin1-xmin) / scale_f)] = -1
-    mask[:,int(np.ceil((xmax1-xmin+1) / scale_f)):] = -1
-    mask[:int((ymin1-ymin) / scale_f),:] = -1
-    mask[int(np.ceil((ymax1-ymin+1) / scale_f)):,:] = -1
+    mask[:,:int((xmin1-xmin) / scale_f)] = -1.
+    mask[:,int(np.ceil((xmax1-xmin+1) / scale_f)):] = -1.
+    mask[:int((ymin1-ymin) / scale_f),:] = -1.
+    mask[int(np.ceil((ymax1-ymin+1) / scale_f)):,:] = -1.
+
 
     print(' Total points: {}'.format(np.sum(mask[mask>-1])))
     print(' Masked pixels: {} / {} ({:.2f}%)'.format(np.sum(mask == -1),mask.shape[0]*mask.shape[1],100.* np.sum(mask == -1) /float(mask.shape[0]*mask.shape[1])))
     print('Image size: width={} x height={}'.format(mask.shape[1],mask.shape[0]))
-    return mask.astype(np.float32)
+    return mask
 
 def rasterize_points(Input, refDataset, lims, scale = 10):
 

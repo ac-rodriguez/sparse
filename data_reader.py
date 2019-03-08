@@ -9,7 +9,7 @@ from threading import Thread, Lock
 from functools import partial
 import gdal
 
-from plots import check_dims, plot_rgb
+from plots import check_dims, plot_rgb, plot_heatmap
 
 from read_geoTiff import readHR, readS2
 import gdal_processing as gp
@@ -73,7 +73,7 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
 
     labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
                                              lims_with_labels=lims_with_labels, up_scale=ref_scale,
-                                             sigma=sigma)
+                                             sigma=sigma, sq_kernel=args.sq_kernel)
     (xmin,ymin,xmax,ymax) = lims_with_labels
     xmin, xmax = xmin -lims_H[0], xmax - lims_H[0]
     ymin, ymax = ymin -lims_H[1], ymax - lims_H[1]
@@ -312,6 +312,13 @@ class DataReader(object):
             self.mean_train = self.train.mean(axis=(0, 1))
             self.max_dens = self.labels.max()
             self.std_train = self.train.std(axis=(0, 1))
+            if IS_DEBUG:
+                f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
+                plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+                plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
+                plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
+                # sys.exit(0)
+
             if self.args.is_empty_aerial:
                 self.train[(self.labels == -1)[..., 0], :] = 2000.0
             print(str(self.mean_train))
