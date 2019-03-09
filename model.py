@@ -3,7 +3,7 @@ import sys
 import numpy as np
 
 from colorize import colorize, inv_preprocess_tf
-from models_reg import simple
+from models_reg import simple, countception
 from models_sr import SR_task, dbpn_SR, slice_last_dim
 from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, get_lr_ADAM
 
@@ -29,7 +29,7 @@ class Model:
         self.model = self.args.model
 
         self.loss_in_HR = False
-        if self.model in ['simple2d','simpleHR','simpleHR1'] and self.args.is_hr_label:
+        if self.model in ['simple2d','simpleHR','simpleHR1','simpleHR2'] and self.args.is_hr_label:
             self.loss_in_HR = True
 
     def model_fn(self, features, labels, mode):
@@ -219,6 +219,18 @@ class Model:
             feat = tf.concat([HR_hat_down, self.feat_l[..., 3:]], axis=3)
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
+        elif self.model == 'simpleHR2':
+
+            feat_l_up = self.up_(self.feat_l, 8)
+
+            feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
+
+            y_hat = countception(feat,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
+            if not self.is_hr_label:
+                for key, val in y_hat.iteritems():
+                    y_hat[key] = sum_pool(val, self.scale)
+            else:
+                assert self.loss_in_HR == True
         else:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
