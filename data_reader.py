@@ -315,8 +315,12 @@ class DataReader(object):
             if IS_DEBUG:
                 f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
                 plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+                plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
+                plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
+
                 plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
                 plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
+
                 # sys.exit(0)
 
             if self.args.is_empty_aerial:

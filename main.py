@@ -105,7 +105,7 @@ args = parser.parse_args()
 
 def main(unused_args):
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
-    if args.is_hr_label is not None: args.tag = '_hrlab' + args.tag
+    if args.is_hr_label: args.tag = '_hrlab' + args.tag
 
     if args.is_lower_bound:
         print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,
