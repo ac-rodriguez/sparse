@@ -239,7 +239,7 @@ class Model:
         self.loss_w = self.args.lambda_weights * l2_weights
         self.loss = self.loss123 + self.loss_w
 
-        if self.args.is_semi:
+        if self.args.semi == 'semi':
             self.fake_ = discriminator(y_hat['reg'])
             self.real_ = discriminator(self.labels)
             # Fake predictions towards 0, real preds towards 1
@@ -252,7 +252,45 @@ class Model:
 
             # w_semi = fake_ > 0.3
             # loss_semi = tf.losses.mean_squared_error(labels=y_hat['reg'],predictions=y_hat['reg'])
-            self.loss = self.loss123 + self.loss_w + 0.001* self.loss_gen
+            self.loss+= 0.001* self.loss_gen
+        elif self.args.semi == 'semiFeat':
+            self.fake_,feat_f = discriminator(y_hat['reg'],return_feat=True)
+            self.real_,feat_r = discriminator(self.labels, return_feat=True)
+            # Fake predictions towards 0, real preds towards 1
+            self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32),logits=self.fake_) + \
+                        cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32), logits=self.real_,weights=self.w)
+            self.loss_gen = tf.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
+
+            tf.summary.scalar('loss/gen', self.loss_gen)
+            tf.summary.scalar('loss/disc', self.loss_disc)
+
+            self.loss+= 0.001* self.loss_gen
+        elif self.args.semi == 'semi1':
+            self.fake_ = discriminator(tf.concat((y_hat['reg'],y_hat['sem']),axis=-1))
+            self.real_ = discriminator(tf.concat((self.labels,self.float_(tf.one_hot(self.label_sem,depth=2))),axis=-1))
+            # Fake predictions towards 0, real preds towards 1
+            self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32), logits=self.fake_) + \
+                             cross_entropy(labels=tf.ones_like(self.labels, dtype=tf.int32), logits=self.real_,
+                                           weights=self.w)
+            self.loss_gen = cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32),logits=self.fake_)
+
+            tf.summary.scalar('loss/gen', self.loss_gen)
+            tf.summary.scalar('loss/disc', self.loss_disc)
+
+            self.loss += 0.001 * self.loss_gen
+        elif self.args.semi == 'semi1Feat':
+            self.fake_, feat_f= discriminator(tf.concat((y_hat['reg'],y_hat['sem']),axis=-1), return_feat=True)
+            self.real_, feat_r = discriminator(tf.concat((self.labels,self.float_(tf.one_hot(self.label_sem,depth=2))),axis=-1), return_feat=True)
+            # Fake predictions towards 0, real preds towards 1
+            self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32), logits=self.fake_) + \
+                             cross_entropy(labels=tf.ones_like(self.labels, dtype=tf.int32), logits=self.real_,
+                                           weights=self.w)
+            self.loss_gen = tf.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
+
+            tf.summary.scalar('loss/gen', self.loss_gen)
+            tf.summary.scalar('loss/disc', self.loss_disc)
+
+            self.loss += 0.001 * self.loss_gen
 
 
         grads = tf.gradients(self.loss, W, name='gradients')
@@ -397,14 +435,12 @@ class Model:
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
             if self.args.l2_weights_every is None:
-                if self.args.is_semi:
+                if self.args.semi is not None:
                     train_g = optimizer.minimize(self.loss, global_step=step)
                     train_d = optimizer.minimize(self.loss_gen, global_step=step)
                     self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, 2))),
                                             true_fn=lambda: train_g,
                                             false_fn=lambda: train_d)
-
-
 
                 self.train_op = optimizer.minimize(self.loss, global_step=step)
                 if self.args.optimizer == 'adam':

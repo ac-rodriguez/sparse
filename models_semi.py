@@ -19,7 +19,7 @@ def block(x, is_training, is_bn=True):
     return x2
 
 
-def discriminator(input, scope_name='discriminator', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE):
+def discriminator(input, scope_name='discriminator', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False):
     with tf.variable_scope(scope_name, reuse=reuse):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
         x = tf.layers.conv2d(input, 64, kernel_size=4, strides=1, padding='same')
@@ -30,7 +30,7 @@ def discriminator(input, scope_name='discriminator', is_training=True, is_bn=Tru
 
         x = tf.layers.conv2d(x, 256, kernel_size=4, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
-
+        x1 = x
         x = tf.layers.conv2d(x, 512, kernel_size=4, strides=2, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
@@ -38,5 +38,7 @@ def discriminator(input, scope_name='discriminator', is_training=True, is_bn=Tru
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
         x = tools.bilinear(x, input.shape[1])
-
-        return x
+        if return_feat:
+            return x, x1
+        else:
+            return x
