@@ -103,7 +103,7 @@ def countception(input,pad, scope_name='countception', is_training=True):
             conv3x3 = ConvLayer(x, num_filters2, [3, 3], 'conv3x3', pad='SAME')
             return tf.concat([conv1x1, conv3x3], axis=-1)
 
-    with tf.name_scope(scope_name):
+    with tf.variable_scope(scope_name, reuse =tf.AUTO_REUSE):
         # pad = 32
         net = tf.pad(input, [[0, 0], [pad, pad], [pad, pad], [0, 0]], 'CONSTANT')
         # net = input

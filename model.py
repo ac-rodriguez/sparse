@@ -6,7 +6,7 @@ from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
 from models_sr import SR_task, dbpn_SR, slice_last_dim
 from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, get_lr_ADAM
-
+# from models_semi import discriminator
 
 class Model:
     def __init__(self, params):
@@ -29,7 +29,7 @@ class Model:
         self.model = self.args.model
 
         self.loss_in_HR = False
-        if self.model in ['simple2d','simpleHR','simpleHR1','simpleHR2'] and self.args.is_hr_label:
+        if self.model in ['simple2d','simpleHR','simpleHR1','simpleHR2', 'semiHR','countSR'] and self.args.is_hr_label:
             self.loss_in_HR = True
 
     def model_fn(self, features, labels, mode):
@@ -74,7 +74,8 @@ class Model:
         size = self.patch_size * self.args.scale
         if self.model == 'simple':  # Baseline  No High Res for training
             y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training)
-
+        elif self.model == 'count':
+            y_hat = countception(self.feat_l,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
         elif self.model == 'simplebn':  # Baseline  No High Res for training
             y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training, is_bn=False)
         elif self.model == 'simple2':  # SR as a side task
@@ -123,8 +124,7 @@ class Model:
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
             for key, val in y_hat.iteritems():
                 y_hat[key] = sum_pool(val, self.scale)
-
-        elif self.model == 'simple2d':  # SR as a side task
+        elif self.model == 'simpleSR':  # SR as a side task
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
             feat_l_up = self.up_(self.feat_l, 8)
@@ -138,7 +138,6 @@ class Model:
                     y_hat[key] = bilinear(val, self.patch_size)
             else:
                 assert self.loss_in_HR == True
-
         elif self.model == 'simple3':  # SR as a side task - leaner version
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=True)
 
@@ -146,7 +145,6 @@ class Model:
 
             # Estimated sup-pixel features from LR
             y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
-
         elif self.model == 'simple3a':  # SR as a side task - leaner version
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=False)
 
@@ -173,7 +171,6 @@ class Model:
 
             feat = tf.concat([x_h, x_l], axis=3)
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-
         elif self.model == 'simple4b':  # SR as a side task
             HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
 
@@ -186,7 +183,6 @@ class Model:
 
             feat = tf.concat([x_h, x_l], axis=3)
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-
         elif self.model == 'simpleHR':
             feat_l_up = self.up_(self.feat_l, 8)
 
@@ -219,6 +215,20 @@ class Model:
             feat = tf.concat([HR_hat_down, self.feat_l[..., 3:]], axis=3)
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
+        elif self.model == 'countSR':
+            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+
+            feat_l_up = self.up_(self.feat_l, 8)
+
+            # Estimated sub-pixel features from LR
+            feat = tf.concat([HR_hat, feat_l_up], axis=3)
+
+            y_hat = countception(feat,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
+            if not self.is_hr_label:
+                for key, val in y_hat.iteritems():
+                    y_hat[key] = sum_pool(val, self.scale)
+            else:
+                assert self.loss_in_HR == True
         elif self.model == 'simpleHR2':
 
             feat_l_up = self.up_(self.feat_l, 8)
@@ -231,6 +241,18 @@ class Model:
                     y_hat[key] = sum_pool(val, self.scale)
             else:
                 assert self.loss_in_HR == True
+        # elif self.model == 'semiHR':
+        #
+        #     feat_l_up = self.up_(self.feat_l, 8)
+        #
+        #     feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
+        #
+        #     y_hat = countception(feat, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training)
+        #
+        #     assert self.loss_in_HR == True
+        #
+
+
         else:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
@@ -277,6 +299,14 @@ class Model:
                        (1.0 - self.args.lambda_reg) * loss_sem + \
                        self.args.lambda_sr * w1*loss_sr
         self.loss_w = self.args.lambda_weights * l2_weights
+        if self.model == 'semiHR':
+            fake_ = discriminator(y_hat['reg'])
+            real_ = discriminator(self.labels)
+            # TODO
+            # loss_adv =
+
+            loss_seg = self.loss123 +0.001* loss_adv
+
         self.loss = self.loss123 + self.loss_w
 
         grads = tf.gradients(self.loss, W, name='gradients')
