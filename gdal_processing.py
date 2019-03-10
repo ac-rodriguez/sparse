@@ -188,21 +188,35 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
         # mask = mask[::scale,::scale]
     print('GT points were computed on a {} times larger area than RefData'.format(up_scale))
 
-    if is_sq_kernel :
-        print('smoothed with a Squared Kernel of size = {:.2f} and downsampled to original res'.format(w))
+    if is_sq_kernel:
+        print('smoothed with a Squared Kernel of size = {:.2f} and downsampled x{} to original res'.format(w,up_scale))
     else:
-        print('smoothed with a Gaussian \sigma = {:.2f} and downsampled to original res'.format(sigma))
+        print('smoothed with a Gaussian \sigma = {:.2f} and downsampled x{} to original res'.format(sigma,up_scale))
 
     print(' max density = {}'.format(mask.max()))
     scale_f = float(up_scale)
     # Set points outside of constraint to -1
-    mask[:,:int((xmin1-xmin) / scale_f)] = -1.
+    mask[:,:max(0,int((xmin1-xmin) / scale_f))] = -1.
     mask[:,int(np.ceil((xmax1-xmin+1) / scale_f)):] = -1.
-    mask[:int((ymin1-ymin) / scale_f),:] = -1.
+    mask[:max(0,int((ymin1-ymin) / scale_f)),:] = -1.
     mask[int(np.ceil((ymax1-ymin+1) / scale_f)):,:] = -1.
 
-
+    z = float(np.sum(mask>-1))
     print(' Total points: {}'.format(np.sum(mask[mask>-1])))
+    print(' Density Distribution: p'+str([0,1,25,5,75,99,100]))
+    print(np.percentile(mask[mask>0],q=(0,1,25,5,75,99,100)))
+    print(' Class Distribution: \n\t1:{:.4f} \n\t0:{:.4f} '.format(np.sum(mask>0)/z, np.sum(mask==0)/z))
+
+    print('\n Distribution on LR space:')
+    #TODO Check how to remove the small noise is introduced when sumpooling with -1's the LR scale labels at train time.
+    mask_ = block_reduce(mask, (16//up_scale, 16//up_scale), np.sum)
+    z = float(np.sum(mask_ > -1))
+    print(' Total points: {}'.format(np.sum(mask_[mask_ > -1])))
+    print(' Density Distribution: p' + str([0, 1, 25, 5, 75, 99, 100]))
+    print(np.percentile(mask_[mask_ > 0], q=(0, 1, 25, 5, 75, 99, 100)))
+    print(' Class Distribution: \n\t1:{:.4f} \n\t0:{:.4f} '.format(np.sum(mask_ > 0) / z, np.sum(mask_ == 0) / z))
+
+
     print(' Masked pixels: {} / {} ({:.2f}%)'.format(np.sum(mask == -1),mask.shape[0]*mask.shape[1],100.* np.sum(mask == -1) /float(mask.shape[0]*mask.shape[1])))
     print('Image size: width={} x height={}'.format(mask.shape[1],mask.shape[0]))
     return mask
