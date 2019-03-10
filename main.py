@@ -12,25 +12,24 @@ from utils import save_parameters, add_letter_path
 from model import Model
 import plots
 import patches
-
+from data_config import get_dataset
 # colormax = {2: 0.93, 4: 0.155, 8: 0.04}
-HRFILE = '/home/pf/pfstaff/projects/andresro/sparse/data/coco'
-
-LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
-# POINTSFILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
-POINTSFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_detections.kml'
+# HRFILE='/home/pf/pfstaff/projects/andresro/sparse/data/coco'
+# LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
+# # POINTSFILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
+# POINTSFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_detections.kml'
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 # Input data args
-parser.add_argument("--HR_file", default=HRFILE)
-parser.add_argument("--LR_file", default=LRFILE)
-parser.add_argument("--points", default=POINTSFILE)
-parser.add_argument("--roi_lon_lat_tr", default='117.84,8.82,117.92,8.9')
-parser.add_argument("--roi_lon_lat_tr_lb", default='117.8821,8.87414,117.891,8.8654')
-parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
-# parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
-parser.add_argument("--roi_lon_lat_val_lb", default='117.81,8.82,117.84,8.88')
+# parser.add_argument("--HR_file", default=HRFILE)
+# parser.add_argument("--LR_file", default=LRFILE)
+# parser.add_argument("--points", default=POINTSFILE)
+# parser.add_argument("--roi_lon_lat_tr", default='117.84,8.82,117.92,8.9')
+# parser.add_argument("--roi_lon_lat_tr_lb", default='117.8821,8.87414,117.891,8.8654')
+# parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
+# # parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
+parser.add_argument("--dataset", default='palm')
 parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12",
                     help="Select the bands. Using comma-separated band names.")
 parser.add_argument("--is-padding", default=False, action="store_true",
@@ -39,15 +38,15 @@ parser.add_argument("--is-hr-label", default=False, action="store_true",
                     help="compute label on the HR resolultion")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
-parser.add_argument("--train-patches", default=4000, type=int,
+parser.add_argument("--train-patches", default=5000, type=int,
                     help="Number of random patches extracted from train area")
-parser.add_argument("--patches-with-labels", default=0.1, type=float, help="Percent of patches with labels")
-parser.add_argument("--val-patches", default=1000, type=int, help="Number of random patches extracted from train area")
+parser.add_argument("--patches-with-labels", default=0.5, type=float, help="Percent of patches with labels")
+parser.add_argument("--val-patches", default=2000, type=int, help="Number of random patches extracted from train area")
 parser.add_argument("--numpy-seed", default=None, type=int, help="Random seed for random patches extraction")
 
 # Training args
-parser.add_argument("--patch-size", default=32, type=int, help="size of the patches to be created (low-res).")
-parser.add_argument("--patch-size-eval", default=64, type=int, help="size of the patches to be created (low-res).")
+parser.add_argument("--patch-size", default=16, type=int, help="size of the patches to be created (low-res).")
+parser.add_argument("--patch-size-eval", default=16, type=int, help="size of the patches to be created (low-res).")
 parser.add_argument("--scale", default=2, type=int, help="Upsampling scale to train")
 parser.add_argument("--batch-size", default=8, type=int, help="Batch size for training")
 parser.add_argument("--batch-size-eval", default=None, type=int, help="Batch size for eval")
@@ -77,7 +76,7 @@ parser.add_argument("--scale-points", default=10, type=int,
                     help="Original Scale in which the GT points was calculated")
 parser.add_argument("--l2-weights-every", default=None, type=int,
                     help="How often to update the L2 norm of the weights")
-parser.add_argument("--is-bilinear", default=False, action="store_true",
+parser.add_argument("--is-conv",dest='is_bilinear', default=True, action="store_false",
                     help="downsampling of HR_hat is bilinear (True) or conv (False).")
 parser.add_argument("--is-out-relu", default=False, action="store_true",
                     help="Adds a Relu to the output of the reg prediction")
@@ -104,6 +103,10 @@ args = parser.parse_args()
 
 
 def main(unused_args):
+
+    d = get_dataset(args.dataset)
+    args.__dict__.update(d)
+
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
     if args.is_hr_label: args.tag = '_hrlab' + args.tag
 
@@ -233,25 +236,12 @@ def main(unused_args):
         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
         plt_reg(data_recomposed, '{}/{}_sem_pred'.format(model_dir, sufix))
 
-    # if args.is_train:
-    #     predict(input_fn,reader.patch_gen, sufix='train')
-    #     predict(input_fn_val,reader.patch_gen_val, sufix='val')
-    # else:
-    #     predict(input_fn,reader.patch_gen, sufix='test')
+    if args.is_train:
+        predict(input_fn,reader.patch_gen, sufix='train')
+        predict(input_fn_val,reader.patch_gen_val, sufix='val')
+    else:
+        predict(input_fn,reader.patch_gen, sufix='test')
 
-    plots.plot_rgb(reader.train_h, file=model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
-    plots.plot_rgb(reader.train, file=model_dir + '/train_LR')
-    plt_reg(reader.labels, model_dir + '/train_reg_label')
-    plots.plot_heatmap(np.int32(reader.labels > Model_fn.sem_threshold), file=model_dir + '/train_sem_label',
-                       min=-1, max=1)
-
-    try:
-        plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/val_LR')
-        plots.plot_rgb(reader.val_h, file=model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
-        plt_reg(reader.labels_val, model_dir + '/val_reg_label')
-        plots.plot_heatmap(reader.labels_val > Model_fn.sem_threshold, file=model_dir + '/val_sem_label', min=-1, max=1)
-    except AttributeError:
-        pass
 
 
 if __name__ == '__main__':
