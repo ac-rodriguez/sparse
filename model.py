@@ -1,12 +1,13 @@
 import tensorflow as tf
 import sys
 import numpy as np
+cross_entropy = tf.losses.sparse_softmax_cross_entropy
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
 from models_sr import SR_task, dbpn_SR, slice_last_dim
 from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM
-# from models_semi import discriminator
+from models_semi import discriminator
 
 class Model:
     def __init__(self, params):
@@ -179,16 +180,15 @@ class Model:
                     y_hat[key] = sum_pool(val, self.scale)
             else:
                 assert self.loss_in_HR == True
-        # elif self.model == 'semiHR':
-        #
-        #     feat_l_up = self.up_(self.feat_l, 8)
-        #
-        #     feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
-        #
-        #     y_hat = countception(feat, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training)
-        #
-        #     assert self.loss_in_HR == True
-        #
+        elif self.model == 'semiHR':
+
+            feat_l_up = self.up_(self.feat_l, 8)
+
+            feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
+
+            y_hat = countception(feat, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training)
+
+            assert self.loss_in_HR == True
 
 
         else:
@@ -213,7 +213,7 @@ class Model:
 
         loss_reg = tf.losses.mean_squared_error(labels=self.labels, predictions=y_hat['reg'], weights=self.w)
 
-        loss_sem = tf.losses.sparse_softmax_cross_entropy(labels=self.label_sem, logits=y_hat['sem'], weights=self.w)
+        loss_sem = cross_entropy(labels=self.label_sem, logits=y_hat['sem'], weights=self.w)
 
         W = [v for v in tf.trainable_variables() if ('weights' in v.name or 'kernel' in v.name)]
 
@@ -237,15 +237,23 @@ class Model:
                        (1.0 - self.args.lambda_reg) * loss_sem + \
                        self.args.lambda_sr * w1*loss_sr
         self.loss_w = self.args.lambda_weights * l2_weights
-        # if self.model == 'semiHR':
-        #     fake_ = discriminator(y_hat['reg'])
-        #     real_ = discriminator(self.labels)
-        #     # TODO
-        #     # loss_adv =
-        #
-        #     loss_seg = self.loss123 +0.001* loss_adv
-
         self.loss = self.loss123 + self.loss_w
+
+        if self.model == 'semiHR':
+            self.fake_ = discriminator(y_hat['reg'])
+            self.real_ = discriminator(self.labels)
+            # Fake predictions towards 0, real preds towards 1
+            self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32),logits=self.fake_) + \
+                        cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32), logits=self.real_,weights=self.w)
+
+            self.loss_gen = cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32),logits=self.fake_)
+            tf.summary.scalar('loss/gen', self.loss_gen)
+            tf.summary.scalar('loss/disc', self.loss_disc)
+
+            # w_semi = fake_ > 0.3
+            # loss_semi = tf.losses.mean_squared_error(labels=y_hat['reg'],predictions=y_hat['reg'])
+            self.loss = self.loss123 + self.loss_w + 0.001* self.loss_gen
+
 
         grads = tf.gradients(self.loss, W, name='gradients')
         norm = tf.add_n([tf.norm(g, name='norm') for g in grads])
@@ -389,6 +397,15 @@ class Model:
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
             if self.args.l2_weights_every is None:
+                if self.model == 'semiHR':
+                    train_g = optimizer.minimize(self.loss, global_step=step)
+                    train_d = optimizer.minimize(self.loss_gen, global_step=step)
+                    self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, 2))),
+                                            true_fn=lambda: train_g,
+                                            false_fn=lambda: train_d)
+
+
+
                 self.train_op = optimizer.minimize(self.loss, global_step=step)
                 if self.args.optimizer == 'adam':
                     lr_adam = get_lr_ADAM(optimizer, learning_rate=0.01)
