@@ -50,7 +50,7 @@ def get_dataset(DATASET):
         sys.exit(1)
 
     dset_config['HR_file']=os.path.join(PATH,'sparse/data',OBJECT)
-    dset_config['save_dir']=os.path.join(PATH,'sparse/training/snapshots',OBJECT)
+    dset_config['save_dir']=os.path.join(PATH,'sparse/training/snapshots',DATASET)
 
     # dset_config = Namespace(**dset_config)
     return dset_config
