@@ -29,7 +29,7 @@ class Model:
         self.model = self.args.model
 
         self.loss_in_HR = False
-        if self.model in ['simple2d','simpleHR','simpleHR1','simpleHR2', 'semiHR','countSR'] and self.args.is_hr_label:
+        if ('HR' in self.model or 'SR' in self.model) and not '_l' in self.model and self.args.is_hr_label:
             self.loss_in_HR = True
 
     def model_fn(self, features, labels, mode):
