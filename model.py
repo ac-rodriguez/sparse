@@ -239,7 +239,7 @@ class Model:
         self.loss_w = self.args.lambda_weights * l2_weights
         self.loss = self.loss123 + self.loss_w
 
-        if self.model == 'semiHR':
+        if self.args.is_semi:
             self.fake_ = discriminator(y_hat['reg'])
             self.real_ = discriminator(self.labels)
             # Fake predictions towards 0, real preds towards 1
@@ -397,7 +397,7 @@ class Model:
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
             if self.args.l2_weights_every is None:
-                if self.model == 'semiHR':
+                if self.args.is_semi:
                     train_g = optimizer.minimize(self.loss, global_step=step)
                     train_d = optimizer.minimize(self.loss_gen, global_step=step)
                     self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, 2))),
