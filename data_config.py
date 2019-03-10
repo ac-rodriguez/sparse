@@ -45,6 +45,11 @@ def get_dataset(DATASET):
             dset_config['roi_lon_lat_tr_lb']='101.45,0.505,101.62,0.53'
             dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
             dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
+        elif DATASET == "palm100":
+            dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
+            dset_config['roi_lon_lat_tr_lb']='101.45,0.48,101.62,0.53'
+            dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
+            dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
     else:
         print('DATASET {} Not defined'.format(DATASET))
         sys.exit(1)
