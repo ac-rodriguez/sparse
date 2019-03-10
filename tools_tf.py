@@ -38,6 +38,9 @@ def sum_pool(X, scale, name=None):
                                       strides=(1, scale, scale, 1), padding='VALID'),
                        name=name)
 
+def max_pool(X, scale, name=None):
+    return tf.nn.max_pool(X, ksize=(1, scale, scale, 1),
+                                      strides=(1, scale, scale, 1), padding='VALID', name=name)
 
 def avg_pool(X, scale, name=None):
     if len(X.shape) == 3: X = tf.expand_dims(X,-1)

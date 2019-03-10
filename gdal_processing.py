@@ -173,19 +173,22 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
                     mask[y1,x1] += 1
     z_norm = np.sum(mask)
     print(' max density = {}'.format(mask.max()))
-    if up_scale > 1:
-        # sigma = scale
-        if not is_sq_kernel:
-            if sigma is None:
-                sigma = up_scale / np.pi
-            mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
 
-        mask = block_reduce(mask, (up_scale, up_scale), np.sum)
-        # clean reg
-        if not is_sq_kernel:
-            mask[mask<1e-5] = 0
-            mask = mask * (z_norm / np.sum(mask))
-        # mask = mask[::scale,::scale]
+    if not is_sq_kernel:
+        if sigma is None:
+            sigma = up_scale / np.pi
+        mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
+
+    print(' Total points: {}'.format(np.sum(mask[mask>-1])))
+
+
+    mask = block_reduce(mask, (up_scale, up_scale), np.sum)
+
+    threshold = 0
+    if not is_sq_kernel:
+        mask = mask * (z_norm / np.sum(mask))
+        threshold = 1e-5
+
     print('GT points were computed on a {} times larger area than RefData'.format(up_scale))
 
     if is_sq_kernel:
@@ -193,22 +196,23 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
     else:
         print('smoothed with a Gaussian \sigma = {:.2f} and downsampled x{} to original res'.format(sigma,up_scale))
 
-    print(' max density = {}'.format(mask.max()))
+    print(' max density = {} (after smoothing)'.format(mask.max()))
     scale_f = float(up_scale)
     # Set points outside of constraint to -1
-    mask[:,:max(0,int((xmin1-xmin) / scale_f))] = -1.
-    mask[:,int(np.ceil((xmax1-xmin+1) / scale_f)):] = -1.
-    mask[:max(0,int((ymin1-ymin) / scale_f)),:] = -1.
-    mask[int(np.ceil((ymax1-ymin+1) / scale_f)):,:] = -1.
+    mask_bool = np.zeros_like(mask)
+    mask_bool[:,:max(0,int((xmin1-xmin) / scale_f))] = -1.
+    mask_bool[:,int(np.ceil((xmax1-xmin+1) / scale_f)):] = -1.
+    mask_bool[:max(0,int((ymin1-ymin) / scale_f)),:] = -1.
+    mask_bool[int(np.ceil((ymax1-ymin+1) / scale_f)):,:] = -1.
 
+    mask = np.where(mask > threshold, mask,mask_bool)
     z = float(np.sum(mask>-1))
-    print(' Total points: {}'.format(np.sum(mask[mask>-1])))
+    print(' Total points: {} (after smoothing and downscaling)'.format(np.sum(mask[mask>-1])))
     print(' Density Distribution: p'+str([0,1,25,5,75,99,100]))
     print(np.percentile(mask[mask>0],q=(0,1,25,5,75,99,100)))
     print(' Class Distribution: \n\t1:{:.4f} \n\t0:{:.4f} '.format(np.sum(mask>0)/z, np.sum(mask==0)/z))
 
     print('\n Distribution on LR space:')
-    #TODO Check how to remove the small noise is introduced when sumpooling with -1's the LR scale labels at train time.
     mask_ = block_reduce(mask, (16//up_scale, 16//up_scale), np.sum)
     z = float(np.sum(mask_ > -1))
     print(' Total points: {}'.format(np.sum(mask_[mask_ > -1])))

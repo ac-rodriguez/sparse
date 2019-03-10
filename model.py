@@ -5,7 +5,7 @@ import numpy as np
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
 from models_sr import SR_task, dbpn_SR, slice_last_dim
-from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, get_lr_ADAM
+from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM
 # from models_semi import discriminator
 
 class Model:
@@ -24,7 +24,7 @@ class Model:
 
         self.float_ = lambda x: tf.cast(x, dtype=tf.float32)
 
-        self.sem_threshold = 0.5
+        self.sem_threshold = 0
         self.max_output_img = 1
         self.model = self.args.model
 
@@ -51,7 +51,7 @@ class Model:
         if mode == tf.estimator.ModeKeys.PREDICT:
             return tf.estimator.EstimatorSpec(mode, predictions=y_hat)
         # if self.loss_in_HR:
-        if self.is_hr_label:
+        if self.args.sq_kernel is None:
             self.sem_threshold = 1e-5
         self.compute_loss(y_hat, HR_hat)
         self.compute_summaries(y_hat, HR_hat)
@@ -72,13 +72,13 @@ class Model:
     def get_predicitons(self):
         HR_hat = None
         size = self.patch_size * self.args.scale
+        # Baseline Models
         if self.model == 'simple':  # Baseline  No High Res for training
             y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training)
         elif self.model == 'count':
             y_hat = countception(self.feat_l,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
-        elif self.model == 'simplebn':  # Baseline  No High Res for training
-            y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training, is_bn=False)
-        elif self.model == 'simple2':  # SR as a side task
+        # Low space SR models
+        elif self.model == 'simpleSR_l':  # SR as a side task
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
             HR_hat_down = self.down_(HR_hat, 3)
@@ -92,7 +92,7 @@ class Model:
             feat = tf.concat([x_h, x_l], axis=3)
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simple2a':  # SR as a side task
+        elif self.model == 'simpleSRa_l':  # SR as a side task
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=False, is_training=self.is_training)
 
             HR_hat_down = self.down_(HR_hat, 3)
@@ -105,25 +105,30 @@ class Model:
             feat = tf.concat([x_h, x_l], axis=3)
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simple2b':  # SR as a side task
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+        elif self.model == 'simple3a_l':  # SR as a side task - leaner version
+            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=False)
 
             HR_hat_down = self.down_(HR_hat, 3)
 
-            feat = tf.concat([HR_hat_down, self.feat_l[..., 3:]], axis=3)
+            # Estimated sup-pixel features from LR
+            y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
+        elif self.model == 'simpleSRB_l':  # SR as a side task
+            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
 
-            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simple2c':  # SR as a side task
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
-
-            feat_l_up = self.up_(self.feat_l[..., 3:], 8)
+            HR_hat_down = self.down_(HR_hat, 3)
 
             # Estimated sub-pixel features from LR
-            feat = tf.concat([HR_hat, feat_l_up], axis=3)
+            x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
 
+            x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+
+            feat = tf.concat([x_h, x_l], axis=3)
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-            for key, val in y_hat.iteritems():
-                y_hat[key] = sum_pool(val, self.scale)
+        elif self.model == 'simpleHR_l':
+            HR_hat_down = self.down_(self.feat_l, 3)
+            feat = tf.concat([HR_hat_down, self.feat_l[..., 3:]], axis=3)
+            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
+        # SR in HR label space MODELS
         elif self.model == 'simpleSR':  # SR as a side task
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
@@ -138,83 +143,6 @@ class Model:
                     y_hat[key] = bilinear(val, self.patch_size)
             else:
                 assert self.loss_in_HR == True
-        elif self.model == 'simple3':  # SR as a side task - leaner version
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=True)
-
-            HR_hat_down = self.down_(HR_hat, 3)
-
-            # Estimated sup-pixel features from LR
-            y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simple3a':  # SR as a side task - leaner version
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=False)
-
-            HR_hat_down = self.down_(HR_hat, 3)
-
-            # Estimated sup-pixel features from LR
-            y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simple4':  # SR as a side task - leaner version
-            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale)
-
-            HR_hat_down = self.down_(HR_hat, 3)
-
-            # Estimated sup-pixel features from LR
-            y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simple4a':  # SR as a side task
-            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
-
-            HR_hat_down = self.down_(HR_hat, 3)
-
-            # Estimated sub-pixel features from LR
-            x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
-
-            x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
-
-            feat = tf.concat([x_h, x_l], axis=3)
-            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simple4b':  # SR as a side task
-            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
-
-            HR_hat_down = self.down_(HR_hat, 3)
-
-            # Estimated sub-pixel features from LR
-            x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
-
-            x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
-
-            feat = tf.concat([x_h, x_l], axis=3)
-            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        elif self.model == 'simpleHR':
-            feat_l_up = self.up_(self.feat_l, 8)
-
-            # Estimated sub-pixel features from LR
-            feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
-
-            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-            if not self.is_hr_label:
-                for key, val in y_hat.iteritems():
-                    y_hat[key] = sum_pool(val, self.scale)
-            else:
-                assert self.loss_in_HR == True
-        elif self.model == 'simpleHRa':
-            feat_l_up = self.up_(self.feat_l, 8)
-
-            # Estimated sub-pixel features from LR
-            feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
-
-            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-            if not self.is_hr_label:
-                for key, val in y_hat.iteritems():
-                    val_ = sum_pool(val, self.scale)
-                    y_hat[key] = tf.layers.conv2d(val_, 128, 1, activation=None, padding='same')
-            else:
-                assert self.loss_in_HR == True
-        elif self.model == 'simpleHR1':
-
-            HR_hat_down = self.down_(self.feat_l, 3)
-
-            feat = tf.concat([HR_hat_down, self.feat_l[..., 3:]], axis=3)
-
-            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
         elif self.model == 'countSR':
             HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
@@ -229,12 +157,22 @@ class Model:
                     y_hat[key] = sum_pool(val, self.scale)
             else:
                 assert self.loss_in_HR == True
-        elif self.model == 'simpleHR2':
-
+        # HR Models
+        elif self.model == 'simpleHR':
             feat_l_up = self.up_(self.feat_l, 8)
 
+            # Estimated sub-pixel features from LR
             feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
 
+            y_hat = simple(feat, n_channels=1, is_training=self.is_training)
+            if not self.is_hr_label:
+                for key, val in y_hat.iteritems():
+                    y_hat[key] = sum_pool(val, self.scale)
+            else:
+                assert self.loss_in_HR == True
+        elif self.model == 'countHR':
+            feat_l_up = self.up_(self.feat_l, 8)
+            feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
             y_hat = countception(feat,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
             if not self.is_hr_label:
                 for key, val in y_hat.iteritems():
@@ -265,7 +203,7 @@ class Model:
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
 
         if self.is_hr_label and not self.loss_in_HR:
-            self.labels = sum_pool(self.labels, self.scale, name='Label_down')
+            self.labels = self.compute_labels_ls(self.labels)
 
         self.label_sem = tf.squeeze(int_(tf.greater(self.labels, self.sem_threshold)), axis=3)
 
@@ -299,13 +237,13 @@ class Model:
                        (1.0 - self.args.lambda_reg) * loss_sem + \
                        self.args.lambda_sr * w1*loss_sr
         self.loss_w = self.args.lambda_weights * l2_weights
-        if self.model == 'semiHR':
-            fake_ = discriminator(y_hat['reg'])
-            real_ = discriminator(self.labels)
-            # TODO
-            # loss_adv =
-
-            loss_seg = self.loss123 +0.001* loss_adv
+        # if self.model == 'semiHR':
+        #     fake_ = discriminator(y_hat['reg'])
+        #     real_ = discriminator(self.labels)
+        #     # TODO
+        #     # loss_adv =
+        #
+        #     loss_seg = self.loss123 +0.001* loss_adv
 
         self.loss = self.loss123 + self.loss_w
 
@@ -367,7 +305,7 @@ class Model:
 
             # Compute summaries in LR space
 
-            labels = sum_pool(self.labels, self.scale, name='Label_down')
+            labels = self.compute_labels_ls(self.labels)
             y_hat_reg = sum_pool(y_hat['reg'], self.scale, name='y_reg_down')
 
             w = self.float_(tf.where(tf.greater_equal(labels, 0.0),
@@ -426,6 +364,15 @@ class Model:
                 self.eval_metric_ops['metrics/s2nr'] = snr_metric(HR_hat, self.feat_h)
         else:
             self.eval_metric_ops = None
+
+    def compute_labels_ls(self,labels):
+        x = tf.clip_by_value(labels,0,1000)
+        x = sum_pool(x, self.scale)
+
+        xm = max_pool(labels, self.scale)
+        x = tf.where(tf.equal(xm,-1),xm,x, name='Label_down')
+        return x
+
 
     def compute_train_op(self):
 
