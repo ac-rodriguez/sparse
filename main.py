@@ -36,6 +36,8 @@ parser.add_argument("--is-padding", default=False, action="store_true",
                     help="padding train data with (patch_size-1)")
 parser.add_argument("--is-hr-label", default=False, action="store_true",
                     help="compute label on the HR resolultion")
+parser.add_argument("--warm-start-lower", default=False, action="store_true",
+                    help="fine tune from LOWER checkpoint")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
 parser.add_argument("--train-patches", default=5000, type=int,
@@ -153,9 +155,14 @@ def main(unused_args):
             train_distribute=strategy, eval_distribute=strategy)
     else:
         run_config = tf.estimator.RunConfig(save_checkpoints_secs=args.eval_every)
+    if args.warm_start_lower:
+        assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
+        warm_dir = model_dir.replace(lambdas,lambdas+'LOWER')
+    else:
+        warm_dir = None
     Model_fn = Model(params)
     model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
-                                   model_dir=model_dir, config=run_config)
+                                   model_dir=model_dir, config=run_config, warm_start_from=warm_dir)
     is_hr_pred = Model_fn.loss_in_HR
 
     tf.logging.set_verbosity(tf.logging.INFO)  # Show training logs.
