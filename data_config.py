@@ -25,7 +25,7 @@ def get_dataset(DATASET):
         dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml'
         dset_config['points']=PATH+'/barry_palm/data/labels/palm/kml_geoproposals'
 
-        if DATASET == "palm":
+        if DATASET == "palm0.3": # 2k
             dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
             dset_config['roi_lon_lat_tr_lb']='101.545,0.512,101.553,0.516'
             dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
