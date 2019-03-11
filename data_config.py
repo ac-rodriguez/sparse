@@ -30,22 +30,37 @@ def get_dataset(DATASET):
             dset_config['roi_lon_lat_tr_lb']='101.545,0.512,101.553,0.516'
             dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
             dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
-        elif DATASET == "palm1":
+        elif DATASET == "palm1": # 2K
             dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
-            dset_config['roi_lon_lat_tr_lb']='101.55,0.51,101.58,0.52'
+            dset_config['roi_lon_lat_tr_lb']='101.53,0.515,101.55,0.518'
             dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
             dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
-        elif DATASET == "palm10":
+        elif DATASET == "palm1.3": # 4k
+            dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
+            dset_config['roi_lon_lat_tr_lb']='101.52,0.515,101.555,0.518'
+            dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
+            dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
+        elif DATASET == "palm2": # 9K
+            dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
+            dset_config['roi_lon_lat_tr_lb']='101.52,0.512,101.555,0.518'
+            dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
+            dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
+        elif DATASET == "palm7": # 23K
+            dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
+            dset_config['roi_lon_lat_tr_lb']='101.50,0.51,101.56,0.52'
+            dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
+            dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
+        elif DATASET == "palm10": # 44K
             dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
             dset_config['roi_lon_lat_tr_lb']='101.48,0.51,101.58,0.52'
             dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
             dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
-        elif DATASET == "palm50":
+        elif DATASET == "palm50": # 184K
             dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
             dset_config['roi_lon_lat_tr_lb']='101.45,0.505,101.62,0.53'
             dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'
             dset_config['roi_lon_lat_val_lb']='101.45,0.53,101.62,0.55'
-        elif DATASET == "palm100":
+        elif DATASET == "palm100": # 400K
             dset_config['roi_lon_lat_tr']='101.45,0.48,101.62,0.53'
             dset_config['roi_lon_lat_tr_lb']='101.45,0.48,101.62,0.53'
             dset_config['roi_lon_lat_val']='101.45,0.53,101.62,0.55'

@@ -292,14 +292,14 @@ class DataReader(object):
     def read_data(self, is_training=True):
         self.is_HR_labels = self.args.is_hr_label
         if is_training:
-            print(' [*] Loading Train data ')
+            print('\n [*] Loading TRAIN data \n')
             self.train_h = readHR(self.args,
                                   roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
             self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
             self.labels, self.lims_labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
                                       roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
-            print(' [*] Loading Validation data ')
+            print('\n [*] Loading VALIDATION data \n')
             self.val_h = readHR(self.args,
                                 roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
             self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
