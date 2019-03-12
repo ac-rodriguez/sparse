@@ -160,6 +160,8 @@ def main(unused_args):
             warm_dir = model_dir.replace(lambdas,lambdas+'LOWER')
         else:
             warm_dir = os.path.join(args.save_dir,args.warm_start_from)
+            if not os.path.isdir(warm_dir):
+                warm_dir = args.warm_start_from
     else:
         warm_dir = None
     Model_fn = Model(params)
