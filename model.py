@@ -324,6 +324,7 @@ class Model:
             inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
         inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
+        inv_difreg_ = lambda x: uint8_(colorize(x,vmin=-2,vmax=2, cmap='coolwarm'))
 
         pred_class = tf.argmax(y_hat['sem'], axis=3)
         w = self.w
@@ -341,10 +342,17 @@ class Model:
 
         image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
         image_array_mid = tf.map_fn(inv_sem_, tf.concat(axis=2, values=[label_sem, int_(pred_class)]), dtype=tf.uint8)
+
+        image_array_top = tf.concat(axis=2, values=[image_array_top,
+                                                    tf.map_fn(inv_difreg_, labels - y_hat_reg, dtype=tf.uint8)])
+        image_array_mid = tf.concat(axis=2, values=[image_array_mid,
+                                                    tf.map_fn(inv_difreg_, label_sem - int_(pred_class),
+                                                              dtype=tf.uint8)])
+
         if self.loss_in_HR:
             assert (self.labels.shape[1:3] == self.feat_h.shape[1:3])
 
-            image_array_bottom = tf.concat(axis=2, values=[feat_l_up, uint8_(self.feat_h)])
+            image_array_bottom = tf.concat(axis=2, values=[feat_l_up, uint8_(self.feat_h),uint8_(self.feat_h)])
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
             tf.summary.image('HR_Loss/HR', image_array, max_outputs=self.max_output_img)
@@ -365,11 +373,13 @@ class Model:
             pred_class = tf.squeeze(tf.round(avg_pool(self.float_(pred_class), self.scale, name='sem_down')), axis=3)
 
             inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
+            # inv_difreg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='hot'))
 
-            image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
-            image_array_mid = tf.map_fn(inv_sem_, tf.concat(axis=2, values=[label_sem, int_(pred_class)]),
-                                        dtype=tf.uint8)
-            image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down])
+            image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg,labels-y_hat_reg ]), dtype=tf.uint8)
+            image_array_top = tf.concat(axis=2,values=[image_array_top,tf.map_fn(inv_difreg_, labels-y_hat_reg , dtype=tf.uint8)])
+            image_array_mid = tf.map_fn(inv_sem_, tf.concat(axis=2, values=[label_sem, int_(pred_class)]),dtype=tf.uint8)
+            image_array_mid = tf.concat(axis=2, values=[image_array_mid, tf.map_fn(inv_difreg_,  label_sem-int_(pred_class), dtype=tf.uint8) ])
+            image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down, feat_h_down])
 
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
@@ -377,7 +387,7 @@ class Model:
 
         else:
 
-            image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down])
+            image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down, feat_h_down])
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
             tf.summary.image('LR_Loss/LR', image_array, max_outputs=self.max_output_img)

@@ -159,7 +159,7 @@ def main(unused_args):
             assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
             warm_dir = model_dir.replace(lambdas,lambdas+'LOWER')
         else:
-            warm_dir = os.path.join(os.path.dirname(model_dir),args.warm_start_from)
+            warm_dir = os.path.join(args.save_dir,args.warm_start_from)
     else:
         warm_dir = None
     Model_fn = Model(params)
