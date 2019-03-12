@@ -375,10 +375,12 @@ class Model:
             inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
             # inv_difreg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='hot'))
 
-            image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg,labels-y_hat_reg ]), dtype=tf.uint8)
-            image_array_top = tf.concat(axis=2,values=[image_array_top,tf.map_fn(inv_difreg_, labels-y_hat_reg , dtype=tf.uint8)])
+            image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg ]), dtype=tf.uint8)
             image_array_mid = tf.map_fn(inv_sem_, tf.concat(axis=2, values=[label_sem, int_(pred_class)]),dtype=tf.uint8)
+
+            image_array_top = tf.concat(axis=2,values=[image_array_top,tf.map_fn(inv_difreg_, labels-y_hat_reg , dtype=tf.uint8)])
             image_array_mid = tf.concat(axis=2, values=[image_array_mid, tf.map_fn(inv_difreg_,  label_sem-int_(pred_class), dtype=tf.uint8) ])
+
             image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down, feat_h_down])
 
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
