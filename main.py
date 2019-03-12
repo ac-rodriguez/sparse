@@ -162,6 +162,7 @@ def main(unused_args):
             warm_dir = os.path.join(args.save_dir,args.warm_start_from)
             if not os.path.isdir(warm_dir):
                 warm_dir = args.warm_start_from
+        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=".*counception.*")
     else:
         warm_dir = None
     Model_fn = Model(params)
