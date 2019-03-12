@@ -57,6 +57,7 @@ parser.add_argument("--lambda-weights", default=1.0, type=float, help="Lambda fo
 # parser.add_argument("--weight-decay", type=float, default=0.0005,
 #                     help="Regularisation parameter for L2-loss.")
 parser.add_argument("--train-iters", default=1000, type=int, help="Number of iterations to train")
+parser.add_argument("--unlabeled-after", default=0, type=np.int64, help="Feed unlabeled data after number of iterations")
 parser.add_argument("--sr-after", default=None, type=np.int64, help="Start SR task after number of iterations")
 parser.add_argument("--eval-every", default=600, type=int, help="Number of seconds between evaluations")
 parser.add_argument("--model", default="simple",

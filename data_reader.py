@@ -165,9 +165,10 @@ class DataReader(object):
 
             self.n_channels = self.train[0].shape[-1]
 
+            d2_after = self.args.unlabeled_after * self.batch
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                             patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=is_random_patches,
-                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels)
+                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels, d2_after=d2_after)
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
@@ -527,13 +528,14 @@ class DataReader(object):
 
 class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
-                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, parent = None):
+                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, d2_after=0):
 
         self.d_l = dataset_low
         self.d_h = dataset_high
         self.label = label
         self.patches_with_labels = patches_with_labels
         self.lims_lab = lims_with_labels
+        self.d2_after = d2_after
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
             self.label_1 = np.zeros_like(self.label)
@@ -569,7 +571,7 @@ class PatchExtractor:
             print('Extracted random patches = {}'.format(max_patches))
 
             # Patches with ground truth
-            buffer_size = self.patch_l
+            buffer_size = self.patch_l //2
             if self.is_HR_label:
                 ymin, xmin, ymax, xmax = map(lambda x: x // self.scale, self.lims_lab)
             else:
@@ -589,12 +591,13 @@ class PatchExtractor:
 
             indices = coords1[:,0]*self.n_y + coords1[:,1]
             assert np.max(indices) < (n_x*self.n_y), (np.max(indices), (n_x*self.n_y))
-
             # Corner is always computed in low_res data
             indices1 = np.random.choice(n_x * self.n_y, size=int(max_patches)-len(indices), replace=False)
 
             self.indices = np.concatenate((indices,indices1))
-            np.random.shuffle(self.indices)
+            self.shuffled_indices = False
+            self.len_labels = len(indices)
+            self.len_labelsALL = len(self.indices)
 
             print(' {}/{} are patches with GT'.format(len(indices),len(self.indices)))
 
@@ -671,7 +674,15 @@ class PatchExtractor:
     def get_random_patches(self):
 
         with self.lock:
-            ind = self.indices[np.mod(self.rand_ind,len(self.indices))]
+            if self.rand_ind < self.d2_after:
+                ind = self.indices[np.mod(self.rand_ind,self.len_labels)]
+            else:
+                if not self.shuffled_indices:
+                    np.random.shuffle(self.indices)
+                    self.shuffled_indices = True
+                    print(' Shuffling and addind unlabeled data')
+                ind = self.indices[np.mod(self.rand_ind,self.len_labelsALL)]
+
             # print ' rand_index={}'.format(self.rand_ind)
             self.rand_ind+=1
         # ind = 50
