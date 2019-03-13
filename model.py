@@ -5,7 +5,8 @@ cross_entropy = tf.losses.sparse_softmax_cross_entropy
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
-from models_sr import SR_task, dbpn_SR, slice_last_dim
+# from models_sr import SR_task, dbpn_SR, slice_last_dim
+import models_sr as sr
 from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM
 import models_semi as semi
 class Model:
@@ -79,7 +80,7 @@ class Model:
             y_hat = countception(self.feat_l,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
         # Low space SR models
         elif self.model == 'simpleSR_l':  # SR as a side task
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+            HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
             HR_hat_down = self.down_(HR_hat, 3)
             # HR_hat_down = tf.layers.average_pooling2d(HR_hat,args.scale,args.scale)
@@ -93,7 +94,7 @@ class Model:
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
         elif self.model == 'simpleSRa_l':  # SR as a side task
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=False, is_training=self.is_training)
+            HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=False, is_training=self.is_training)
 
             HR_hat_down = self.down_(HR_hat, 3)
 
@@ -106,14 +107,14 @@ class Model:
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
         elif self.model == 'simple3a_l':  # SR as a side task - leaner version
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=False)
+            HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=False)
 
             HR_hat_down = self.down_(HR_hat, 3)
 
             # Estimated sup-pixel features from LR
             y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
         elif self.model == 'simpleSRB_l':  # SR as a side task
-            HR_hat = dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
+            HR_hat = sr.dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
 
             HR_hat_down = self.down_(HR_hat, 3)
 
@@ -130,7 +131,7 @@ class Model:
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
         # SR in HR label space MODELS
         elif self.model == 'simpleSR':  # SR as a side task
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+            HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
             feat_l_up = self.up_(self.feat_l, 8)
 
@@ -144,7 +145,7 @@ class Model:
             else:
                 assert self.loss_in_HR == True
         elif self.model == 'countSR':
-            HR_hat = SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+            HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
             feat_l_up = self.up_(self.feat_l, 8)
 
@@ -181,6 +182,13 @@ class Model:
                 assert self.loss_in_HR == True
         elif self.model == 'countHR_l':
             Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=False, scale = self.scale)
+
+            Zl = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+            self.Zl = tf.layers.conv2d(Zl, 256, 3, activation=tf.nn.relu, padding='same')
+
+            y_hat = countception(Zh,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
+        elif self.model == 'countHRD_l':
+            Zh = sr.dbpn_LR(self.feat_h, is_training=self.is_training, scale=self.scale)
 
             Zl = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
             self.Zl = tf.layers.conv2d(Zl, 256, 3, activation=tf.nn.relu, padding='same')
@@ -459,8 +467,8 @@ class Model:
                     self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, 2))),
                                             true_fn=lambda: train_g,
                                             false_fn=lambda: train_d)
-
-                self.train_op = optimizer.minimize(self.loss, global_step=step)
+                else:
+                    self.train_op = optimizer.minimize(self.loss, global_step=step)
                 if self.args.optimizer == 'adam':
                     lr_adam = get_lr_ADAM(optimizer, learning_rate=0.01)
                     tf.summary.scalar('loss/adam_lr', lr_adam)

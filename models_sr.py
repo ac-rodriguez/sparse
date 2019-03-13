@@ -3,7 +3,7 @@ import sys
 
 from colorize import slice_last_dim
 from tools_tf import bilinear, bn_layer, resid_block
-
+import numpy as np
 
 def deeplab(input, n_channels, is_training=True):
     with tf.variable_scope('resnet_blocks'):
@@ -179,3 +179,26 @@ def dbpn_SR(feat_l,scale=2, is_training=True, deep=1):
     HR_hat = tf.layers.conv2d(concat_h, 3, 3, activation=tf.nn.sigmoid, padding='same')
 
     return HR_hat
+
+
+def dbpn_LR(x,scale=2, is_training=True):
+
+    if scale < 8:
+        kernel = 3
+    else:
+        kernel = 4
+    stride=2
+    base_filter = 256
+
+    l = ConvBlock(x, filters=base_filter, kernel=kernel, stride=1, padding='SAME', activation_fn=prelu, is_training=is_training)
+    # l = DownBlock(X, filters=base_filter, kernel=kernel, stride=stride, padding='SAME', activation_fn=prelu,
+    #                is_training=is_training)
+
+    for i in range(int(np.log2(scale))):
+
+        # h1 = UpBlock(l, filters=base_filter*(i+1),kernel=kernel,stride=stride,padding='SAME', activation_fn=prelu, is_training=is_training)
+        l = DownBlock(l, filters=base_filter,kernel=kernel,stride=stride,padding='SAME', activation_fn=prelu, is_training=is_training)
+        # l = tf.concat([l, l2], axis=3)
+
+    return tf.nn.relu(l)
+
