@@ -28,7 +28,7 @@ class Model:
         self.sem_threshold = 0
         self.max_output_img = 1
         self.model = self.args.model
-
+        self.two_ds= True
         self.loss_in_HR = False
         if ('HR' in self.model or 'SR' in self.model) and not '_l' in self.model and self.args.is_hr_label:
             self.loss_in_HR = True
@@ -44,7 +44,8 @@ class Model:
         else:
             self.feat_l = features
             self.feat_h = None
-
+        if self.two_ds:
+            self.feat_lU, self.feat_hU = features['feat_lU'], features['feat_hU']
         self.patch_size = self.feat_l.shape[1]
 
         y_hat, HR_hat = self.get_predicitons()
@@ -131,12 +132,16 @@ class Model:
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
         # SR in HR label space MODELS
         elif self.model == 'simpleSR':  # SR as a side task
-            HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+            HR_hatL = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
 
-            feat_l_up = self.up_(self.feat_l, 8)
+            if self.two_ds:
+                HR_hat = sr.SR_task(feat_l=self.feat_lU, size=size, is_batch_norm=True, is_training=self.is_training)
+            else:
+                HR_hat = HR_hatL
 
+            feat_l_up = self.up_(self.feat_lU, 8)
             # Estimated sub-pixel features from LR
-            feat = tf.concat([HR_hat, feat_l_up], axis=3)
+            feat = tf.concat([HR_hatL, feat_l_up], axis=3)
 
             y_hat = simple(feat, n_channels=1, is_training=self.is_training)
             if not self.is_hr_label:
@@ -145,12 +150,15 @@ class Model:
             else:
                 assert self.loss_in_HR == True
         elif self.model == 'countSR':
-            HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+            HR_hatL = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
+
+            if self.two_ds:
+                HR_hat = sr.SR_task(feat_l=self.feat_lU, size=size, is_batch_norm=True, is_training=self.is_training)
+            else:
+                HR_hat = HR_hatL
 
             feat_l_up = self.up_(self.feat_l, 8)
-
-            # Estimated sub-pixel features from LR
-            feat = tf.concat([HR_hat, feat_l_up], axis=3)
+            feat = tf.concat([HR_hatL, feat_l_up], axis=3)
 
             y_hat = countception(feat,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
             if not self.is_hr_label:
@@ -181,7 +189,7 @@ class Model:
             else:
                 assert self.loss_in_HR == True
         elif self.model == 'countHR_l':
-            Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=False, scale = self.scale)
+            Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
 
             Zl = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
             self.Zl = tf.layers.conv2d(Zl, 256, 3, activation=tf.nn.relu, padding='same')
@@ -235,7 +243,8 @@ class Model:
         l2_weights = tf.add_n([0.0005 * tf.nn.l2_loss(v) for v in W])
 
         if HR_hat is not None:
-            loss_sr = tf.nn.l2_loss(HR_hat - self.feat_h)
+
+            loss_sr = tf.nn.l2_loss(HR_hat - self.feat_hU) if self.two_ds else tf.nn.l2_loss(HR_hat - self.feat_h)
         else:
             loss_sr = 0.
         if self.args.sr_after is not None:

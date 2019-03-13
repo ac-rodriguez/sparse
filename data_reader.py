@@ -143,6 +143,7 @@ class DataReader(object):
           args: arguments from the train.py
         '''
         self.args = args
+        self.two_ds = True
         self.is_training = is_training
         self.run_60 = False
         self.luminosity_scale = 9999.0
@@ -168,7 +169,7 @@ class DataReader(object):
             d2_after = self.args.unlabeled_after * self.batch
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                             patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=is_random_patches,
-                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels, d2_after=d2_after)
+                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels, d2_after=d2_after, two_ds=self.two_ds)
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
@@ -187,7 +188,7 @@ class DataReader(object):
             #                                     scale=args.scale)
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                 patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=is_random_patches,border=4,
-                                                scale=args.scale, max_N=args.val_patches, lims_with_labels=self.lims_labels_val, patches_with_labels=self.args.patches_with_labels)
+                                                scale=args.scale, max_N=args.val_patches, lims_with_labels=self.lims_labels_val, patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
 
             # featl,data_h = self.patch_gen_val.get_inputs()
             # plt.imshow(data_h[...,0:3])
@@ -209,7 +210,7 @@ class DataReader(object):
 
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                                  patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                                 scale=args.scale, lims_with_labels=self.lims_labels, patches_with_labels=self.args.patches_with_labels)
+                                                 scale=args.scale, lims_with_labels=self.lims_labels, patches_with_labels=self.args.patches_with_labels, two_ds=True)
 
             self.n_channels = self.train[0].shape[-1]
 
@@ -252,19 +253,21 @@ class DataReader(object):
     def non_random_patches(self):
         self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                         patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                        scale=self.args.scale, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels)
+                                        scale=self.args.scale, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels,two_ds=True)
         if self.is_training:
 
             self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                 patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
                                                 is_random=False, border=4,
-                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val,  patches_with_labels=self.args.patches_with_labels)
+                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val,  patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
 
     def normalize(self, features, labels):
 
         features['feat_l'] -= self.mean_train
         features['feat_l'] /= self.std_train
-
+        if self.two_ds:
+            features['feat_lU'] -= self.mean_train
+            features['feat_lU'] /= self.std_train
         return features, labels
 
 
@@ -283,12 +286,27 @@ class DataReader(object):
 
         return features, labels
     def reorder_ds(self, data_l, data_h):
-        if self.is_HR_labels:
-            return {'feat_l': data_l,
-                    'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1], axis=-1)
+        n = self.n_channels
+        if not self.two_ds:
+            if self.is_HR_labels:
+                return {'feat_l': data_l,
+                        'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1], axis=-1)
+            else:
+                return {'feat_l': data_l[..., 0:n],
+                        'feat_h': data_h}, tf.expand_dims(data_l[..., -1], axis=-1)
         else:
-            return {'feat_l': data_l[..., 0:self.n_channels],
-                    'feat_h': data_h}, tf.expand_dims(data_l[..., -1], axis=-1)
+            if self.is_HR_labels:
+                return {'feat_l': data_l[...,:n],
+                        'feat_h': data_h[..., 0:3],
+                        'feat_lU': data_l[...,n:],
+                        'feat_hU': data_h[..., 4:7],},\
+                       tf.expand_dims(data_h[..., 3], axis=-1)
+            else:
+                return {'feat_l': data_l[..., 0:n],
+                        'feat_h': data_h[...,0:3],
+                        'feat_lU': data_l[..., (n+1):2*n+1],
+                        'feat_hU': data_h[..., 3:]},\
+                       tf.expand_dims(data_l[..., n], axis=-1)
 
     def read_data(self, is_training=True):
         self.is_HR_labels = self.args.is_hr_label
@@ -466,12 +484,14 @@ class DataReader(object):
             gen_func = self.patch_gen_val.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
 
+        multiplier = 2 if self.two_ds else 1
+
         if self.is_HR_labels:
-            n_low = self.n_channels
-            n_high = 4
+            n_low = self.n_channels *multiplier
+            n_high = 4 *multiplier
         else:
-            n_low = self.n_channels + 1
-            n_high = 3
+            n_low = (self.n_channels + 1)*multiplier
+            n_high = 3 *multiplier
         ds = tf.data.Dataset.from_generator(
             gen_func, (tf.float32, tf.float32),
             (
@@ -528,7 +548,8 @@ class DataReader(object):
 
 class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
-                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, d2_after=0):
+                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, d2_after=0, two_ds=True):
+        self.two_ds = two_ds
 
         self.d_l = dataset_low
         self.d_h = dataset_high
@@ -570,8 +591,17 @@ class PatchExtractor:
             max_patches = min(self.nr_patches, n_x*self.n_y)
             print('Extracted random patches = {}'.format(max_patches))
 
-            # Patches with ground truth
-            buffer_size = self.patch_l //2
+
+            if self.two_ds:
+                buffer_size = 0
+                size_label_ind = max_patches
+
+            else:
+                size_label_ind = int(max_patches*self.patches_with_labels)
+
+                # Patches with ground truth
+                buffer_size = self.patch_l //2
+
             if self.is_HR_label:
                 ymin, xmin, ymax, xmax = map(lambda x: x // self.scale, self.lims_lab)
             else:
@@ -582,7 +612,7 @@ class PatchExtractor:
             area_labels = (xmax-xmin+buffer_size,ymax-ymin+buffer_size)
             # area_labels = (50,50)
 
-            indices = np.random.choice(area_labels[0]*area_labels[1],size=int(max_patches*self.patches_with_labels),replace=False)
+            indices = np.random.choice(area_labels[0]*area_labels[1],size=size_label_ind,replace=False)
             dx, dy, n_y_lab = max(0,xmin -buffer_size//2), max(0,ymin -buffer_size//2), area_labels[1]
 
             coords = np.array(map(lambda x: divmod(x,n_y_lab),indices))
@@ -591,15 +621,24 @@ class PatchExtractor:
 
             indices = coords1[:,0]*self.n_y + coords1[:,1]
             assert np.max(indices) < (n_x*self.n_y), (np.max(indices), (n_x*self.n_y))
-            # Corner is always computed in low_res data
-            indices1 = np.random.choice(n_x * self.n_y, size=int(max_patches)-len(indices), replace=False)
 
-            self.indices = np.concatenate((indices,indices1))
-            self.shuffled_indices = False
-            self.len_labels = len(indices)
-            self.len_labelsALL = len(self.indices)
+            if self.two_ds:
+                self.indices1 = indices
+                self.indices2 = np.random.choice(n_x * self.n_y, size=len(self.indices1), replace=False)
 
-            print(' {}/{} are patches with GT'.format(len(indices),len(self.indices)))
+                print(' labeled and unlabeled data are always fed within a batch')
+
+            else:
+
+                # Corner is always computed in low_res data
+                indices1 = np.random.choice(n_x * self.n_y, size=int(max_patches)-len(indices), replace=False)
+
+                self.indices = np.concatenate((indices,indices1))
+                self.shuffled_indices = False
+                self.len_labels = len(indices)
+                self.len_labelsALL = len(self.indices)
+
+                print(' {}/{} are patches with GT'.format(len(indices),len(self.indices)))
 
             self.rand_ind = 0
         self.lock = Lock()
@@ -625,7 +664,13 @@ class PatchExtractor:
                     for ii in self.range_i:
                         for jj in self.range_j:
                             # print(i, ii, jj)
-                            self.inputs_queue.put(self.get_patches(xy_corner=(ii, jj)))  # + (i,)
+                            if self.two_ds:
+                                patches = self.get_patches(xy_corner=(ii, jj))
+                                patches = np.concatenate((patches[0], patches[0]), axis=-1), np.concatenate(
+                                    (patches[1], patches[1]), axis=-1)
+                                self.inputs_queue.put(patches)
+                            else:
+                                self.inputs_queue.put(self.get_patches(xy_corner=(ii, jj)))  # + (i,)
                             i += 1
                     print 'starting over Val set {}'.format(i)
 
@@ -673,22 +718,39 @@ class PatchExtractor:
 
     def get_random_patches(self):
 
-        with self.lock:
-            if self.rand_ind < self.d2_after:
-                ind = self.indices[np.mod(self.rand_ind,self.len_labels)]
-            else:
-                if not self.shuffled_indices:
-                    np.random.shuffle(self.indices)
-                    self.shuffled_indices = True
-                    print(' Shuffling and addind unlabeled data')
-                ind = self.indices[np.mod(self.rand_ind,self.len_labelsALL)]
 
-            # print ' rand_index={}'.format(self.rand_ind)
-            self.rand_ind+=1
-        # ind = 50
-        corner_ = divmod(ind, self.n_y)
+        if not self.two_ds:
+            with self.lock:
+                if self.rand_ind < self.d2_after:
+                    ind = self.indices[np.mod(self.rand_ind,self.len_labels)]
+                else:
+                    if not self.shuffled_indices:
+                        np.random.shuffle(self.indices)
+                        self.shuffled_indices = True
+                        print(' Shuffling and addind unlabeled data')
+                    ind = self.indices[np.mod(self.rand_ind,self.len_labelsALL)]
 
-        return self.get_patches(corner_)
+                # print ' rand_index={}'.format(self.rand_ind)
+                self.rand_ind+=1
+            # ind = 50
+            corner_ = divmod(ind, self.n_y)
+
+            return self.get_patches(corner_)
+        else:
+            with self.lock:
+                ind1 = self.indices1[np.mod(self.rand_ind, len(self.indices1))]
+                ind2 = self.indices2[np.mod(self.rand_ind, len(self.indices2))]
+
+                # print ' rand_index={}'.format(self.rand_ind)
+                self.rand_ind += 1
+                # ind = 50
+            corner1_ = divmod(ind1, self.n_y)
+            corner2_ = divmod(ind2, self.n_y)
+            patches1 = self.get_patches(corner1_)
+            patches2 = self.get_patches(corner2_)
+            patches = np.concatenate((patches1[0],patches2[0]),axis=-1) , np.concatenate((patches1[1],patches2[1]),axis=-1)
+            return patches
+
 
     def compute_tile_ranges(self):
 

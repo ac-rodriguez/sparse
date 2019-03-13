@@ -51,7 +51,7 @@ def SR_task_old(feat_l, args, is_batch_norm=True, is_training=True):
 
         return HR_hat
 def SR_task(feat_l, size, is_batch_norm=True, is_training=True):
-    with tf.variable_scope('SR_task'):
+    with tf.variable_scope('SR_task',reuse=tf.AUTO_REUSE):
         feat_l_up = bilinear(feat_l, size=size, name='LR_up')
 
         HR_hat1 = deep_sentinel2(feat_l_up, n_channels=3, is_residual=False, is_training=is_training,
