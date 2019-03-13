@@ -612,7 +612,7 @@ class PatchExtractor:
             area_labels = (xmax-xmin+buffer_size,ymax-ymin+buffer_size)
             # area_labels = (50,50)
 
-            indices = np.random.choice(area_labels[0]*area_labels[1],size=size_label_ind,replace=False)
+            indices = np.random.choice(area_labels[0]*area_labels[1],size=min(area_labels[0]*area_labels[1],size_label_ind),replace=False)
             dx, dy, n_y_lab = max(0,xmin -buffer_size//2), max(0,ymin -buffer_size//2), area_labels[1]
 
             coords = np.array(map(lambda x: divmod(x,n_y_lab),indices))
