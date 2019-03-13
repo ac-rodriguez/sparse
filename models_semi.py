@@ -1,6 +1,6 @@
 import tensorflow as tf
 import tools_tf as tools
-
+import numpy as np
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
@@ -42,3 +42,18 @@ def discriminator(input, scope_name='discriminator', is_training=True, is_bn=Tru
             return x, x1
         else:
             return x
+
+
+def encode_HR(input, scope_name='encode_HR', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, scale=8):
+    with tf.variable_scope(scope_name, reuse=reuse):
+
+        x = tf.layers.conv2d(input, 64, kernel_size=3, strides=1, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        for _ in range(int(np.log2(scale))):
+            x = tf.layers.conv2d(x, 128, kernel_size=3, strides=2, padding='same')
+            x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+            x = tf.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
+            x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+        return x

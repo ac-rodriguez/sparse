@@ -7,8 +7,7 @@ from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
 from models_sr import SR_task, dbpn_SR, slice_last_dim
 from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM
-from models_semi import discriminator
-
+import models_semi as semi
 class Model:
     def __init__(self, params):
         self.args = params['args']
@@ -180,6 +179,13 @@ class Model:
                     y_hat[key] = sum_pool(val, self.scale)
             else:
                 assert self.loss_in_HR == True
+        elif self.model == 'countHR_l':
+            Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=False, scale = self.scale)
+
+            Zl = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+            self.Zl = tf.layers.conv2d(Zl, 256, 3, activation=tf.nn.relu, padding='same')
+
+            y_hat = countception(Zh,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
         elif self.model == 'semiHR':
 
             feat_l_up = self.up_(self.feat_l, 8)
@@ -240,8 +246,8 @@ class Model:
         self.loss = self.loss123 + self.loss_w
 
         if self.args.semi == 'semi':
-            self.fake_ = discriminator(y_hat['reg'])
-            self.real_ = discriminator(self.labels)
+            self.fake_ = semi.discriminator(y_hat['reg'])
+            self.real_ = semi.discriminator(self.labels)
             # Fake predictions towards 0, real preds towards 1
             self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32),logits=self.fake_) + \
                         cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32), logits=self.real_,weights=self.w)
@@ -254,8 +260,8 @@ class Model:
             # loss_semi = tf.losses.mean_squared_error(labels=y_hat['reg'],predictions=y_hat['reg'])
             self.loss+= 0.001* self.loss_gen
         elif self.args.semi == 'semiFeat':
-            self.fake_,feat_f = discriminator(y_hat['reg'],return_feat=True)
-            self.real_,feat_r = discriminator(self.labels, return_feat=True)
+            self.fake_,feat_f = semi.discriminator(y_hat['reg'],return_feat=True)
+            self.real_,feat_r = semi.discriminator(self.labels, return_feat=True)
             # Fake predictions towards 0, real preds towards 1
             self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32),logits=self.fake_) + \
                         cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32), logits=self.real_,weights=self.w)
@@ -266,8 +272,8 @@ class Model:
 
             self.loss+= 0.001* self.loss_gen
         elif self.args.semi == 'semi1':
-            self.fake_ = discriminator(tf.concat((y_hat['reg'],y_hat['sem']),axis=-1))
-            self.real_ = discriminator(tf.concat((self.labels,self.float_(tf.one_hot(self.label_sem,depth=2))),axis=-1))
+            self.fake_ = semi.discriminator(tf.concat((y_hat['reg'],y_hat['sem']),axis=-1))
+            self.real_ = semi.discriminator(tf.concat((self.labels,self.float_(tf.one_hot(self.label_sem,depth=2))),axis=-1))
             # Fake predictions towards 0, real preds towards 1
             self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32), logits=self.fake_) + \
                              cross_entropy(labels=tf.ones_like(self.labels, dtype=tf.int32), logits=self.real_,
@@ -279,8 +285,8 @@ class Model:
 
             self.loss += 0.001 * self.loss_gen
         elif self.args.semi == 'semi1Feat':
-            self.fake_, feat_f= discriminator(tf.concat((y_hat['reg'],y_hat['sem']),axis=-1), return_feat=True)
-            self.real_, feat_r = discriminator(tf.concat((self.labels,self.float_(tf.one_hot(self.label_sem,depth=2))),axis=-1), return_feat=True)
+            self.fake_, feat_f= semi.discriminator(tf.concat((y_hat['reg'],y_hat['sem']),axis=-1), return_feat=True)
+            self.real_, feat_r = semi.discriminator(tf.concat((self.labels,self.float_(tf.one_hot(self.label_sem,depth=2))),axis=-1), return_feat=True)
             # Fake predictions towards 0, real preds towards 1
             self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32), logits=self.fake_) + \
                              cross_entropy(labels=tf.ones_like(self.labels, dtype=tf.int32), logits=self.real_,

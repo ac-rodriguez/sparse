@@ -14,7 +14,7 @@ from plots import check_dims, plot_rgb, plot_heatmap
 from read_geoTiff import readHR, readS2
 import gdal_processing as gp
 
-IS_DEBUG=True
+IS_DEBUG=False
 ### ZRH 1 Sentinel-2 and Google-high res data
 
 def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
