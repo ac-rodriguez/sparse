@@ -189,12 +189,20 @@ class Model:
             else:
                 assert self.loss_in_HR == True
         elif self.model == 'countHR_l':
-            Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
+            Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=False, scale = self.scale)
 
             Zl = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
             self.Zl = tf.layers.conv2d(Zl, 256, 3, activation=tf.nn.relu, padding='same')
 
             y_hat = countception(Zh,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
+        elif self.model == 'countHR_la':
+            Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
+
+            Zl = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
+            self.Zl = tf.layers.conv2d(Zl, 256, 3, activation=tf.nn.relu, padding='same')
+            feat = tf.concat([Zh, self.Zl], axis=3)
+
+            y_hat = countception(feat,pad=self.args.sq_kernel*16//2, is_training=self.is_training)
         elif self.model == 'countHRD_l':
             Zh = sr.dbpn_LR(self.feat_h, is_training=self.is_training, scale=self.scale)
 
