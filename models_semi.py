@@ -43,6 +43,32 @@ def discriminator(input, scope_name='discriminator', is_training=True, is_bn=Tru
         else:
             return x
 
+from flip_gradient import flip_gradient
+def domain_discriminator(input, scope_name='domain_discriminator', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False):
+    with tf.variable_scope(scope_name, reuse=reuse):
+
+        x = flip_gradient(input)
+
+        x = tf.layers.conv2d(x, 64, kernel_size=3, strides=1, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        x = tf.layers.conv2d(x, 128, kernel_size=3, strides=1, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        x = tf.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+        x1 = x
+        x = tf.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        x = tf.layers.conv2d(x, 2, kernel_size=4, strides=1, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        if return_feat:
+            return x, x1
+        else:
+            return x
+
 
 def encode_HR(input, scope_name='encode_HR', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, scale=8):
     with tf.variable_scope(scope_name, reuse=reuse):
@@ -57,3 +83,14 @@ def encode_HR(input, scope_name='encode_HR', is_training=True, is_bn=True, reuse
             x = tf.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
+
+def encode_LR(input, scope_name='encode_LR', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE):
+    with tf.variable_scope(scope_name, reuse=reuse):
+
+        x = tf.layers.conv2d(input, 128, 3, activation=tf.nn.relu, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        x = tf.layers.conv2d(x, 256, 3, activation=tf.nn.relu, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+        return x
+

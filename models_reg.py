@@ -72,7 +72,7 @@ def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True)
 
 
 
-def countception(input,pad, scope_name='countception', is_training=True):
+def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE):
 
     def selu(x):
         with tf.name_scope('elu') as scope:
@@ -103,7 +103,7 @@ def countception(input,pad, scope_name='countception', is_training=True):
             conv3x3 = ConvLayer(x, num_filters2, [3, 3], 'conv3x3', pad='SAME')
             return tf.concat([conv1x1, conv3x3], axis=-1)
 
-    with tf.variable_scope(scope_name, reuse =tf.AUTO_REUSE):
+    with tf.variable_scope(scope_name, reuse=reuse):
         # pad = 32
         net = tf.pad(input, [[0, 0], [pad, pad], [pad, pad], [0, 0]], 'CONSTANT')
         # net = input
@@ -114,6 +114,7 @@ def countception(input,pad, scope_name='countception', is_training=True):
         net = ConcatBlock(net, 112, 48, name='concat_block3')
         net = ConcatBlock(net, 64, 32, name='concat_block4')
         net = ConcatBlock(net, 40, 40, name='concat_block5')
+        net1 = net
         net = ConcatBlock(net, 32, 96, name='concat_block6')
         net = ConvLayer(net, 32, [17, 17], name='conv3', pad='VALID')
         net = ConvLayer(net, 64, [1, 1], name='conv4', pad='VALID')
@@ -123,5 +124,8 @@ def countception(input,pad, scope_name='countception', is_training=True):
 
         net_reg = tf.image.crop_to_bounding_box(net_reg, 0, 0, input.shape[1],input.shape[2])
         net_sem = tf.image.crop_to_bounding_box(net_sem, 0, 0, input.shape[1],input.shape[2])
-
+    if is_return_feat:
+        return {'reg': net_reg, 'sem': net_sem}, net1
+    else:
         return {'reg': net_reg, 'sem': net_sem}
+
