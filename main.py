@@ -88,6 +88,8 @@ parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--semi-supervised",dest='semi', default=None,
                     help="semi-supervised adversarial task")
+parser.add_argument("--domain-transfer",dest='domain', default=None,
+                    help="domain transfer model  HR to LR")
 parser.add_argument("--optimizer", type=str, default='adam',
                     help="['adagrad', 'adam']")
 parser.add_argument("--lr", type=float, default=2.5e-4,
@@ -114,6 +116,7 @@ def main(unused_args):
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
     if args.is_hr_label: args.tag = '_hrlab' + args.tag
     if args.semi is not None: args.tag = '_'+args.semi + args.tag
+    if args.domain is not None: args.tag = '_'+args.domain + args.tag
 
     if args.is_lower_bound:
         print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,
