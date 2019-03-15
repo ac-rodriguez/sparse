@@ -31,6 +31,7 @@ class Model:
         self.two_ds= True
         self.loss_in_HR = False
         self.add_yhath = True
+        self.is_domain_transfer_model = False
         if ('HR' in self.model or 'SR' in self.model) and not '_l' in self.model and self.args.is_hr_label:
             self.loss_in_HR = True
 
@@ -229,6 +230,7 @@ class Model:
 
         elif self.model == 'countHR_lc':
             # Train on both resolutions and labels, predict on LR only. Comparison on Lower-level features
+            self.is_domain_transfer_model = True
 
             self.Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             self.Zl = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
@@ -238,13 +240,14 @@ class Model:
                 self.y_hath = countception(self.Zh, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training)
         elif self.model == 'countHR_ld':
             # Train on both resolutions and labels, predict on LR only. Comparison on Higher-level features
+            self.is_domain_transfer_model = True
 
             encHR = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             encLR = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
 
             y_hat, self.Zl = countception(encLR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training, is_return_feat=True)
             if self.add_yhath:
-                self.y_hath, self.Zl = countception(encHR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training, is_return_feat=True)
+                self.y_hath, self.Zh = countception(encHR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training, is_return_feat=True)
 
         # elif self.model == 'countHRD_l':
         #     Zh = sr.dbpn_LR(self.feat_h, is_training=self.is_training, scale=self.scale)
@@ -390,8 +393,9 @@ class Model:
             sys.exit(1)
 
     def compute_domain_loss(self):
+        assert self.is_domain_transfer_model
+
         if self.args.domain == 'domainRev':
-            assert 'HR_lc' in self.model or 'HR_lb' in self.model
 
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
