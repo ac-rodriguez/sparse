@@ -72,7 +72,7 @@ def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True)
 
 
 
-def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE):
+def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE, last=False):
 
     def selu(x):
         with tf.name_scope('elu') as scope:
@@ -119,6 +119,8 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
         net = ConvLayer(net, 32, [17, 17], name='conv3', pad='VALID')
         net = ConvLayer(net, 64, [1, 1], name='conv4', pad='VALID')
         net = ConvLayer(net, 64, [1, 1], name='conv5', pad='VALID')
+        if last:
+            net1 = net
         net_reg = ConvLayer(net, 1, [1, 1], name='out_reg', pad='VALID', is_last=True)
         net_sem = ConvLayer(net, 2, [1, 1], name='out_sem', pad='VALID', is_last=True)
 

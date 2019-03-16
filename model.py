@@ -249,7 +249,16 @@ class Model:
 
             y_hat, self.Zl = countception(encLR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training, is_return_feat=True)
             self.y_hath, self.Zh = countception(encHR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training, is_return_feat=True)
+        elif self.model == 'countHR_le':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
+            self.is_domain_transfer_model = True
+            self.add_yhath = True
 
+            encHR = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            encLR = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
+
+            y_hat, self.Zl = countception(encLR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training, is_return_feat=True, last=True)
+            self.y_hath, self.Zh = countception(encHR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training, is_return_feat=True, last=True)
         elif self.model == 'countHR_lpaired':
             # Train on (HR,y). Test on (Lr,y). LR is paired with HR. Comparison on Higher-level features
             self.is_domain_transfer_model = True
