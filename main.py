@@ -4,6 +4,8 @@ import argparse
 import sys
 import shutil
 import tensorflow as tf
+from tensorflow.contrib.tensorboard.plugins import projector
+
 from tqdm import tqdm
 
 from data_reader import DataReader
@@ -13,6 +15,7 @@ from model import Model
 import plots
 import patches
 from data_config import get_dataset
+from tools_tf import SessionHook
 # colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 # HRFILE='/home/pf/pfstaff/projects/andresro/sparse/data/coco'
 # LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
@@ -185,9 +188,10 @@ def main(unused_args):
         # Train model and save summaries into logdir.
         # model.train(input_fn=input_fn, steps=args.train_iters)
         # scores = model.evaluate(input_fn=input_fn_val, steps=(val_iters))
+        hook = SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", size=10)
 
-        train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)
-        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every)
+        train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)#, hooks=[hook])
+        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every, hooks=[hook])
 
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
 
@@ -204,6 +208,40 @@ def main(unused_args):
             plt_reg(reader.patch_gen_val.label_1, model_dir + '/sample_val_reg_label')
         except AttributeError:
             pass
+
+        embeddings = hook.get_embeddings()
+
+        values = embeddings['values']
+        labels = embeddings['labels']
+        print 'len embeddings', len(values)
+        embedding_var = tf.Variable(np.array(values), name='emb_values')
+
+        path = os.path.join(Model_fn.model_dir, 'projector')
+        metadata = os.path.join(path,'metadata.tsv')
+        if not os.path.isdir(path):
+            os.makedirs(path)
+
+        with open(metadata, 'w+') as f:
+            # f.write('Index\tLabel\n')
+            for idx in range(len(labels)):
+                f.write('{}\n'.format(labels[idx]))
+            f.close()
+        with tf.Session() as sess:
+            sess.run(embedding_var.initializer)
+
+            config = projector.ProjectorConfig()
+            config.model_checkpoint_path = path+"/model_emb.ckpt"
+            embedding = config.embeddings.add()
+            embedding.tensor_name = embedding_var.name
+
+            # Add metadata to the log
+            embedding.metadata_path = metadata
+
+            writer = tf.summary.FileWriter(path)
+            projector.visualize_embeddings(writer, config)
+
+            saver = tf.train.Saver([embedding_var])
+            saver.save(sess, path+"/model_emb.ckpt")
 
     else:
 

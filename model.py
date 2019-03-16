@@ -1,4 +1,5 @@
 import tensorflow as tf
+from tensorflow.contrib.tensorboard.plugins import projector
 import sys
 import numpy as np
 cross_entropy = tf.losses.sparse_softmax_cross_entropy
@@ -276,11 +277,12 @@ class Model:
             encLR = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
             encLRU = semi.encode_LR(self.feat_lU, is_training=self.is_training, is_bn=True)
 
-            y_hat = countception(encLR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training)
+
+            _, self.Zl = countception(encLRU, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training,
+                                      is_return_feat=True)
             self.y_hath, self.Zh = countception(encHR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training,
                                           is_return_feat=True)
-            _, self.Zl = countception(encLRU, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training,
-                                       is_return_feat=True)
+            y_hat = countception(encLR, pad=self.args.sq_kernel * 16 // 2, is_training=self.is_training)
 
             if self.is_training:
                 self.add_yhat = False
@@ -433,10 +435,25 @@ class Model:
                 loss_sem = cross_entropy(labels=self.label_sem, logits=self.y_hath['sem'], weights=self.w)
                 loss_ = self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
                 self.loss +=loss_
+        elif self.args.domain == 'domainL1':
+            self.scoreh = semi.domain_discriminator(self.Zh)
+            self.scorel = semi.domain_discriminator(self.Zl)
 
+            loss_domain = tf.losses.absolute_difference(self.Zh,self.Zl)
+
+            tf.summary.scalar('loss/domain', loss_domain)
+            if self.add_yhath:
+
+                loss_reg = tf.losses.mean_squared_error(labels=self.labels, predictions=self.y_hath['reg'], weights=self.w)
+                loss_sem = cross_entropy(labels=self.label_sem, logits=self.y_hath['sem'], weights=self.w)
+                loss_ = self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
+                self.loss +=loss_
         else:
-            print('{} model domain-transfer defined'.format(self.args.domain))
+            print('{} model domain-transfer not defined'.format(self.args.domain))
             sys.exit(1)
+        Emb = tf.concat((self.Zh, self.Zl), axis=0, name='Embeddings')
+        Label = tf.concat((tf.ones(tf.shape(self.Zh)[:-1]), tf.zeros(tf.shape(self.Zh)[:-1])), axis=0,
+                          name='EmbeddingsLabel')
 
     def compute_summaries(self, y_hat, HR_hat):
         graph = tf.get_default_graph()

@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.python.ops import math_ops
-
+import numpy as np
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
@@ -75,3 +75,61 @@ def get_lr_ADAM(optimizer, learning_rate):
     optim_learning_rate = (learning_rate * math_ops.sqrt(1 - beta2_power) / (1 - beta1_power))
 
     return optim_learning_rate
+
+
+
+class SessionHook(tf.train.SessionRunHook):
+
+    def __init__(self, values, labels, size=1):
+        super(SessionHook, self).__init__()
+
+        # self.iterator_initializer_func = None
+
+        self._tensors = None
+
+        # values = scopes['net_scope'] + '/' + scopes['emb_scope'] + '/' + scopes['emb_name'] + '/BiasAdd:0'
+        # labels = scopes['metrics_scope'] + '/' + scopes['label_name'] + ':0'
+
+        self._tensor_names = [values, labels]
+        self._embeddings = [[], []]
+        self.size= size
+        self.iter = 0
+
+    def begin(self):
+        self._tensors = [tf.get_default_graph().get_tensor_by_name(x) for x in self._tensor_names]
+
+    def after_create_session(self, session, coord):
+        self._embeddings = [[], []]
+
+        pass
+    #     """ Initialise the iterator after the session has been created."""
+    #     self.iterator_initializer_func(session)
+
+    def before_run(self, run_context):
+        return tf.train.SessionRunArgs(self._tensors)
+
+    def after_run(self, run_context, run_values):
+        if self.iter == 0:
+            self.n_batch = run_values[0][0].shape[0]
+            self.n_feat = run_values[0][0].shape[-1]
+            self.n_pixels = run_values[0][0].shape[1] * run_values[0][0].shape[2]
+            self.sample_ind = np.random.choice(self.n_pixels,int(self.n_pixels *0.1), replace=False)
+        if self.iter <= self.size:
+            val_ = run_values[0][0].reshape(self.n_batch, -1,self.n_feat)[:,self.sample_ind,:].reshape(-1,self.n_feat)
+            lab_ = run_values[0][1].reshape(self.n_batch, -1)[:,self.sample_ind].reshape(-1)
+            # lab_ = np.mean(lab_,axis=0)
+            self._embeddings[0].extend(val_)
+            self._embeddings[1].extend(lab_)
+            self.iter+=1
+
+    def end(self, session):
+        pass
+
+    def get_embeddings(self):
+        return {
+            'values': self._embeddings[0],
+            'labels': self._embeddings[1],
+        }
+
+    # def set_iterator_initializer(self, fun):
+    #     self.iterator_initializer_func = fun
