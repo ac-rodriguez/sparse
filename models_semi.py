@@ -94,3 +94,5 @@ def encode_LR(input, scope_name='encode_LR', is_training=True, is_bn=True, reuse
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
+
+
