@@ -1,5 +1,7 @@
+import os
 import tensorflow as tf
 from tensorflow.python.ops import math_ops
+from tensorflow.contrib.tensorboard.plugins import projector
 import numpy as np
 
 def bn_layer(X, activation_fn=None, is_training=True):
@@ -133,3 +135,39 @@ class SessionHook(tf.train.SessionRunHook):
 
     # def set_iterator_initializer(self, fun):
     #     self.iterator_initializer_func = fun
+
+
+def get_embeddings(hook, Model_fn):
+    embeddings = hook.get_embeddings()
+
+    values = embeddings['values']
+    labels = embeddings['labels']
+    print 'len embeddings', len(values)
+    embedding_var = tf.Variable(np.array(values), name='emb_values')
+
+    path = os.path.join(Model_fn.model_dir, 'projector')
+    metadata = os.path.join(path, 'metadata.tsv')
+    if not os.path.isdir(path):
+        os.makedirs(path)
+
+    with open(metadata, 'w+') as f:
+        # f.write('Index\tLabel\n')
+        for idx in range(len(labels)):
+            f.write('{}\n'.format(labels[idx]))
+        f.close()
+    with tf.Session() as sess:
+        sess.run(embedding_var.initializer)
+
+        config = projector.ProjectorConfig()
+        config.model_checkpoint_path = path + "/model_emb.ckpt"
+        embedding = config.embeddings.add()
+        embedding.tensor_name = embedding_var.name
+
+        # Add metadata to the log
+        embedding.metadata_path = metadata
+
+        writer = tf.summary.FileWriter(path)
+        projector.visualize_embeddings(writer, config)
+
+        saver = tf.train.Saver([embedding_var])
+        saver.save(sess, path + "/model_emb.ckpt")
