@@ -187,12 +187,9 @@ def main(unused_args):
         # Train model and save summaries into logdir.
         # model.train(input_fn=input_fn, steps=args.train_iters)
         # scores = model.evaluate(input_fn=input_fn_val, steps=(val_iters))
-        if args.domain is not None:
-            hook = [SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", size=10)]
-        else:
-            hook = None
+
         train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)#, hooks=[hook])
-        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every, hooks=hook)
+        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every)
 
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
 
@@ -209,8 +206,6 @@ def main(unused_args):
             plt_reg(reader.patch_gen_val.label_1, model_dir + '/sample_val_reg_label')
         except AttributeError:
             pass
-        if args.domain is not None:
-            get_embeddings(hook,Model_fn)
 
 
     else:
@@ -221,7 +216,7 @@ def main(unused_args):
 
     input_fn, input_fn_val = reader.get_input_fn()
 
-    def predict(input_fn, patch_generator, sufix):
+    def predict(input_fn, patch_generator, suffix):
         nr_patches = patch_generator.nr_patches
 
         batch_idxs = (nr_patches) // args.batch_size
@@ -229,7 +224,7 @@ def main(unused_args):
         if is_hr_pred:
             patch = patch_generator.patch_h
             border = patch_generator.border_lab
-            if 'val' in sufix:
+            if 'val' in suffix:
                 ref_data = reader.val_h
             else:
                 ref_data = reader.train_h
@@ -237,7 +232,7 @@ def main(unused_args):
             patch = patch_generator.patch_l
             border = patch_generator.border
 
-            if 'val' in sufix:
+            if 'val' in suffix:
                 ref_data = reader.val
             else:
                 ref_data = reader.train
@@ -245,7 +240,11 @@ def main(unused_args):
         pred_r_rec = np.empty(shape=([nr_patches, patch, patch, 1]))
         pred_c_rec = np.empty(shape=([nr_patches, patch, patch]))
 
-        preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False)  # ,predict_keys=['hr_hat_rgb'])
+        if args.domain is not None:
+            hook = [SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", num_batches=10)]
+        else:
+            hook = None
+        preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False, hooks=hook)  # ,predict_keys=['hr_hat_rgb'])
 
         print('Predicting {} Patches...'.format(nr_patches))
         for idx in tqdm(xrange(0, batch_idxs)):
@@ -259,15 +258,17 @@ def main(unused_args):
         print ref_size
         ## Recompose RGB
         data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-        plt_reg(data_recomposed, '{}/{}_reg_pred'.format(model_dir, sufix))
+        plt_reg(data_recomposed, '{}/{}_reg_pred'.format(model_dir, suffix))
         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
-        plt_reg(data_recomposed, '{}/{}_sem_pred'.format(model_dir, sufix))
+        plt_reg(data_recomposed, '{}/{}_sem_pred'.format(model_dir, suffix))
 
+        if args.domain is not None:
+            get_embeddings(hook[0], Model_fn, suffix=suffix)
     if args.is_train:
-        predict(input_fn,reader.patch_gen, sufix='train')
-        predict(input_fn_val,reader.patch_gen_val, sufix='val')
+        predict(input_fn, reader.patch_gen, suffix='train')
+        predict(input_fn_val, reader.patch_gen_val, suffix='val')
     else:
-        predict(input_fn,reader.patch_gen, sufix='test')
+        predict(input_fn, reader.patch_gen, suffix='test')
 
 
 
