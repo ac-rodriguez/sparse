@@ -82,7 +82,7 @@ def get_lr_ADAM(optimizer, learning_rate):
 
 class SessionHook(tf.train.SessionRunHook):
 
-    def __init__(self, values, labels, size=1):
+    def __init__(self, values, labels, num_batches=1):
         super(SessionHook, self).__init__()
 
         # self.iterator_initializer_func = None
@@ -94,7 +94,7 @@ class SessionHook(tf.train.SessionRunHook):
 
         self._tensor_names = [values, labels]
         self._embeddings = [[], []]
-        self.size= size
+        self.num_batches= num_batches
         self.iter = 0
 
     def begin(self):
@@ -116,7 +116,7 @@ class SessionHook(tf.train.SessionRunHook):
             self.n_feat = run_values[0][0].shape[-1]
             self.n_pixels = run_values[0][0].shape[1] * run_values[0][0].shape[2]
             self.sample_ind = np.random.choice(self.n_pixels,int(self.n_pixels *0.1), replace=False)
-        if self.iter <= self.size:
+        if self.iter <= self.num_batches:
             val_ = run_values[0][0].reshape(self.n_batch, -1,self.n_feat)[:,self.sample_ind,:].reshape(-1,self.n_feat)
             lab_ = run_values[0][1].reshape(self.n_batch, -1)[:,self.sample_ind].reshape(-1)
             # lab_ = np.mean(lab_,axis=0)
@@ -137,37 +137,40 @@ class SessionHook(tf.train.SessionRunHook):
     #     self.iterator_initializer_func = fun
 
 
-def get_embeddings(hook, Model_fn):
+def get_embeddings(hook, Model_fn, suffix=''):
     embeddings = hook.get_embeddings()
 
     values = embeddings['values']
     labels = embeddings['labels']
     print 'len embeddings', len(values)
-    embedding_var = tf.Variable(np.array(values), name='emb_values')
+    g_1 = tf.Graph()
+    with g_1.as_default():
 
-    path = os.path.join(Model_fn.model_dir, 'projector')
-    metadata = os.path.join(path, 'metadata.tsv')
-    if not os.path.isdir(path):
-        os.makedirs(path)
+        embedding_var = tf.Variable(np.array(values), name='emb_values')
 
-    with open(metadata, 'w+') as f:
-        # f.write('Index\tLabel\n')
-        for idx in range(len(labels)):
-            f.write('{}\n'.format(labels[idx]))
-        f.close()
-    with tf.Session() as sess:
-        sess.run(embedding_var.initializer)
+        path = os.path.join(Model_fn.model_dir, 'projector'+suffix)
+        metadata = os.path.join(path, 'metadata.tsv')
+        if not os.path.isdir(path):
+            os.makedirs(path)
 
-        config = projector.ProjectorConfig()
-        config.model_checkpoint_path = path + "/model_emb.ckpt"
-        embedding = config.embeddings.add()
-        embedding.tensor_name = embedding_var.name
+        with open(metadata, 'w+') as f:
+            # f.write('Index\tLabel\n')
+            for idx in range(len(labels)):
+                f.write('{}\n'.format(labels[idx]))
+            f.close()
+        with tf.Session() as sess:
+            sess.run(embedding_var.initializer)
 
-        # Add metadata to the log
-        embedding.metadata_path = metadata
+            config = projector.ProjectorConfig()
+            config.model_checkpoint_path = path + "/model_emb.ckpt"
+            embedding = config.embeddings.add()
+            embedding.tensor_name = embedding_var.name
 
-        writer = tf.summary.FileWriter(path)
-        projector.visualize_embeddings(writer, config)
+            # Add metadata to the log
+            embedding.metadata_path = metadata
 
-        saver = tf.train.Saver([embedding_var])
-        saver.save(sess, path + "/model_emb.ckpt")
+            writer = tf.summary.FileWriter(path)
+            projector.visualize_embeddings(writer, config)
+
+            saver = tf.train.Saver([embedding_var])
+            saver.save(sess, path + "/model_emb.ckpt")
