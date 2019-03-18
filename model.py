@@ -67,7 +67,7 @@ class Model:
         if self.args.sq_kernel is None:
             self.sem_threshold = 1e-5
         self.compute_loss()
-        if self.loss_in_HR:
+        if self.loss_in_HR and not self.is_sr:
             self.compute_summaries(self.y_hath)
         else:
             self.compute_summaries(self.y_hat)
@@ -87,7 +87,6 @@ class Model:
             mode, loss=self.loss, eval_metric_ops=self.eval_metric_ops, evaluation_hooks=[eval_summary_hook])
 
     def compute_predicitons(self):
-        HR_hat = None
         size = self.patch_size * self.args.scale
         # Baseline Models
         if self.model == 'simple':  # Baseline  No High Res for training
@@ -177,7 +176,7 @@ class Model:
             self.HR_hatU = sr.SR_task(feat_l=self.feat_lU, size=size, is_batch_norm=True, is_training=self.is_training)
 
             feat_l_up = self.up_(self.feat_l, 8)
-            feat = tf.concat([HR_hat, feat_l_up], axis=3)
+            feat = tf.concat([self.HR_hat, feat_l_up], axis=3)
 
             self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
             if self.model == 'countSRu':
@@ -512,7 +511,7 @@ class Model:
 
             # Compute summaries in LR space
 
-            labels = self.compute_labels_ls(self.labels)
+            labels = self.compute_labels_ls(self.labels, self.scale)
             y_hat_reg = sum_pool(y_hat['reg'], self.scale, name='y_reg_down')
 
             w = self.float_(tf.where(tf.greater_equal(labels, 0.0),
