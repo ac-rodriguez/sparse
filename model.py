@@ -3,6 +3,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 import sys
 import numpy as np
 cross_entropy = tf.losses.sparse_softmax_cross_entropy
+import tensorflow.contrib.slim as slim
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
@@ -428,7 +429,7 @@ class Model:
     def add_domain_loss(self):
         assert self.is_domain_transfer_model
 
-        if self.args.domain == 'domainRev':
+        if self.args.domain == 'domainRev' or self.args.domain == 'domainRevL':
 
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
@@ -436,6 +437,8 @@ class Model:
             # Fake predictions towards 0, real preds towards 1
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
                              cross_entropy(labels=tf.ones_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scorel)
+            if 'L' in self.args.domain:
+                loss_domain+= tf.losses.absolute_difference(self.Zh, self.Zl)
 
             tf.summary.scalar('loss/domain', loss_domain)
             if self.add_yhath:
@@ -457,6 +460,11 @@ class Model:
                 loss_sem = cross_entropy(labels=self.label_sem, logits=self.y_hath['sem'], weights=self.w)
                 loss_ = self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
                 self.loss +=loss_
+        # elif self.args.domain == 'domainAsso':
+        #     self.ModelSemi = semi.SemisupModel()
+        #     loss_sem = self.ModelSemi.add_semisup_loss(self.Zl,self.Zh,self.label_sem)
+        #     self.loss +=loss_sem
+
         else:
             print('{} model domain-transfer not defined'.format(self.args.domain))
             sys.exit(1)
@@ -603,11 +611,15 @@ class Model:
         else:
             print('option not defined')
             sys.exit(1)
-
+        slim.model_analyzer.analyze_vars(
+            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
+            if 'Asso' in self.model:
+                self.ModelSemi.add_average(self.loss)
+                pass #TODO
             if self.args.l2_weights_every is None:
                 if self.args.semi is not None and not 'Rev' in self.args.semi:
                     train_g = optimizer.minimize(self.loss, global_step=step)
