@@ -110,7 +110,7 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
         net = ConvLayer(net, 64, [3, 3], name='conv1', pad='VALID')
         net = ConcatBlock(net, 16, 16, name='concat_block1')
         net = ConcatBlock(net, 16, 32, name='concat_block2')
-        net = ConvLayer(net, 16, [14, 14], name='conv2', pad='VALID')
+        net = ConvLayer(net, 16, [15, 15], name='conv2', pad='VALID')
         net = ConcatBlock(net, 112, 48, name='concat_block3')
         net = ConcatBlock(net, 64, 32, name='concat_block4')
         net = ConcatBlock(net, 40, 40, name='concat_block5')
@@ -124,8 +124,6 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
         net_reg = ConvLayer(net, 1, [1, 1], name='out_reg', pad='VALID', is_last=True)
         net_sem = ConvLayer(net, 2, [1, 1], name='out_sem', pad='VALID', is_last=True)
 
-        net_reg = tf.image.crop_to_bounding_box(net_reg, 0, 0, input.shape[1],input.shape[2])
-        net_sem = tf.image.crop_to_bounding_box(net_sem, 0, 0, input.shape[1],input.shape[2])
     if is_return_feat:
         return {'reg': net_reg, 'sem': net_sem}, net1
     else:
