@@ -111,8 +111,11 @@ args = parser.parse_args()
 
 
 def main(unused_args):
+    if args.is_train:
+        d = get_dataset(args.dataset)
+    else:
+        d = get_dataset(args.dataset, is_mounted=True)
 
-    d = get_dataset(args.dataset)
     args.__dict__.update(d)
 
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
@@ -148,7 +151,8 @@ def main(unused_args):
 
     args.model_dir = model_dir
     filename = 'FLAGS' if args.is_train else 'FLAGS_pred'
-    save_parameters(args, model_dir, sys.argv, name=filename)
+    if not args.is_restore:
+        save_parameters(args, model_dir, sys.argv, name=filename)
     params = {}
 
     params['model_dir'] = model_dir
@@ -210,7 +214,9 @@ def main(unused_args):
 
     else:
 
-        reader = DataReader(args, is_training=False)
+        reader = DataReader(args, is_training=True)
+        f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
+        plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
 
     reader.non_random_patches()
 
@@ -258,19 +264,28 @@ def main(unused_args):
         print ref_size
         ## Recompose RGB
         data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
+        np.save('{}/{}_reg_pred'.format(model_dir,suffix),data_recomposed)
         plt_reg(data_recomposed, '{}/{}_reg_pred'.format(model_dir, suffix))
+
         data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
+        np.save('{}/{}_sem_pred'.format(model_dir,suffix),data_recomposed)
+
         plt_reg(data_recomposed, '{}/{}_sem_pred'.format(model_dir, suffix))
+
+
 
         if args.domain is not None:
             get_embeddings(hook[0], Model_fn, suffix=suffix)
-    if args.is_train:
-        predict(input_fn, reader.patch_gen, suffix='train')
-        predict(input_fn_val, reader.patch_gen_val, suffix='val')
-    else:
-        predict(input_fn, reader.patch_gen, suffix='test')
+    # if args.is_train:
+    #     predict(input_fn, reader.patch_gen, suffix='train')
+    #     predict(input_fn_val, reader.patch_gen_val, suffix='val')
+    # else:
+    #     predict(input_fn, reader.patch_gen_val, suffix='test')
+    predict(input_fn, reader.patch_gen, suffix='train1')
+    predict(input_fn_val, reader.patch_gen_val, suffix='val1')
 
-
+    np.save('{}/train_label'.format(model_dir), reader.labels)
+    np.save('{}/val_label'.format(model_dir), reader.labels_val)
 
 if __name__ == '__main__':
     tf.app.run()

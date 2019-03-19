@@ -5,7 +5,7 @@ class Bunch(object):
   def __init__(self, adict):
     self.__dict__.update(adict)
 
-def get_dataset(DATASET):
+def get_dataset(DATASET, is_mounted = False):
 
     dset_config = {}
     if 'pf-pc' in socket.gethostname():
@@ -65,6 +65,9 @@ def get_dataset(DATASET):
         sys.exit(1)
 
     dset_config['HR_file']=os.path.join(PATH,'sparse/data',OBJECT)
+
+    if is_mounted and 'pf-pc' in socket.gethostname():
+        PATH = '/scratch/andresro/leon_work'
     dset_config['save_dir']=os.path.join(PATH,'sparse/training/snapshots',OBJECT,DATASET)
 
     # dset_config = Namespace(**dset_config)

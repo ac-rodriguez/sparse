@@ -251,15 +251,15 @@ class DataReader(object):
                 plot_rgb(data_recomposed,file='data_recomposed')
 
     def non_random_patches(self):
-        self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
-                                        patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                        scale=self.args.scale, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels,two_ds=True)
         if self.is_training:
+            self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
+                                            patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
+                                            scale=self.args.scale, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels,two_ds=True)
 
-            self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
-                                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                                                is_random=False, border=4,
-                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val,  patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
+        self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
+                                            patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                            is_random=False, border=4,
+                                            scale=self.args.scale, lims_with_labels=self.lims_labels_val,  patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
 
     def normalize(self, features, labels):
 
@@ -511,8 +511,9 @@ class DataReader(object):
         return ds
 
     def get_input_fn(self):
-
-        input_fn = partial(self.input_fn, is_train=True)
+        input_fn = None
+        if self.is_training:
+            input_fn = partial(self.input_fn, is_train=True)
         input_fn_val = partial(self.input_fn, is_train=False)
 
         return input_fn, input_fn_val
