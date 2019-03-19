@@ -445,9 +445,9 @@ class Model:
             loss_domain = tf.losses.absolute_difference(self.Zh,self.Zl)
             # loss_domain=0.0
             tf.summary.scalar('loss/domain', loss_domain)
-        # elif self.args.domain == 'domainAsso':
-        #     self.ModelSemi = semi.SemisupModel()
-        #     loss_domain = self.ModelSemi.add_semisup_loss(self.Zl,self.Zh,self.label_sem)
+        elif self.args.domain == 'domainAsso':
+            self.ModelSemi = semi.SemisupModel()
+            loss_domain = self.ModelSemi.add_semisup_loss(self.Zl,self.Zh,self.label_sem)
         else:
             print('{} loss domain-transfer not defined'.format(self.args.domain))
             sys.exit(1)
@@ -600,9 +600,6 @@ class Model:
 
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
-            if 'Asso' in self.model:
-                self.ModelSemi.add_average(self.loss)
-                pass #TODO
             if self.args.l2_weights_every is None:
                 if self.args.semi is not None and not 'Rev' in self.args.semi:
                     train_g = optimizer.minimize(self.loss, global_step=step)
@@ -621,3 +618,5 @@ class Model:
                 self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, self.args.l2_weights_every))),
                                         true_fn=lambda: train_op1,
                                         false_fn=lambda: train_op2)
+            # if 'Asso' in self.args.domain:
+            #     self.ModelSemi.add_vars()
