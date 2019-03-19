@@ -41,7 +41,7 @@ class Model:
         self.sr_on_labeled = True
 
         self.pad = self.args.sq_kernel*16//2
-        if ('HR' in self.model or 'SR' in self.model) and not '_l' in self.model and self.args.is_hr_label:
+        if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model) and not '_l' in self.model and self.args.is_hr_label:
             self.loss_in_HR = True
 
     def model_fn(self, features, labels, mode):
@@ -103,73 +103,6 @@ class Model:
                 self.y_hath, self.Zh = countception(feat_h_down, pad=self.pad, is_training=self.is_training,
                                                    is_return_feat=True)
 
-        # # Low space SR models
-        # elif self.model == 'simpleSR_l':  # SR as a side task
-        #     HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
-        #
-        #     HR_hat_down = self.down_(HR_hat, 3)
-        #     # HR_hat_down = tf.layers.average_pooling2d(HR_hat,args.scale,args.scale)
-        #
-        #     # Estimated sub-pixel features from LR
-        #     x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
-        #
-        #     x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
-        #
-        #     feat = tf.concat([x_h, x_l], axis=3)
-        #
-        #     y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        # elif self.model == 'simpleSRa_l':  # SR as a side task
-        #     HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=False, is_training=self.is_training)
-        #
-        #     HR_hat_down = self.down_(HR_hat, 3)
-        #
-        #     # Estimated sup-pixel features from LR
-        #     x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
-        #
-        #     x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
-        #
-        #     feat = tf.concat([x_h, x_l], axis=3)
-        #
-        #     y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        # elif self.model == 'simple3a_l':  # SR as a side task - leaner version
-        #     HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_training=self.is_training, is_batch_norm=False)
-        #
-        #     HR_hat_down = self.down_(HR_hat, 3)
-        #
-        #     # Estimated sup-pixel features from LR
-        #     y_hat = simple(HR_hat_down, n_channels=1, is_training=self.is_training)
-        # elif self.model == 'simpleSRB_l':  # SR as a side task
-        #     HR_hat = sr.dbpn_SR(feat_l=self.feat_l, is_training=self.is_training, scale=self.args.scale, deep=0)
-        #
-        #     HR_hat_down = self.down_(HR_hat, 3)
-        #
-        #     # Estimated sub-pixel features from LR
-        #     x_h = tf.layers.conv2d(HR_hat_down, 128, 3, activation=tf.nn.relu, padding='same')
-        #
-        #     x_l = tf.layers.conv2d(self.feat_l, 128, 3, activation=tf.nn.relu, padding='same')
-        #
-        #     feat = tf.concat([x_h, x_l], axis=3)
-        #     y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        # elif self.model == 'simpleHR_l':
-        #     HR_hat_down = self.down_(self.feat_l, 3)
-        #     feat = tf.concat([HR_hat_down, self.feat_l[..., 3:]], axis=3)
-        #     y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        # SR in HR label space MODELS
-        # elif self.model == 'simpleSR':  # SR as a side task
-        #     HR_hatL = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
-        #
-        #     if self.two_ds:
-        #         HR_hat = sr.SR_task(feat_l=self.feat_lU, size=size, is_batch_norm=True, is_training=self.is_training)
-        #     else:
-        #         HR_hat = HR_hatL
-        #
-        #     feat_l_up = self.up_(self.feat_lU, 8)
-        #     # Estimated sub-pixel features from LR
-        #     feat = tf.concat([HR_hatL, feat_l_up], axis=3)
-        #
-        #     y_hat = simple(feat, n_channels=1, is_training=self.is_training)
-        #     assert self.loss_in_HR == True
-
         elif self.model == 'countSR' or self.model == 'countSRu':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
@@ -182,12 +115,23 @@ class Model:
             if self.model == 'countSRu':
                 self.sr_on_labeled = False
             assert self.loss_in_HR
+        elif self.model == 'countSRs':
+            self.is_sr = True
+            self.HR_hat = semi.decode(self.feat_l, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
+            self.HR_hatU = semi.decode(self.feat_lU, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
+
+            feat_l_up = self.up_(self.feat_l, 8)
+            feat = tf.concat([self.HR_hat, feat_l_up], axis=3)
+
+            self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
+
+            assert self.loss_in_HR
         elif self.model == 'countSR_l':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
             self.HR_hatU = sr.SR_task(feat_l=self.feat_lU, size=size, is_batch_norm=True, is_training=self.is_training)
 
-            feat = semi.encode_HR(self.HR_hat,is_training=self.is_training, is_bn=True)
+            feat = semi.encode(self.HR_hat, is_training=self.is_training, is_bn=True)
             feat = tf.concat([feat, self.feat_l], axis=3)
             self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
         elif self.model == 'countHR':
@@ -202,94 +146,31 @@ class Model:
             assert self.loss_in_HR == True
         elif self.model == 'countHR_la': # Using HR and LR infrared channels
 
-            Ench = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
-            Encl = semi.encode_LR(self.feat_l,is_training=self.is_training,is_bn=True)
+            Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
+            Encl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
             feat = tf.concat([Ench, Encl], axis=3)
 
             self.y_hat, self.Zh = countception(feat,pad=self.pad, is_training=self.is_training, is_return_feat=True)
             if self.two_ds:
 
-                EnchU = semi.encode_HR(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
-                EnclU = semi.encode_LR(self.feat_lU, is_training=self.is_training, is_bn=True)
+                EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
+                EnclU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True)
                 feat = tf.concat([EnchU, EnclU], axis=3)
 
                 _, self.ZhU = countception(feat, pad=self.pad, is_training=self.is_training,
                                                   is_return_feat=True)
         elif self.model == 'countHR_lb': # Using HR channels only
 
-            Ench = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
+            Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
             self.y_hat, self.Zh = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=True)
             if self.two_ds:
-                EnchU = semi.encode_HR(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
+                EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
                 _, self.ZhU = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=True)
-        elif self.model == 'countDAearly':  # self.model == 'countHR_lc':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Lower-level features
-            self.is_domain_transfer = True
-            self.add_yhath = True
-            self.Zh = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-            self.Zl = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
+        elif 'DA_h' in self.model:
+            self.daH_models()
 
-            self.y_hat = countception(self.Zl, pad=self.pad, is_training=self.is_training)
-            self.y_hath = countception(self.Zh, pad=self.pad, is_training=self.is_training)
-
-        elif self.model == 'countDAmid': #self.model == 'countHR_ld':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Higher-level features
-            self.is_domain_transfer = True
-            self.add_yhath = True
-
-            encHR = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-            encLR = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
-
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
-        elif self.model == 'countDAlate': #self.model == 'countHR_le':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
-            self.is_domain_transfer = True
-            self.add_yhath = True
-
-            encHR = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-            encLR = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
-
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
-        elif self.model == 'countDApair':
-            # Train on (HR,y). Test on (Lr,y). LR is paired with HR. Comparison on Higher-level features
-            self.is_domain_transfer = True
-
-            encHR = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-            encLR = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
-
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training,
-                                          is_return_feat=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training,
-                                          is_return_feat=True)
-            if self.is_training:
-                self.add_yhat = False
-                self.add_yhath = True
-            else:
-                self.add_yhat = True
-                self.add_yhath = False
-
-        elif self.model == 'countDAunpair':
-            # Train on (HR,y). Test on (Lr,y). LR is unpaired with HR. Comparison on Higher-level features
-            assert not 'L' in self.args.domain, 'unpaired DA should be used with L1 domain loss.'
-            self.is_domain_transfer = True
-
-            encHR = semi.encode_HR(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-            encLR = semi.encode_LR(self.feat_l, is_training=self.is_training, is_bn=True)
-            encLRU = semi.encode_LR(self.feat_lU, is_training=self.is_training, is_bn=True)
-
-            _, self.Zl = countception(encLRU, pad=self.pad, is_training=self.is_training,
-                                      is_return_feat=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
-            self.y_hat = countception(encLR, pad=self.pad, is_training=self.is_training)
-
-            if self.is_training:
-                self.add_yhat = False
-                self.add_yhath = True
-            else:
-                self.add_yhat = True
-                self.add_yhath = False
+        elif 'DA' in self.model:
+            self.daL_models()
 
         else:
             print('Model {} not defined'.format(self.model))
@@ -361,6 +242,102 @@ class Model:
         norm = tf.add_n([tf.norm(g, name='norm') for g in grads])
 
         tf.summary.scalar('loss/L2Grad', norm)
+
+    def daH_models(self):
+        assert self.loss_in_HR
+        self.is_domain_transfer = True
+        self.add_yhath = True
+        if self.model == 'countDA_hmid': #self.model == 'countHR_ld':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Higher-level features
+
+
+            encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
+            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
+
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+
+        elif self.model == 'countDA_hlate': #self.model == 'countHR_le':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
+
+            encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
+            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
+
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
+        else:
+            print('Model {} not defined'.format(self.model))
+            sys.exit(1)
+
+    def daL_models(self):
+        self.is_domain_transfer = True
+        self.add_yhath = True
+        if self.model == 'countDAearly':  # self.model == 'countHR_lc':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Lower-level features
+
+            self.Zh = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            self.Zl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
+
+            self.y_hat = countception(self.Zl, pad=self.pad, is_training=self.is_training)
+            self.y_hath = countception(self.Zh, pad=self.pad, is_training=self.is_training)
+
+        elif self.model == 'countDAmid': #self.model == 'countHR_ld':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Higher-level features
+
+            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
+
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+        elif self.model == 'countDAlate': #self.model == 'countHR_le':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
+
+            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
+
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
+        elif self.model == 'countDApair':
+            # Train on (HR,y). Test on (Lr,y). LR is paired with HR. Comparison on Higher-level features
+
+            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
+
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training,
+                                          is_return_feat=True)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training,
+                                          is_return_feat=True)
+            if self.is_training:
+                self.add_yhat = False
+                self.add_yhath = True
+            else:
+                self.add_yhat = True
+                self.add_yhath = False
+
+        elif self.model == 'countDAunpair':
+            # Train on (HR,y). Test on (Lr,y). LR is unpaired with HR. Comparison on Higher-level features
+            assert not 'L' in self.args.domain, 'unpaired DA should be used with L1 domain loss.'
+
+            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
+            encLRU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True)
+
+            _, self.Zl = countception(encLRU, pad=self.pad, is_training=self.is_training,
+                                      is_return_feat=True)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+            self.y_hat = countception(encLR, pad=self.pad, is_training=self.is_training)
+
+            if self.is_training:
+                self.add_yhat = False
+                self.add_yhath = True
+            else:
+                self.add_yhat = True
+                self.add_yhath = False
+
+        else:
+            print('Model {} not defined'.format(self.model))
+            sys.exit(1)
+
 
     def add_semi_loss(self, y_hat):
 
@@ -438,6 +415,16 @@ class Model:
                 loss_domain+= tf.losses.absolute_difference(self.Zh, self.Zl)
 
             tf.summary.scalar('loss/domain', loss_domain)
+        elif self.args.domain == 'domainRevS':
+
+            self.scoreh = semi.domain_discriminator_small(self.Zh)
+            self.scorel = semi.domain_discriminator_small(self.Zl)
+
+            # Fake predictions towards 0, real preds towards 1
+            loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
+                             cross_entropy(labels=tf.ones_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scorel)
+
+            tf.summary.scalar('loss/domainS', loss_domain)
         elif self.args.domain == 'domainL1':
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)

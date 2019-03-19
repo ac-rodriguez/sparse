@@ -69,8 +69,46 @@ def domain_discriminator(input, scope_name='domain_discriminator', is_training=T
         else:
             return x
 
+def domain_discriminator_small(input, scope_name='domain_discriminator_single', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False):
+    with tf.variable_scope(scope_name, reuse=reuse):
 
-def encode_HR(input, scope_name='encode_HR', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, scale=8):
+        x = flip_gradient(input)
+
+        x = tf.layers.conv2d(x, 64, kernel_size=3, strides=2, padding='valid')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        x = tf.layers.conv2d(x, 32, kernel_size=3, strides=2, padding='valid')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        x = tf.layers.conv2d(x, 3, kernel_size=3, strides=2, padding='valid')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+        x1 = x
+        x = tf.layers.flatten(x)
+        x = tf.layers.dense(x,2)
+        # x = tf.layers.conv2d(x, 2, kernel_size=4, strides=1, padding='same')
+        # x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        if return_feat:
+            return x, x1
+        else:
+            return x
+
+def decode(input, scope_name='encode_up', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, scale=8, n_feat_last = None):
+    with tf.variable_scope(scope_name, reuse=reuse):
+        n_feat = 128
+        x = tf.layers.conv2d_transpose(input, 64, kernel_size=3, strides=1, padding='same')
+        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+
+        for i in range(int(np.log2(scale))):
+            x = tf.layers.conv2d_transpose(x, 128, kernel_size=3, strides=2, padding='same')
+            x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+            if n_feat_last is not None and i == int(np.log2(scale))-1:
+                n_feat = n_feat_last
+            x = tf.layers.conv2d_transpose(x, n_feat, kernel_size=3, strides=1, padding='same')
+            x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+        return x
+
+def encode(input, scope_name='encode_down', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, scale=8):
     with tf.variable_scope(scope_name, reuse=reuse):
 
         x = tf.layers.conv2d(input, 64, kernel_size=3, strides=1, padding='same')
@@ -84,7 +122,7 @@ def encode_HR(input, scope_name='encode_HR', is_training=True, is_bn=True, reuse
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
-def encode_LR(input, scope_name='encode_LR', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE):
+def encode_same(input, scope_name='encode_same', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE):
     with tf.variable_scope(scope_name, reuse=reuse):
 
         x = tf.layers.conv2d(input, 128, 3, activation=tf.nn.relu, padding='same')
