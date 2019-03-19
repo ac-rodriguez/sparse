@@ -415,7 +415,7 @@ class Model:
                 loss_domain+= tf.losses.absolute_difference(self.Zh, self.Zl)
 
             tf.summary.scalar('loss/domain', loss_domain)
-        elif self.args.domain == 'domainRevS':
+        elif self.args.domain == 'domainRevs':
 
             self.scoreh = semi.domain_discriminator_small(self.Zh)
             self.scorel = semi.domain_discriminator_small(self.Zl)
