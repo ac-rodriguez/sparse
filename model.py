@@ -114,7 +114,11 @@ class Model:
             self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
             if self.model == 'countSRu':
                 self.sr_on_labeled = False
-            assert self.loss_in_HR
+            if not self.is_hr_label: # added as a baseline
+                for key, val in self.y_hat.iteritems():
+                    self.y_hat[key] = bilinear(val, self.patch_size)
+            else:
+                assert self.loss_in_HR == True
         elif self.model == 'countSRs':
             self.is_sr = True
             self.HR_hat = semi.decode(self.feat_l, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
@@ -124,7 +128,11 @@ class Model:
             feat = tf.concat([self.HR_hat, feat_l_up], axis=3)
 
             self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
-
+            if not self.is_hr_label: # added as a baseline
+                for key, val in self.y_hat.iteritems():
+                    self.y_hat[key] = bilinear(val, self.patch_size)
+            else:
+                assert self.loss_in_HR == True
             assert self.loss_in_HR
         elif self.model == 'countSR_l':
             self.is_sr = True
