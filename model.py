@@ -17,6 +17,8 @@ class Model:
 
         self.scale = self.args.scale
         self.is_hr_label = self.args.is_hr_label
+        if self.args.is_fake_hr_label:
+            self.is_hr_label = True
         if self.args.is_bilinear:
             self.down_ = lambda x, _: bilinear(x, self.patch_size, name='HR_hat_down')
             self.up_ = lambda x, _: bilinear(x, self.patch_size * self.scale, name='HR_hat_down')
@@ -41,7 +43,7 @@ class Model:
         self.sr_on_labeled = True
 
         self.pad = self.args.sq_kernel*16//2
-        if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model) and not '_l' in self.model and self.args.is_hr_label:
+        if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model) and not '_l' in self.model and self.is_hr_label:
             self.loss_in_HR = True
 
     def model_fn(self, features, labels, mode):
@@ -58,6 +60,8 @@ class Model:
         if self.two_ds:
             self.feat_lU, self.feat_hU = features['feat_lU'], features['feat_hU']
         self.patch_size = self.feat_l.shape[1]
+        if self.args.is_fake_hr_label:
+            self.labels = tf.image.resize_nearest_neighbor(self.labels, size=(self.patch_size*self.scale, self.patch_size*self.scale)) / (self.scale**2)
 
         self.compute_predicitons()
 
