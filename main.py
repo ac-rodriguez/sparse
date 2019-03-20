@@ -14,7 +14,7 @@ from model import Model
 import plots
 import patches
 from data_config import get_dataset
-from tools_tf import SessionHook, get_embeddings
+import tools_tf as tools
 # colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 # HRFILE='/home/pf/pfstaff/projects/andresro/sparse/data/coco'
 # LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
@@ -195,9 +195,12 @@ def main(unused_args):
         # Train model and save summaries into logdir.
         # model.train(input_fn=input_fn, steps=args.train_iters)
         # scores = model.evaluate(input_fn=input_fn_val, steps=(val_iters))
+        metric_ = 'metrics/mae' if int(args.lambda_reg) == 1 else 'metrics/iou'
 
+        best_exporter = tools.BestCheckpointCopier(score_metric=metric_)
         train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)#, hooks=[hook])
-        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every)
+        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every,
+                                          exporters=[best_exporter])
 
         tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
 
@@ -251,10 +254,10 @@ def main(unused_args):
         pred_c_rec = np.empty(shape=([nr_patches, patch, patch]))
 
         if args.domain is not None:
-            hook = [SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", num_batches=10)]
+            hook = [tools.SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", num_batches=10)]
         else:
             hook = None
-        preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False, hooks=hook)  # ,predict_keys=['hr_hat_rgb'])
+        preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False, hooks=hook, checkpoint_path=tools.get_lastckpt(model_dir))  # ,predict_keys=['hr_hat_rgb'])
 
         print('Predicting {} Patches...'.format(nr_patches))
         for idx in tqdm(xrange(0, batch_idxs)):
@@ -279,7 +282,7 @@ def main(unused_args):
 
 
         if args.domain is not None:
-            get_embeddings(hook[0], Model_fn, suffix=suffix)
+            tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
     # if args.is_train:
     #     predict(input_fn, reader.patch_gen, suffix='train')
     #     predict(input_fn_val, reader.patch_gen_val, suffix='val')
