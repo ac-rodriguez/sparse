@@ -133,7 +133,6 @@ class Model:
                     self.y_hat[key] = bilinear(val, self.patch_size)
             else:
                 assert self.loss_in_HR == True
-            assert self.loss_in_HR
         elif self.model == 'countSR_l':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
