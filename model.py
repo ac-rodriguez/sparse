@@ -100,9 +100,9 @@ class Model:
         if self.model == 'simple':  # Baseline  No High Res for training
             self.y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training)
         elif self.model == 'count' or self.model == 'counth':
-            self.y_hat, self.Zl = countception(self.feat_l,pad=self.pad, is_training=self.is_training, is_return_feat=True)
+            self.y_hat, self.Zl = countception(self.feat_l,pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
             if self.two_ds:
-                    _, self.ZlU = countception(self.feat_lU,pad=self.pad, is_training=self.is_training, is_return_feat=True)
+                    _, self.ZlU = countception(self.feat_lU,pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
 
             if self.model == 'counth':  # using down-sampled HR images too
                 self.add_yhath = True
@@ -119,7 +119,7 @@ class Model:
             feat_l_up = self.up_(self.feat_l, 8)
             feat = tf.concat([self.HR_hat, feat_l_up], axis=3)
 
-            self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
+            self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training,  config_volume=self.config)
             if self.model == 'countSRu':
                 self.sr_on_labeled = False
             if not self.is_hr_label: # added as a baseline
@@ -135,7 +135,7 @@ class Model:
             feat_l_up = self.up_(self.feat_l, 8)
             feat = tf.concat([self.HR_hat, feat_l_up], axis=3)
 
-            self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
+            self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training, config_volume=self.config)
             if not self.is_hr_label: # added as a baseline
                 for key, val in self.y_hat.iteritems():
                     self.y_hat[key] = bilinear(val, self.patch_size)
@@ -226,7 +226,7 @@ class Model:
 
             self.lossTasks +=loss_
         # SR loss
-        if self.is_sr:
+        if self.is_sr and self.args.lambda_sr > 0:
             if self.args.sr_after is not None:
                 if self.args.sr_after > 0:
                     w1 = tf.where(tf.greater(self.args.sr_after, tf.train.get_global_step()), 0., 1.)
