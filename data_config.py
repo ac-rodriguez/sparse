@@ -59,6 +59,30 @@ def get_dataset(DATASET, is_mounted = False):
             dset_config['roi_lon_lat_tr_lb']='101.45,0.505,101.62,0.53'
         elif DATASET == "palm100": # 400K
             dset_config['roi_lon_lat_tr_lb']='101.45,0.48,101.62,0.53'
+    elif "olives" in DATASET:
+        OBJECT = 'olives'
+        dset_config[
+            'LR_file'] = PATH + '/barry_palm/data/2A/olives_2016/S2A_USER_PRD_MSIL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.SAFE/S2A_USER_MTD_SAFL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.xml'
+        dset_config['points'] = PATH + '/barry_palm/data/labels/olives/kml_geoproposals'
+        dset_config['roi_lon_lat_tr'] = '-3.9,37.78,-3.79,37.9'
+        dset_config['roi_lon_lat_val'] = '-3.79,37.78,-3.77,37.9'
+        dset_config['roi_lon_lat_val_lb'] = '-3.79,37.78,-3.77,37.9'
+
+        if DATASET == "olives100":  # 400K
+            dset_config['roi_lon_lat_tr_lb'] = '-3.9,37.78,-3.79,37.9'
+
+    elif "cars" in DATASET:
+        OBJECT = 'cars'
+        dset_config[
+            'LR_file'] = PATH + '/barry_palm/data/2A/cars_2017/S2A_MSIL2A_20171230T183751_N0206_R027_T11SMU_20171230T202151.SAFE/MTD_MSIL2A.xml'
+        dset_config['points'] = PATH + '/barry_palm/data/labels/cars/kml_geoproposals'
+        dset_config['roi_lon_lat_tr'] = '-117.39,34.594,-117.401,34.585'
+        dset_config['roi_lon_lat_val'] = '-117.401,34.585,-117.3979,34.581'
+        dset_config['roi_lon_lat_val_lb'] = '-117.401,34.585,-117.3979,34.581'
+
+        if DATASET == "cars100":  # 400K
+            dset_config['roi_lon_lat_tr_lb'] = '-117.401,34.585,-117.39,34.594'
+
 
     else:
         print('DATASET {} Not defined'.format(DATASET))

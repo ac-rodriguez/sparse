@@ -128,9 +128,9 @@ def readHR(args, roi_lon_lat):
 def readS2(args, roi_lon_lat):
 
     data_file = args.LR_file
-    if '_USER_' in data_file:
-        print("use createPatches_old_format.py to create the patches!")
-        sys.exit(0)
+    # if '_USER_' in data_file:
+    #     print("use createPatches_old_format.py to create the patches!")
+    #     sys.exit(0)
 
 
     # roi_lon_lat = args.roi_lon_lat

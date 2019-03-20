@@ -607,8 +607,8 @@ class PatchExtractor:
                 ymin, xmin, ymax, xmax = map(lambda x: x // self.scale, self.lims_lab)
             else:
                 ymin, xmin, ymax, xmax = self.lims_lab
-
-            xmax,ymax = min(xmax, n_x-self.patch_l), min(ymax, self.n_y-self.patch_l)
+            print  self.lims_lab
+            xmax,ymax = min(xmax, n_x), min(ymax, self.n_y)
             xmin,ymin = max(xmin-buffer_size,0),max(ymin-buffer_size,0)
             area_labels = (xmax-xmin+buffer_size,ymax-ymin+buffer_size)
             # area_labels = (50,50)
