@@ -62,6 +62,10 @@ class Model:
         self.patch_size = self.feat_l.shape[1]
         if self.args.is_fake_hr_label:
             self.labels = tf.image.resize_nearest_neighbor(self.labels, size=(self.patch_size*self.scale, self.patch_size*self.scale)) / (self.scale**2)
+        if self.args.is_same_volume:
+            self.config = {'hr':self.is_hr_label,'scale':self.scale,'patch':self.patch_size}
+        else:
+            self.config = None
 
         self.compute_predicitons()
 
@@ -265,8 +269,8 @@ class Model:
             encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
             encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
 
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, config_volume=self.config)
 
         elif self.model == 'countDA_hlate': #self.model == 'countHR_le':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
@@ -274,8 +278,8 @@ class Model:
             encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
             encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
 
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         else:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
@@ -298,16 +302,16 @@ class Model:
             encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
 
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
         elif self.model == 'countDAlate': #self.model == 'countHR_le':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
 
             encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
 
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True)
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         elif self.model == 'countDApair':
             # Train on (HR,y). Test on (Lr,y). LR is paired with HR. Comparison on Higher-level features
 

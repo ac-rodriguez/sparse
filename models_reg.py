@@ -1,4 +1,4 @@
-
+import sys
 import tensorflow as tf
 
 i = 0
@@ -72,7 +72,7 @@ def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True)
 
 
 
-def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE, last=False):
+def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE, last=False, config_volume=None):
 
     def selu(x):
         with tf.name_scope('elu') as scope:
@@ -103,6 +103,27 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
             conv3x3 = ConvLayer(x, num_filters2, [3, 3], 'conv3x3', pad='SAME')
             return tf.concat([conv1x1, conv3x3], axis=-1)
 
+    n_filters_last = 64
+    n_filters_mid = 40
+    if config_volume is not None:
+
+        if last:
+            if config_volume['hr']:
+                n_filters_last = 3
+            else:
+                n_filters_last = 3*(config_volume['scale']**2)
+        else:
+            if config_volume['hr']:
+                n_filters_mid = 3
+            else:
+                if config_volume['scale'] == 8:
+                    n_filters_mid = 3*20
+                elif config_volume['scale'] == 16:
+                    n_filters_mid = 3 * 72
+                else:
+                    print('not implemented error')
+                    sys.exit(1)
+
     with tf.variable_scope(scope_name, reuse=reuse):
         # pad = 32
         net = tf.pad(input, [[0, 0], [pad, pad], [pad, pad], [0, 0]], 'CONSTANT')
@@ -113,12 +134,12 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
         net = ConvLayer(net, 16, [15, 15], name='conv2', pad='VALID')
         net = ConcatBlock(net, 112, 48, name='concat_block3')
         net = ConcatBlock(net, 64, 32, name='concat_block4')
-        net = ConcatBlock(net, 40, 40, name='concat_block5')
+        net = ConcatBlock(net, n_filters_mid, n_filters_mid, name='concat_block5')
         net1 = net
         net = ConcatBlock(net, 32, 96, name='concat_block6')
         net = ConvLayer(net, 32, [17, 17], name='conv3', pad='VALID')
         net = ConvLayer(net, 64, [1, 1], name='conv4', pad='VALID')
-        net = ConvLayer(net, 64, [1, 1], name='conv5', pad='VALID')
+        net = ConvLayer(net, n_filters_last, [1, 1], name='conv5', pad='VALID')
         if last:
             net1 = net
         net_reg = ConvLayer(net, 1, [1, 1], name='out_reg', pad='VALID', is_last=True)

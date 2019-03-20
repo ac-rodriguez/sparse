@@ -40,6 +40,8 @@ parser.add_argument("--is-hr-label", default=False, action="store_true",
                     help="compute label on the HR resolultion")
 parser.add_argument("--is-fake-hr-label", default=False, action="store_true",
                     help="compute label on the LR resolultion and to ")
+parser.add_argument("--is-same-volume", default=False, action="store_true",
+                    help="compute same embedding volume for LR and HR models")
 parser.add_argument("--warm-start-from", default=None, help="fine tune from MODELNAME or LOWER flag checkpoint")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
@@ -123,6 +125,7 @@ def main(unused_args):
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
     if args.is_hr_label: args.tag = '_hrlab' + args.tag
     if args.is_fake_hr_label: args.tag = '_fakehrlab' + args.tag
+    if args.is_same_volume: args.tag = '_samevol' + args.tag
     assert not (args.is_fake_hr_label and args.is_hr_label)
     if args.semi is not None: args.tag = '_'+args.semi + args.tag
     if args.domain is not None: args.tag = '_'+args.domain + args.tag
