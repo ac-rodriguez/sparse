@@ -42,6 +42,8 @@ parser.add_argument("--is-fake-hr-label", default=False, action="store_true",
                     help="compute label on the LR resolultion and to ")
 parser.add_argument("--is-same-volume", default=False, action="store_true",
                     help="compute same embedding volume for LR and HR models")
+parser.add_argument("--not-save-arrays",dest='save_arrays', default=True, action="store_false",
+                    help="save arrays of GT and input data")
 parser.add_argument("--warm-start-from", default=None, help="fine tune from MODELNAME or LOWER flag checkpoint")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")

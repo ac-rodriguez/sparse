@@ -338,15 +338,20 @@ class DataReader(object):
             self.mean_train = self.train.mean(axis=(0, 1))
             self.max_dens = self.labels.max()
             self.std_train = self.train.std(axis=(0, 1))
-            if IS_DEBUG:
+            if self.args.save_arrays:
                 f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
                 plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
-                plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
-                plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
+                # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
+                # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
+                # np.save(self.args.model_dir + '/train_HR',self.train_h)
+                # np.save(self.args.model_dir + '/train_S2', self.train)
 
                 plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
                 plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
-
+                plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
+                np.save(self.args.model_dir + '/val_S2', self.val)
+                np.save(self.args.model_dir + '/val_HR', self.val_h)
+                np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
                 # sys.exit(0)
 
             if self.args.is_empty_aerial:
