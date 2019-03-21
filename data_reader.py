@@ -61,7 +61,11 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
         ref_scale = ref_scale//args.scale
         scale_lims = args.scale
     else:
-        ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
+        if 'USER' in args.LR_file:
+            ds_file = gp.getrefDataset(args.LR_file,is_use_gtiff=False)
+        else:
+            ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
+
         scale_lims = 1
 
     print(' [*] Reading Labels {}'.format(os.path.basename(args.points)))
