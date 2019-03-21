@@ -4,8 +4,9 @@ import argparse
 import numpy as np
 from osgeo import gdal
 import os, sys
-
+import fnmatch
 import re
+from collections import defaultdict
 
 import gdal_processing as gp
 # from utils import patches
@@ -253,3 +254,225 @@ def readS2(args, roi_lon_lat):
     # print(" [*] Success.")
 
 
+
+def readS2_old(args, roi_lon_lat):
+
+    # data_type = args.data_type
+    data_file = args.LR_file
+    # if '_USER_' in data_file:
+    #     print("use createPatches_old_format.py to create the patches!")
+    #     sys.exit(0)
+
+    # roi_lon_lat = args.roi_lon_lat
+    select_bands = args.select_bands
+
+    if data_file.endswith('.xml') or data_file.endswith('.zip'):
+        data_file, data_filename = os.path.split(data_file)
+    else:
+        data_filename = 'MTD_MSIL2A.xml'
+
+    file_date = data_file.split('_')[-1].replace('.SAFE','')
+    for file in os.listdir(data_file):
+        if fnmatch.fnmatch(file, '*{}.xml'.format(file_date)):
+            data_filename = file
+            print(file)
+    _, folder = os.path.split(data_file)
+
+
+    raster = gdal.Open(os.path.join(data_file,data_filename))
+
+    if not raster:
+        print(" [!] Corrupt 2A XML file...")
+        sys.exit(0)
+    datasets = raster.GetSubDatasets()
+
+    if not datasets:
+        print(" [!] Empty Datasets... Invalid xml format")
+        print("     try with createPatches_tif.py...")
+        sys.exit(0)
+    else:
+        tenMsets = []
+        twentyMsets = []
+        sixtyMsets = []
+        unknownMsets = []
+        for (dsname, dsdesc) in datasets:
+            if '10m resolution' in dsdesc:
+                tenMsets += [ (dsname, dsdesc) ]
+            elif '20m resolution' in dsdesc:
+                twentyMsets += [ (dsname, dsdesc) ]
+            elif '60m resolution' in dsdesc:
+                sixtyMsets += [ (dsname, dsdesc) ]
+            else:
+                unknownMsets += [ (dsname, dsdesc) ]
+
+    if roi_lon_lat:
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
+    else:
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -180, -90, 180, 90
+
+
+
+    geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
+    dsREF = gdal.Open(tenMsets[0][0])
+    if not gp.roi_intersection(dsREF, geo_pts_ref):
+        print(" [!] The ROI does not intersect with the data product")
+        sys.exit(0)
+
+    # case where we have several UTM in the data set
+    # => select the one with maximal coverage of the study zone
+    utm_idx = 0
+    utm = ""
+    all_utms =defaultdict(str)
+    xmin, ymin, xmax, ymax = 0, 0, 0, 0
+    largest_area = -1
+    # process even if there is only one 10m set, in order to get roi -> pixels
+    for (tmidx, (dsname, dsdesc)) in enumerate(tenMsets + unknownMsets):
+        ds = gdal.Open(dsname)
+
+        x1, y1 = gp.to_xy(roi_lon1, roi_lat1, ds)
+        x2, y2 = gp.to_xy(roi_lon2, roi_lat2, ds)
+        tmxmin = max(min(x1, x2, ds.RasterXSize - 1), 0)
+        tmxmax = min(max(x1, x2, 0), ds.RasterXSize - 1)
+        tmymin = max(min(y1, y2, ds.RasterYSize - 1), 0)
+        tmymax = min(max(y1, y2, 0), ds.RasterYSize - 1)
+        # enlarge to the nearest 60 pixel boundary for the super-resolution
+        # tmxmin, tmxmax = gp.enlarge_to_60pixel(tmxmin,tmxmax)
+        # tmymin, tmymax = enlarge_to_60pixel(tmymin,tmymax)
+
+            # tmxmin = int(tmxmin / 6) * 6
+            # tmxmax = int((tmxmax + 1) / 6) * 6 - 1
+            # tmymin = int(tmymin / 6) * 6
+            # tmymax = int((tmymax + 1) / 6) * 6 - 1
+
+        area = (tmxmax - tmxmin + 1) * (tmymax - tmymin + 1)
+        current_utm = dsdesc[dsdesc.find("UTM"):]
+        if area > all_utms[current_utm]:
+            all_utms[current_utm] = area
+        if area > largest_area:
+            xmin, ymin, xmax, ymax = tmxmin, tmymin, tmxmax, tmymax
+            largest_area = area
+            utm_idx = tmidx
+            utm = dsdesc[dsdesc.find("UTM"):]
+
+    # convert comma separated band list into a list
+    select_bands = set([x for x in re.split(',',select_bands) ])
+    select_bands.add('CLD') ## Always get CLD band
+
+    print("Selected UTM Zone: {}".format(utm))
+    print("Selected pixel region: xmin=%d, ymin=%d, xmax=%d, ymax=%d:" % (xmin, ymin, xmax, ymax))
+    print("Selected pixel region: tmxmin=%d, tmymin=%d, tmxmax=%d, tmymax=%d:" % (tmxmin, tmymin, tmxmax, tmymax))
+    print("Image size: width=%d x height=%d" % (xmax - xmin + 1, ymax - ymin + 1))
+
+    if xmax < xmin or ymax < ymin:
+        print(" [!] Invalid region of interest / UTM Zone combination")
+        sys.exit(0)
+
+    selected_10m_data_set = None
+    if not tenMsets:
+        selected_10m_data_set = unknownMsets[0]
+    else:
+        selected_10m_data_set = tenMsets[utm_idx]
+    selected_20m_data_set = None
+    for (dsname, dsdesc) in enumerate(twentyMsets):
+        if utm in dsdesc:
+            selected_20m_data_set = (dsname, dsdesc)
+    # if not found, assume the listing is in the same order
+    # => OK if only one set
+    if not selected_20m_data_set: selected_20m_data_set = twentyMsets[utm_idx]
+    selected_60m_data_set = None
+    for (dsname, dsdesc) in enumerate(sixtyMsets):
+        if utm in dsdesc:
+            selected_60m_data_set = (dsname, dsdesc)
+    if not selected_60m_data_set: selected_60m_data_set = sixtyMsets[utm_idx]
+
+    ds10 = gdal.Open(selected_10m_data_set[0])
+    ds20 = gdal.Open(selected_20m_data_set[0])
+
+
+    if (xmax - xmin + 1 <= 10) or (ymax - ymin + 1 <= 10):
+        print(" [!] Roi outside of dataset")
+        sys.exit(0)
+
+    def validate_description(description):
+        m = re.match("(.*?), central wavelength (\d+) nm", description)
+        if m:
+            return m.group(1) + " (" + m.group(2) + " nm)"
+        # Some HDR restrictions... ENVI band names should not include commas
+
+        pos = description.find(',')
+        return description[:pos] + description[(pos + 1):]
+
+    def get_band_short_name(description):
+        if ',' in description:
+            return description[:description.find(',')]
+        if ' ' in description:
+            return description[:description.find(' ')]
+        return description[:3]
+
+    validated_10m_bands = []
+    validated_10m_indices = []
+    validated_20m_bands = []
+    validated_20m_indices = []
+    validated_60m_bands = []
+    validated_60m_indices = []
+    validated_descriptions = defaultdict(str)
+    validated_10m_dict = dict()
+    validated_20m_dict = dict()
+    sys.stdout.write("Selected 10m bands:")
+
+
+    for b in range(0, ds10.RasterCount):
+        desc = validate_description(ds10.GetRasterBand(b + 1).GetDescription())
+        shortname = get_band_short_name(desc)
+        if shortname in select_bands:
+            sys.stdout.write(" " + shortname)
+            select_bands.remove(shortname)
+            validated_10m_bands += [shortname]
+            validated_10m_indices += [b]
+            validated_descriptions[shortname] = desc
+            validated_10m_dict[shortname] = b
+    sys.stdout.write("\nSelected 20m bands:")
+    for b in range(0, ds20.RasterCount):
+        desc = validate_description(ds20.GetRasterBand(b + 1).GetDescription())
+        shortname = get_band_short_name(desc)
+        if shortname in select_bands:
+            sys.stdout.write(" " + shortname)
+            select_bands.remove(shortname)
+            validated_20m_bands += [shortname]
+            validated_20m_indices += [b]
+            validated_descriptions[shortname] = desc
+            validated_20m_dict[shortname] = b
+    sys.stdout.write("\n")
+
+    # add B3 for 20 m resolution
+
+    if validated_10m_indices:
+        print("Available {}".format(selected_10m_data_set[1]))
+        print("Loading selected 10m Bands: {}".format(validated_10m_bands))
+        data10 = np.rollaxis(
+            ds10.ReadAsArray(xoff=xmin, yoff=ymin, xsize=xmax - xmin + 1, ysize=ymax - ymin + 1, buf_xsize=xmax - xmin + 1,
+                             buf_ysize=ymax - ymin + 1), 0, 3)[:, :, validated_10m_indices]
+
+    b3_10_ind = validated_10m_indices.index(validated_10m_dict['B3'])
+    chan3 = data10[:, :, b3_10_ind]
+    vis = (chan3 < 1).astype(np.int)
+    if np.all(chan3 < 1):
+        print(" [!] All data is blank on Band 3")
+        sys.exit(0)
+    elif np.sum(vis) > 0:
+        print(' [!] The selected image has some blank pixels')
+        # sys.exit()
+
+    if validated_20m_indices:
+        print("Available {}".format(selected_20m_data_set[1]))
+        print("Loading selected 20m Bands: {}".format(validated_20m_bands))
+        data20 = np.rollaxis(
+            ds20.ReadAsArray(xoff=xmin // 2, yoff=ymin // 2, xsize=(xmax - xmin + 1) // 2, ysize=(ymax - ymin + 1) // 2,
+                             buf_xsize=(xmax - xmin + 1) // 2, buf_ysize=(ymax - ymin + 1) // 2), 0, 3)[:, :,
+                 validated_20m_indices]
+
+
+    if len(data20.shape) == 2:
+        data20 = np.expand_dims(data20, axis = 2)
+
+    return data10.astype(np.float32), data20.astype(np.float32)

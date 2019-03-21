@@ -11,7 +11,7 @@ import gdal
 
 from plots import check_dims, plot_rgb, plot_heatmap
 
-from read_geoTiff import readHR, readS2
+from read_geoTiff import readHR, readS2, readS2_old
 import gdal_processing as gp
 
 IS_DEBUG=False
@@ -38,7 +38,10 @@ def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
 
 
 def read_and_upsample_sen2(args, roi_lon_lat):
-    data10, data20 = readS2(args, roi_lon_lat)
+    if 'USER' in args.LR_file:
+        data10, data20 = readS2_old(args, roi_lon_lat)
+    else:
+        data10, data20 = readS2(args, roi_lon_lat)
     data20 = interpPatches(data20, data10.shape[0:2], squeeze=True)
 
     data = np.concatenate((data10, data20), axis=2)
