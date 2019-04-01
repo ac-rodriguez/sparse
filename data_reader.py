@@ -165,8 +165,8 @@ class DataReader(object):
 
         self.args.max_N = 1e5
 
-        self.read_data(self.is_training)
         if self.is_training:
+            self.read_train_data()
             if self.args.numpy_seed: np.random.seed(self.args.numpy_seed)
             if args.sigma_smooth:
                 self.labels = ndimage.gaussian_filter(self.labels, sigma=args.sigma_smooth)
@@ -214,12 +214,18 @@ class DataReader(object):
 
 
         else:
-
-            self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
+            self.read_test_data()
+            self.n_channels = self.data[0].shape[-1]
+            self.patch_gen_test = PatchExtractor(dataset_low=self.data, dataset_high=self.data_h, label=self.labels_test,
                                                  patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                                 scale=args.scale, lims_with_labels=self.lims_labels, patches_with_labels=self.args.patches_with_labels, two_ds=True)
-
-            self.n_channels = self.train[0].shape[-1]
+                                                 scale=self.args.scale, lims_with_labels=self.lims_labels,
+                                                 patches_with_labels=self.args.patches_with_labels, two_ds=True)
+            #
+            # self.patch_gen_test = PatchExtractor(dataset_low=self.data, dataset_high=None, label=self.labels,
+            #                                      patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
+            #                                      scale=args.scale, lims_with_labels=self.lims_labels, patches_with_labels=self.args.patches_with_labels, two_ds=True)
+            #
+            # self.n_channels = self.train[0].shape[-1]
 
             # self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=None, label=self.labels_val,
             #                                      patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
@@ -257,16 +263,24 @@ class DataReader(object):
                 # plots.plot_heatmap(data_recomposed, file=model_dir + '/pred_reg_recomposed')  # ,min=-1,max=1)
                 plot_rgb(data_recomposed,file='data_recomposed')
 
-    def non_random_patches(self):
+    def predict_readers(self):
         if self.is_training:
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                             patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
                                             scale=self.args.scale, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels,two_ds=True)
+            self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
+                                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                                is_random=False, border=4,
+                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val,
+                                                patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
+            self.read_test_data()
+            self.patch_gen_test = PatchExtractor(dataset_low=self.data, dataset_high=self.data_h, label=self.labels_test,
+                                                 patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
+                                                 scale=self.args.scale, lims_with_labels=self.lims_labels,
+                                                 patches_with_labels=self.args.patches_with_labels, two_ds=True)
 
-        self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
-                                            patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                                            is_random=False, border=4,
-                                            scale=self.args.scale, lims_with_labels=self.lims_labels_val,  patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
+        else:
+            pass
 
     def normalize(self, features, labels):
 
@@ -315,128 +329,143 @@ class DataReader(object):
                         'feat_hU': data_h[..., 3:]},\
                        tf.expand_dims(data_l[..., n], axis=-1)
 
-    def read_data(self, is_training=True):
+    def read_train_data(self):
         self.is_HR_labels = self.args.is_hr_label
-        if is_training:
-            print('\n [*] Loading TRAIN data \n')
-            self.train_h = readHR(self.args,
-                                  roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
-            self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-            self.labels, self.lims_labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
-                                      roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
-            print('\n [*] Loading VALIDATION data \n')
-            self.val_h = readHR(self.args,
-                                roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
-            self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
-            self.labels_val,self.lims_labels_val = read_labels(self.args, roi=self.args.roi_lon_lat_val,
-                                          roi_with_labels=self.args.roi_lon_lat_val_lb, is_HR=self.is_HR_labels)
+        print('\n [*] Loading TRAIN data \n')
+        self.train_h = readHR(self.args,
+                              roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
+        self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
+        self.labels, self.lims_labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
+                                  roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
-            # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
-            # self.N_pixels = self.train.shape[0] * self.train.shape[1]
+        print('\n [*] Loading VALIDATION data \n')
+        self.val_h = readHR(self.args,
+                            roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
+        self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
+        self.labels_val,self.lims_labels_val = read_labels(self.args, roi=self.args.roi_lon_lat_val,
+                                      roi_with_labels=self.args.roi_lon_lat_val_lb, is_HR=self.is_HR_labels)
 
-            self.mean_train = self.train.mean(axis=(0, 1))
-            self.max_dens = self.labels.max()
-            self.std_train = self.train.std(axis=(0, 1))
-            if self.args.save_arrays:
-                f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
-                plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
-                # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
-                # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
-                # np.save(self.args.model_dir + '/train_HR',self.train_h)
-                # np.save(self.args.model_dir + '/train_S2', self.train)
+        # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
+        # self.N_pixels = self.train.shape[0] * self.train.shape[1]
 
-                plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
-                plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
-                plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
-                np.save(self.args.model_dir + '/val_S2', self.val)
-                np.save(self.args.model_dir + '/val_HR', self.val_h)
-                np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
-                # sys.exit(0)
+        self.mean_train = self.train.mean(axis=(0, 1))
+        self.max_dens = self.labels.max()
+        self.std_train = self.train.std(axis=(0, 1))
+        if self.args.save_arrays:
+            f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
+            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+            # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
+            # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
+            # np.save(self.args.model_dir + '/train_HR',self.train_h)
+            # np.save(self.args.model_dir + '/train_S2', self.train)
 
-            if self.args.is_empty_aerial:
-                self.train[(self.labels == -1)[..., 0], :] = 2000.0
-            print(str(self.mean_train))
-            self.nb_bands = self.train.shape[-1]
+            plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
+            plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
+            plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
+            np.save(self.args.model_dir + '/val_S2', self.val)
+            np.save(self.args.model_dir + '/val_HR', self.val_h)
+            np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
+            # sys.exit(0)
 
-            # TODO check why there is a difference in the shapes
-            scale = self.args.scale
-            if self.train_h is not None:
-                x_shapes, y_shapes = self.compute_shapes(dset_h=self.train_h, dset_l=self.train, scale=scale)
+        if self.args.is_empty_aerial:
+            self.train[(self.labels == -1)[..., 0], :] = 2000.0
+        print(str(self.mean_train))
+        self.nb_bands = self.train.shape[-1]
 
-                print(
-                ' Train shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
-                                                                               self.train_h.shape[0],
-                                                                               self.train_h.shape[1]))
-                # Reduce data to the enlarged 10m pixels
-                self.train_h = self.train_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
-                self.train = self.train[0:x_shapes, 0:y_shapes, :]
-                if self.is_HR_labels:
-                    self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
-                else:
-                    self.labels = self.labels[0:x_shapes, 0:y_shapes]
+        scale = self.args.scale
+        if self.train_h is not None:
+            x_shapes, y_shapes = self.compute_shapes(dset_h=self.train_h, dset_l=self.train, scale=scale)
 
-                print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
-                                                                   self.train_h.shape[0], self.train_h.shape[1]))
+            print(
+            ' Train shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
+                                                                           self.train_h.shape[0],
+                                                                           self.train_h.shape[1]))
+            # Reduce data to the enlarged 10m pixels
+            self.train_h = self.train_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
+            self.train = self.train[0:x_shapes, 0:y_shapes, :]
+            if self.is_HR_labels:
+                self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+            else:
+                self.labels = self.labels[0:x_shapes, 0:y_shapes]
 
-                x_shapes, y_shapes = self.compute_shapes(dset_h=self.val_h, dset_l=self.val, scale=scale)
+            print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
+                                                               self.train_h.shape[0], self.train_h.shape[1]))
 
-                print(' Val shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
-                                                                                   self.val_h.shape[0],
-                                                                                   self.val_h.shape[1]))
+            x_shapes, y_shapes = self.compute_shapes(dset_h=self.val_h, dset_l=self.val, scale=scale)
 
-                # Reduce data to the enlarged 10m pixels
-                self.val_h = self.val_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
-                self.val = self.val[0:int(x_shapes), 0:int(y_shapes), :]
-                if self.is_HR_labels:
-                    self.labels_val = self.labels_val[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
-                else:
-                    self.labels_val = self.labels_val[0:x_shapes, 0:y_shapes]
+            print(' Val shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
+                                                                               self.val_h.shape[0],
+                                                                               self.val_h.shape[1]))
 
-                print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
-                                                                   self.val_h.shape[0], self.val_h.shape[1]))
+            # Reduce data to the enlarged 10m pixels
+            self.val_h = self.val_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
+            self.val = self.val[0:int(x_shapes), 0:int(y_shapes), :]
+            if self.is_HR_labels:
+                self.labels_val = self.labels_val[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+            else:
+                self.labels_val = self.labels_val[0:x_shapes, 0:y_shapes]
 
-            if self.args.is_padding:
-                a = self.patch_l - 1
-                self.train =  np.pad(self.train, ((a,a),(a,a),(0,0)), mode='constant', constant_values=0.0)
-                b = a * scale
-                self.train_h = np.pad(self.train_h, ((b,b),(b,b),(0,0)), mode='constant', constant_values = 0.0) if self.train_h is not None else self.train_h
-                c = b if self.is_HR_labels else a
-                self.labels = np.pad(self.labels, ((c,c),(c,c),(0,0)), mode='constant', constant_values = -1.0)
+            print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
+                                                               self.val_h.shape[0], self.val_h.shape[1]))
 
-                print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
+        if self.args.is_padding:
+            a = self.patch_l - 1
+            self.train =  np.pad(self.train, ((a,a),(a,a),(0,0)), mode='constant', constant_values=0.0)
+            b = a * scale
+            self.train_h = np.pad(self.train_h, ((b,b),(b,b),(0,0)), mode='constant', constant_values = 0.0) if self.train_h is not None else self.train_h
+            c = b if self.is_HR_labels else a
+            self.labels = np.pad(self.labels, ((c,c),(c,c),(0,0)), mode='constant', constant_values = -1.0)
 
-        else:
-            self.train_h = readHR(self.args,
-                                  roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
-            self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-            self.labels, _ = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
-                                      roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
+            print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
+    def read_test_data(self):
+        self.is_HR_labels = self.args.is_hr_label
 
-            self.nb_bands = self.train.shape[-1]
-            self.mean_train = np.zeros(self.nb_bands)
-            self.std_train = np.ones(self.nb_bands)
+        self.data_h = readHR(self.args,
+                              roi_lon_lat=self.args.roi_lon_lat_test) if self.args.HR_file is not None else None
+        self.data = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_test)
+        self.labels_test, self.lims_labels = read_labels(self.args, roi=self.args.roi_lon_lat_test,
+                                  roi_with_labels=self.args.roi_lon_lat_test, is_HR=self.is_HR_labels)
+        if not self.is_training:
+            self.max_dens = np.max((1.0,self.labels_test.max())) # recompute it if not there already from traindata
 
-            scale = self.args.scale
-            if self.train_h is not None:
-                x_shapes, y_shapes = self.compute_shapes(dset_h=self.train_h, dset_l=self.train, scale=scale)
 
-                print(
-                    ' Predict shapes: \n\tBefore:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0],
-                                                                                   self.train.shape[1],
-                                                                                   self.train_h.shape[0],
-                                                                                   self.train_h.shape[1]))
-                # Reduce data to the enlarged 10m pixels
-                self.train_h = self.train_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
-                self.train = self.train[0:x_shapes, 0:y_shapes, :]
-                if self.is_HR_labels:
-                    self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
-                else:
-                    self.labels = self.labels[0:x_shapes, 0:y_shapes]
+        self.nb_bands = self.data.shape[-1]
+        self.mean_train = np.zeros(self.nb_bands)
+        self.std_train = np.ones(self.nb_bands)
 
-                print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
-                                                                   self.train_h.shape[0], self.train_h.shape[1]))
+        scale = self.args.scale
+        if self.data_h is not None:
+            x_shapes, y_shapes = self.compute_shapes(dset_h=self.labels_test, dset_l=self.data, scale=scale)
 
+            self.data = self.data[0:int(x_shapes), 0:int(y_shapes), :]
+            self.data_h = self.data_h[0:int(scale * x_shapes), 0:int(scale * y_shapes),:]
+
+            if self.is_HR_labels:
+                self.labels_test = self.labels_test[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+            else:
+                self.labels_test = self.labels_test[0:x_shapes, 0:y_shapes]
+
+            print('\tAfter:\tData:({}x{})\tLabels:({}x{})'.format(self.data.shape[0], self.data.shape[1],
+                                                               self.labels_test.shape[0], self.labels_test.shape[1]))
+
+
+        if self.args.save_arrays:
+            f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
+            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+            # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
+            # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
+            # np.save(self.args.model_dir + '/train_HR',self.train_h)
+            # np.save(self.args.model_dir + '/train_S2', self.train)
+
+            plt_reg(self.labels_test, self.args.model_dir + '/test_reg_label')
+            if self.data_h is not None:
+                plot_rgb(self.data_h, file=self.args.model_dir + '/test_HR', reorder=False, percentiles=(0, 100))
+            plot_rgb(self.data, file=self.args.model_dir + '/test_S2')
+            # np.save(self.args.model_dir + '/val_S2', self.val)
+            # np.save(self.args.model_dir + '/val_HR', self.val_h)
+            # np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
+            # sys.exit(0)
 
         if False:
             print(' [*] Loading data for Prediction ')
@@ -485,16 +514,20 @@ class DataReader(object):
 
         tf.constant(self.std_train.astype(np.float32), name='std_train_k')
         tf.constant(self.max_dens.astype(np.float32), name='max_dens_k')
-    def input_fn(self, is_train=True):
+    def input_fn(self, is_train=True, is_test=False):
         # np.random.seed(99)
         self.init_constants_normalization()
 
-        if is_train:
-            gen_func = self.patch_gen.get_iter
+        if is_test:
+            gen_func = self.patch_gen_test.get_iter
             patch_l, patch_h = self.patch_l, self.patch_h
         else:
-            gen_func = self.patch_gen_val.get_iter
-            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
+            if is_train:
+                gen_func = self.patch_gen.get_iter
+                patch_l, patch_h = self.patch_l, self.patch_h
+            else:
+                gen_func = self.patch_gen_val.get_iter
+                patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
 
         multiplier = 2 if self.two_ds else 1
 
@@ -512,7 +545,8 @@ class DataReader(object):
                 tf.TensorShape([patch_h, patch_h,
                                 n_high])
             ))
-
+        if is_train:
+            ds = ds.shuffle(buffer_size=self.args.batch_size*5)
         ds = ds.map(self.reorder_ds, num_parallel_calls=6)
         if is_train and self.args.is_masking:
             ds = ds.map(self.add_spatial_masking)
@@ -522,41 +556,16 @@ class DataReader(object):
 
         return ds
 
-    def get_input_fn(self):
+    def get_input_fn(self, is_test=False):
         input_fn = None
         if self.is_training:
             input_fn = partial(self.input_fn, is_train=True)
+        if is_test:
+            input_fn = partial(self.input_fn, is_test=True)
         input_fn_val = partial(self.input_fn, is_train=False)
 
         return input_fn, input_fn_val
 
-    # def input_fn_test(self):
-    #     self.init_constants_normalization()
-    #     gen_func = self.patch_gen_test.get_iter
-    #
-    #     if self.labels is not None:
-    #         ds = tf.data.Dataset.from_generator(
-    #             gen_func, (tf.float32, tf.float32),
-    #             (
-    #                 tf.TensorShape([self.patch_l, self.patch_l,
-    #                                 self.n_channels]),
-    #                 tf.TensorShape([self.patch_h, self.patch_h,
-    #                                 1])
-    #             ))
-    #         ds = ds.map(self.reorder_ds)
-    #     else:
-    #         ds = tf.data.Dataset.from_generator(
-    #             gen_func, (tf.float32, tf.float32),
-    #             (
-    #                 tf.TensorShape([self.patch_l, self.patch_l,
-    #                                 self.n_channels]),
-    #                 tf.TensorShape([None])
-    #             ))
-    #         ds = ds.map(self.normalize)
-    #
-    #     ds = ds.batch(self.batch).prefetch(buffer_size=10)
-    #
-    #     return ds
 
 
 class PatchExtractor:

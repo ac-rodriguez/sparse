@@ -64,7 +64,7 @@ parser.add_argument("--lambda-reg", default=0.5, type=float, help="Lambda for re
 parser.add_argument("--lambda-weights", default=1.0, type=float, help="Lambda for L2 weights regularizer")
 # parser.add_argument("--weight-decay", type=float, default=0.0005,
 #                     help="Regularisation parameter for L2-loss.")
-parser.add_argument("--train-iters", default=1000, type=int, help="Number of iterations to train")
+parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train")
 parser.add_argument("--unlabeled-after", default=0, type=np.int64, help="Feed unlabeled data after number of iterations")
 parser.add_argument("--sr-after", default=None, type=np.int64, help="Start SR task after number of iterations")
 parser.add_argument("--eval-every", default=600, type=int, help="Number of seconds between evaluations")
@@ -72,7 +72,7 @@ parser.add_argument("--model", default="simple",
                     help="Model Architecture to be used [deep_sentinel2, ...]")
 parser.add_argument("--sigma-smooth", type=int, default=None,
                     help="Sigma smooth to apply to the GT points data.")
-parser.add_argument("--sq-kernel", type=int, default=None,
+parser.add_argument("--sq-kernel", type=int, default=2,
                     help="Smooth with a squared kernel of N 10m pixels N instead of gaussian.")
 parser.add_argument("--normalize", type=str, default='normal',
                     help="type of normalization applied to the data.")
@@ -110,9 +110,13 @@ parser.add_argument("--save-dir", default='/home/pf/pfstaff/projects/andresro/sp
                     help="Path to directory where models should be saved")
 parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="Delete model_dir before starting training from iter 0. Overrides --is-restore flag")
-
-parser.add_argument("--is-predict", dest='is_train', default=True, action="store_false",
+parser.add_argument("--is-overwrite-pred", default=False, action="store_true",
+                    help="overwrite predictions already in folder")
+parser.add_argument("--is-predict","--is-test", dest='is_train', default=True, action="store_false",
                     help="Predict using an already trained model")
+parser.add_argument("--is-mounted", default=False, action="store_false",
+                    help="directories on a mounted loc from leonhard cluster")
+
 args = parser.parse_args()
 
 
@@ -120,9 +124,10 @@ def main(unused_args):
     if args.is_train:
         d = get_dataset(args.dataset)
     else:
-        d = get_dataset(args.dataset, is_mounted=True)
+        d = get_dataset(args.dataset, is_mounted=args.is_mounted)
 
     args.__dict__.update(d)
+    if args.sq_kernel == 'None' or args.sq_kernel == 'none': args.sq_kernel = None
 
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
     if args.is_hr_label: args.tag = '_hrlab' + args.tag
@@ -156,6 +161,12 @@ def main(unused_args):
     elif not args.is_restore and args.is_train:
         model_dir = add_letter_path(model_dir, timestamp=False)
 
+    if not args.is_train:
+        ckpt = tools.get_lastckpt(model_dir)
+        args.ckpt = ckpt
+        if not args.is_overwrite_pred:
+            assert not os.path.isfile(os.path.join(model_dir,'val1_sem_pred.png')), 'predictions exist'
+
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
     args.model_dir = model_dir
@@ -170,9 +181,9 @@ def main(unused_args):
     if args.is_multi_gpu:
         strategy = tf.contrib.distribute.MirroredStrategy()
         run_config = tf.estimator.RunConfig(
-            train_distribute=strategy, eval_distribute=strategy)
+            train_distribute=strategy, eval_distribute=strategy, log_step_count_steps=200)
     else:
-        run_config = tf.estimator.RunConfig(save_checkpoints_secs=args.eval_every)
+        run_config = tf.estimator.RunConfig(save_checkpoints_secs=args.eval_every, log_step_count_steps=200)
     if args.warm_start_from is not None:
         if args.warm_start_from == 'LOWER':
             assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
@@ -196,14 +207,13 @@ def main(unused_args):
         reader = DataReader(args, is_training=True)
         input_fn, input_fn_val = reader.get_input_fn()
         val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size_eval))
+        train_iters = np.ceil(np.sum(reader.patch_gen.nr_patches) / float(args.batch_size))
+        print "Iters per epoch Train:{} Val: {} \n training for {} epochs".format(train_iters,val_iters,args.epochs)
 
-        # Train model and save summaries into logdir.
-        # model.train(input_fn=input_fn, steps=args.train_iters)
-        # scores = model.evaluate(input_fn=input_fn_val, steps=(val_iters))
         metric_ = 'metrics/mae' if int(args.lambda_reg) == 1 else 'metrics/iou'
 
         best_exporter = tools.BestCheckpointCopier(score_metric=metric_)
-        train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=args.train_iters)#, hooks=[hook])
+        train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=train_iters*args.epochs)#, hooks=[hook])
         eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every,
                                           exporters=[best_exporter])
 
@@ -225,14 +235,14 @@ def main(unused_args):
 
 
     else:
-
-        reader = DataReader(args, is_training=True)
+        assert os.path.isdir(args.model_dir)
+        reader = DataReader(args, is_training=False)
         f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
         plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
 
-    reader.non_random_patches()
+    reader.predict_readers()
 
-    input_fn, input_fn_val = reader.get_input_fn()
+    input_fn_test, input_fn_val = reader.get_input_fn(is_test=True)
 
     def predict(input_fn, patch_generator, suffix):
         nr_patches = patch_generator.nr_patches
@@ -244,16 +254,20 @@ def main(unused_args):
             border = patch_generator.border_lab
             if 'val' in suffix:
                 ref_data = reader.val_h
-            else:
+            elif 'train' in suffix:
                 ref_data = reader.train_h
+            else:
+                ref_data = reader.labels_test
         else:
             patch = patch_generator.patch_l
             border = patch_generator.border
 
             if 'val' in suffix:
                 ref_data = reader.val
-            else:
+            elif 'train' in suffix:
                 ref_data = reader.train
+            else:
+                ref_data = reader.data
 
         pred_r_rec = np.empty(shape=([nr_patches, patch, patch, 1]))
         pred_c_rec = np.empty(shape=([nr_patches, patch, patch]))
@@ -285,7 +299,6 @@ def main(unused_args):
         plt_reg(data_recomposed, '{}/{}_sem_pred'.format(model_dir, suffix))
 
 
-
         if args.domain is not None:
             tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
     # if args.is_train:
@@ -293,11 +306,14 @@ def main(unused_args):
     #     predict(input_fn_val, reader.patch_gen_val, suffix='val')
     # else:
     #     predict(input_fn, reader.patch_gen_val, suffix='test')
-    predict(input_fn, reader.patch_gen, suffix='train1')
-    predict(input_fn_val, reader.patch_gen_val, suffix='val1')
+    # predict(input_fn, reader.patch_gen, suffix='train1')
+    if args.is_train:
+        predict(input_fn_val, reader.patch_gen_val, suffix='val')
+        np.save('{}/train_label'.format(model_dir), reader.labels)
+        np.save('{}/val_label'.format(model_dir), reader.labels_val)
 
-    np.save('{}/train_label'.format(model_dir), reader.labels)
-    np.save('{}/val_label'.format(model_dir), reader.labels_val)
+    predict(input_fn_test, reader.patch_gen_test, suffix='test')
+    np.save('{}/test_label'.format(model_dir), reader.labels_test)
 
 if __name__ == '__main__':
     tf.app.run()

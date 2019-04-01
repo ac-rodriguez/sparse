@@ -178,6 +178,7 @@ def get_embeddings(hook, Model_fn, suffix=''):
 
 def get_lastckpt(path):
     list_of_files = glob.glob(path+'/best_checkpoints/*.ckpt*index')
+    assert len(list_of_files) > 0, 'no .ckpt found in {}/best_checkponts'.format(path)
     last_file = max(list_of_files,key=os.path.getctime)
     return last_file.replace('.index','')
 
