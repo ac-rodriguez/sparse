@@ -190,12 +190,14 @@ class SemisupModel(object):
             tf.log(1e-8 + self.p_aba),
             weights=walker_weight,
             scope='loss_aba')
-        self.loss += loss_aba
-        self.add_visit_loss(p_ab, visit_weight)
         tf.summary.scalar('loss/aba', loss_aba)
+        self.loss += loss_aba
+        visit_loss = self.get_visit_loss(p_ab, visit_weight)
+        self.loss += visit_loss
+
         return self.loss
 
-    def add_visit_loss(self, p, weight=1.0):
+    def get_visit_loss(self, p, weight=1.0):
         """Add the "visit" loss to the model.
 
         Args:
@@ -211,9 +213,8 @@ class SemisupModel(object):
             tf.log(1e-8 + visit_probability),
             weights=weight,
             scope='loss_visit')
-        self.loss += visit_loss
-
         tf.summary.scalar('loss/visit', visit_loss)
+        return visit_loss
 
 
     def create_walk_statistics(self, p_aba, equality_matrix):

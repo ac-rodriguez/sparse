@@ -458,7 +458,14 @@ class Model:
             print('{} loss domain-transfer not defined'.format(self.args.domain))
             sys.exit(1)
 
-        self.loss += loss_domain
+        height = 1.0
+        lower = 0.0
+        alpha = 10.0
+        progress = self.float_(tf.train.get_global_step()) * self.args.batch_size / float(self.args.epochs)
+        lambda_domain = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
+        tf.summary.scalar('loss/lambda_domain', lambda_domain)
+
+        self.loss += loss_domain*lambda_domain
 
     def compute_summaries(self, y_hat):
         graph = tf.get_default_graph()
