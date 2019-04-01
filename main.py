@@ -61,7 +61,7 @@ parser.add_argument("--batch-size", default=8, type=int, help="Batch size for tr
 parser.add_argument("--batch-size-eval", default=None, type=int, help="Batch size for eval")
 parser.add_argument("--lambda-sr", default=1.0, type=float, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--lambda-reg", default=0.5, type=float, help="Lambda for reg vs semantic task")
-parser.add_argument("--lambda-weights", default=1.0, type=float, help="Lambda for L2 weights regularizer")
+parser.add_argument("--lambda-weights", default=0.0005, type=float, help="Lambda for L2 weights regularizer")
 # parser.add_argument("--weight-decay", type=float, default=0.0005,
 #                     help="Regularisation parameter for L2-loss.")
 parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train")
@@ -127,6 +127,7 @@ def main(unused_args):
         d = get_dataset(args.dataset, is_mounted=args.is_mounted)
 
     args.__dict__.update(d)
+    if 'SR' in args.model: args.tag = '_Lsr{:.1f}'.format(args.lambda_sr) + args.tag
     if args.sq_kernel == 'None' or args.sq_kernel == 'none': args.sq_kernel = None
 
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
@@ -151,7 +152,7 @@ def main(unused_args):
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
     if args.batch_size_eval is None: args.batch_size_eval = args.batch_size
 
-    lambdas = 'Lr{:.1f}_Lsr{:.1f}_Lw{:.1f}'.format(args.lambda_reg, args.lambda_sr, args.lambda_weights)
+    lambdas = 'Lr{:.1f}_Lw{:.4f}'.format(args.lambda_reg, args.lambda_weights)
     model_dir = os.path.join(args.save_dir, 'MODEL{}_PATCH{}_{}_SCALE{}_CH{}_{}{}'.format(
         args.model, args.patch_size, args.patch_size_eval, args.scale, args.n_channels, lambdas, args.tag))
 

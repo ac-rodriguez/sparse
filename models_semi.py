@@ -122,14 +122,16 @@ def encode(input, scope_name='encode', is_training=True, is_bn=True, reuse=tf.AU
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
-def encode_same(input, scope_name='encode_same', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE):
+def encode_same(input, scope_name='encode_same', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, is_small = True):
     with tf.variable_scope(scope_name, reuse=reuse):
 
         x = tf.layers.conv2d(input, 64, 3, activation=tf.nn.relu, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+        iters = 1 if is_small else 3
 
-        x = tf.layers.conv2d(x, 128, 3, activation=tf.nn.relu, padding='same')
-        x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
+        for _ in range(iters):
+            x = tf.layers.conv2d(x, 128, 3, activation=tf.nn.relu, padding='same')
+            x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
 

@@ -248,7 +248,7 @@ class Model:
         # L2 weight Regularizer
         W = [v for v in tf.trainable_variables() if ('weights' in v.name or 'kernel' in v.name)]
         # Lambda_weights is always rescaled with 0.0005
-        l2_weights = tf.add_n([0.0005 * tf.nn.l2_loss(v) for v in W])
+        l2_weights = tf.add_n([tf.nn.l2_loss(v) for v in W])
         tf.summary.scalar('loss/L2Weigths', l2_weights)
         self.loss_w = self.args.lambda_weights * l2_weights
 
@@ -284,6 +284,14 @@ class Model:
 
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
             self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+        elif self.model == 'countDA_hlate1': #self.model == 'countHR_le':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
+
+            encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=False)
+            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
+
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         else:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
@@ -313,6 +321,14 @@ class Model:
 
             encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
+
+            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+        elif self.model == 'countDAlate1':
+            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
+
+            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True,is_small=False)
 
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
             self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
@@ -429,7 +445,7 @@ class Model:
 
             # Fake predictions towards 0, real preds towards 1
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
-                             cross_entropy(labels=tf.ones_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scorel)
+                             cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
             if 'L' in self.args.domain:
                 loss_domain+= tf.losses.absolute_difference(self.Zh, self.Zl)
 
@@ -441,7 +457,7 @@ class Model:
 
             # Fake predictions towards 0, real preds towards 1
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
-                             cross_entropy(labels=tf.ones_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scorel)
+                             cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
 
             tf.summary.scalar('loss/domainS', loss_domain)
         elif self.args.domain == 'domainL1':
@@ -461,7 +477,7 @@ class Model:
         height = 1.0
         lower = 0.0
         alpha = 10.0
-        progress = self.float_(tf.train.get_global_step()) * self.args.batch_size / float(self.args.epochs)
+        progress = self.float_(tf.train.get_global_step())  / (np.sum(self.args.train_patches)*self.args.epochs / float(self.args.batch_size))
         lambda_domain = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
         tf.summary.scalar('loss/lambda_domain', lambda_domain)
 
@@ -518,7 +534,12 @@ class Model:
             assert (self.labels.shape[1:3] == self.feat_h.shape[1:3])
 
             image_array_bottom = tf.concat(axis=2, values=[feat_l_up, uint8_(self.feat_h),uint8_(self.feat_h)])
-            image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
+            if self.args.lambda_reg == 1.0:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_bottom])
+            elif self.args.lambda_reg == 0.0:
+                image_array = tf.concat(axis=1, values=[image_array_mid, image_array_bottom])
+            else:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
             tf.summary.image('HR_Loss/HR', image_array, max_outputs=self.max_output_img)
 
@@ -548,14 +569,25 @@ class Model:
 
             image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down, feat_h_down])
 
-            image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
+            if self.args.lambda_reg == 1.0:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_bottom])
+            elif self.args.lambda_reg == 0.0:
+                image_array = tf.concat(axis=1, values=[image_array_mid, image_array_bottom])
+            else:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
+
 
             tf.summary.image('HR_Loss/LR', image_array, max_outputs=self.max_output_img)
 
         else:
 
             image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down, feat_h_down])
-            image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
+            if self.args.lambda_reg == 1.0:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_bottom])
+            elif self.args.lambda_reg == 0.0:
+                image_array = tf.concat(axis=1, values=[image_array_mid, image_array_bottom])
+            else:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
             tf.summary.image('LR_Loss/LR', image_array, max_outputs=self.max_output_img)
 
@@ -574,13 +606,22 @@ class Model:
 
         if not self.is_training:
             # Compute evaluation metrics.
-            self.eval_metric_ops = {
+            metrics_reg = {
                 'metrics/mae': tf.metrics.mean_absolute_error(labels=labels, predictions=y_hat_reg, weights=w),
                 'metrics/mse': tf.metrics.mean_squared_error(labels=labels, predictions=y_hat_reg, weights=w),
+                }
+
+            metrics_sem = {
                 'metrics/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class, num_classes=2, weights=w),
                 'metrics/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class, weights=w),
                 'metrics/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class, weights=w),
                 'metrics/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class, weights=w)}
+            self.eval_metric_ops ={}
+
+            if self.args.lambda_reg > 0.0:
+                self.eval_metric_ops.update(metrics_reg)
+            if self.args.lambda_reg < 1.0:
+                self.eval_metric_ops.update(metrics_sem)
 
             if self.is_sr:
                 self.eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(self.HR_hat, self.feat_h)
