@@ -245,18 +245,20 @@ class Model:
             tf.summary.scalar('loss/SR', loss_sr)
             self.lossTasks += self.args.lambda_sr * w1 * loss_sr
 
+        self.loss = 0.0
+        if self.is_semi:
+            self.add_semi_loss(self.y_hat)
+        if self.args.domain is not None:
+            self.add_domain_loss()
+
         # L2 weight Regularizer
-        W = [v for v in tf.trainable_variables() if ('weights' in v.name or 'kernel' in v.name)]
+        W = [v for v in tf.trainable_variables()] # if ('weights' in v.name or 'kernel' in v.name)
         # Lambda_weights is always rescaled with 0.0005
         l2_weights = tf.add_n([tf.nn.l2_loss(v) for v in W])
         tf.summary.scalar('loss/L2Weigths', l2_weights)
         self.loss_w = self.args.lambda_weights * l2_weights
 
         self.loss = self.lossTasks + self.loss_w
-        if self.is_semi:
-            self.add_semi_loss(self.y_hat)
-        if self.args.domain is not None:
-            self.add_domain_loss()
         grads = tf.gradients(self.loss, W, name='gradients')
         norm = tf.add_n([tf.norm(g, name='norm') for g in grads])
 
