@@ -217,11 +217,13 @@ class Model:
             loss_reg = tf.losses.mean_squared_error(labels=self.labels, predictions=self.y_hat['reg'], weights=self.w)
             loss_sem = cross_entropy(labels=self.label_sem, logits=self.y_hat['sem'], weights=self.w)
 
-            loss_ = self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
-            tf.summary.scalar('loss/reg', loss_reg)
-            tf.summary.scalar('loss/sem', loss_sem)
+            if self.args.lambda_reg > 0.0:
+                self.lossTasks+= self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
+                tf.summary.scalar('loss/reg', loss_reg)
+            if self.args.lambda_reg < 1.0:
+                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem
+                tf.summary.scalar('loss/sem', loss_sem)
 
-            self.lossTasks+=loss_
         if self.add_yhath:
             loss_reg = tf.losses.mean_squared_error(labels=self.labels, predictions=self.y_hath['reg'], weights=self.w)
             loss_sem = cross_entropy(labels=self.label_sem, logits=self.y_hath['sem'], weights=self.w)
