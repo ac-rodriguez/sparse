@@ -8,7 +8,7 @@ import tensorflow.contrib.slim as slim
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
 import models_sr as sr
-from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM
+from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM, batchouter
 import models_semi as semi
 class Model:
     def __init__(self, params):
@@ -474,7 +474,7 @@ class Model:
             self.loss+= self.loss_gen
 
     def add_domain_loss(self):
-        assert self.is_domain_transfer, ' domain-transfer not defined for model:{} '.format(self.model)
+        assert self.is_domain_transfer, ' domain-loss not defined for model:{} '.format(self.model)
 
         if self.args.domain == 'Rev' or self.args.domain == 'RevL':
 
@@ -509,6 +509,37 @@ class Model:
             self.ModelSemi = semi.SemisupModel()
             label_sem = self.get_sem(self.labelsh) if self.hr_emb else self.get_sem(self.labels)
             loss_domain = self.ModelSemi.add_semisup_loss(self.Zl,self.Zh,label_sem)
+        elif self.args.domain == 'CDAN':
+            if self.args.lambda_reg == 1.0:
+                y_hat_ = self.y_hat['reg']
+                y_hath_ = self.y_hath['reg']
+            elif self.args.lambda_reg == 0.0:
+                y_hat_ = self.y_hat['sem']
+                y_hath_ = self.y_hath['sem']
+            else:
+                y_hat_ = tf.concat(self.y_hat['reg'],self.y_hat['sem'], axis=-1)
+                y_hath_ = tf.concat(self.y_hath['reg'],self.y_hath['sem'], axis=-1)
+
+
+            # TODO same rand
+            Zl = batchouter(self.Zl,y_hat_, randomized=True)
+            Zh = batchouter(self.Zh,y_hath_, randomized=True)
+            # Random matrices
+            # n_feat = 500
+            # rand_matrix = np.random.rand()
+            #     np.random.choice(Zl.shape[-1],n_feat, replace=False)
+            #
+            # Zl = Zl[:,rand_vector] / (n_feat**(0.5))
+            # Zh = Zh[:,rand_vector] / (n_feat**(0.5))
+
+            self.scoreh = semi.domain_discriminator_small(Zh)
+            self.scorel = semi.domain_discriminator_small(Zl)
+
+            loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[..., 0], dtype=tf.int32), logits=self.scoreh) + \
+                          cross_entropy(labels=tf.ones_like(self.scorel[..., 0], dtype=tf.int32), logits=self.scorel)
+
+            tf.summary.scalar('loss/domainS', loss_domain)
+
         else:
             print('{} loss domain-transfer not defined'.format(self.args.domain))
             sys.exit(1)

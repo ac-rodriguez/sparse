@@ -211,6 +211,23 @@ class Checkpoint(object):
     self.score = score
     self.path = path
 
+def batchouter(X, Y, randomized= False):
+
+    n_feat=500
+    X = tf.layers.flatten(X)
+    Y = tf.layers.flatten(Y)
+
+    if not randomized:
+        return tf.expand_dims(tf.expand_dims(X, 2) * tf.expand_dims(Y, 1),-1)
+    else:
+        np.random.seed(1)
+        m1 = np.random.rand(X.shape[-1], n_feat).astype(np.float32)
+        m2 = np.random.rand(Y.shape[-1], n_feat).astype(np.float32)
+
+        Xr = tf.tensordot(X,m1,axes=1)
+        Yr = tf.tensordot(Y,m2,axes=1)
+        return tf.expand_dims(tf.expand_dims(Xr, 2) * tf.expand_dims(Yr, 1)/ (float(n_feat)**(0.5)),-1)
+
 
 def save_m(name,m):
     with open(name, 'w') as f:
