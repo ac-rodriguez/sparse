@@ -17,6 +17,7 @@ class Model:
 
         self.scale = self.args.scale
         self.is_hr_label = self.args.is_hr_label
+        self.is_slim = self.args.is_slim_eval
         if self.args.is_fake_hr_label:
             self.is_hr_label = True
         if self.args.is_bilinear:
@@ -33,7 +34,7 @@ class Model:
         self.model = self.args.model
         self.two_ds = True
 
-        self.loss_in_HR = False
+        self.hr_emb = False
         self.add_yhath = False
         self.add_yhat = True
 
@@ -44,13 +45,29 @@ class Model:
 
         self.pad = self.args.sq_kernel*16//2
         if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model) and not '_l' in self.model and self.is_hr_label:
-            self.loss_in_HR = True
+            self.hr_emb = True
+
+    def get_w(self, lab):
+
+        w = self.float_(tf.where(tf.greater_equal(lab, 0.0),
+                                      tf.ones_like(lab),  ## for wherever i have labels
+                                      tf.zeros_like(lab)))
+        return w
+    def get_sem(self,lab, return_w = False):
+        int_ = lambda x: tf.cast(x, dtype=tf.int32)
+
+        label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
+        w = self.get_w(lab)
+        label_sem = tf.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
+                             tf.ones_like(label_sem, dtype=tf.int32) * -1)
+        if return_w:
+            return label_sem,w
+        else:
+            return label_sem
 
     def model_fn(self, features, labels, mode):
         self.is_training = (mode == tf.estimator.ModeKeys.TRAIN)
-
-        # self.features = features
-        self.labels = labels
+        if not self.is_training and self.is_slim: self.max_output_img = 2
 
         if isinstance(features, dict):
             self.feat_l, self.feat_h = features['feat_l'], features['feat_h']
@@ -60,8 +77,7 @@ class Model:
         if self.two_ds:
             self.feat_lU, self.feat_hU = features['feat_lU'], features['feat_hU']
         self.patch_size = self.feat_l.shape[1]
-        if self.args.is_fake_hr_label:
-            self.labels = tf.image.resize_nearest_neighbor(self.labels, size=(self.patch_size*self.scale, self.patch_size*self.scale)) / (self.scale**2)
+
         if self.args.is_same_volume:
             self.config = {'hr':self.is_hr_label,'scale':self.scale,'patch':self.patch_size}
         else:
@@ -71,24 +87,39 @@ class Model:
 
         if mode == tf.estimator.ModeKeys.PREDICT:
             return tf.estimator.EstimatorSpec(mode, predictions=self.y_hat)
-        # if self.loss_in_HR:
+
+        # self.features = features
         if self.args.sq_kernel is None:
             self.sem_threshold = 1e-5
-        self.compute_loss()
-        if self.loss_in_HR and not self.is_sr:
-            self.compute_summaries(self.y_hath)
+
+        if self.is_hr_label:
+            self.labels = self.compute_labels_ls(labels, self.scale)
+            self.labelsh = labels
         else:
-            self.compute_summaries(self.y_hat)
+            self.labels = labels
+            self.labelsh = None
 
 
+        if self.args.is_fake_hr_label:
+            self.labelsh = tf.image.resize_nearest_neighbor(self.labels, size=(self.patch_size*self.scale, self.patch_size*self.scale)) / (self.scale**2)
+
+
+        # if self.loss_in_HR:
+        # self.compute_label_sem()
+        self.compute_loss()
+        # if self.loss_in_HR and not self.is_sr:
+        #     self.compute_summaries(self.y_hath)
+        # else:
+        #     self.compute_summaries(self.y_hat)
+        self.compute_summaries()
+
+        iters_epoch = (self.args.train_patches / self.args.batch_size)
+        epochs = tf.train.get_global_step() // iters_epoch
         if mode == tf.estimator.ModeKeys.TRAIN:
-            iters_epoch = (self.args.train_patches / self.args.batch_size)
-            epochs = tf.train.get_global_step() // iters_epoch
-            logging_hook = tf.train.LoggingTensorHook({"EPOCH": epochs}, every_n_iter=iters_epoch)
-
+            # logging_hook = tf.train.LoggingTensorHook({"EPOCH": epochs}, every_n_iter=iters_epoch)
             self.compute_train_op()
-            return tf.estimator.EstimatorSpec(mode, loss=self.loss, train_op=self.train_op, training_hooks=[logging_hook])
-
+            return tf.estimator.EstimatorSpec(mode, loss=self.loss, train_op=self.train_op)
+        tf.summary.scalar('global_step/epoch',epochs)
         # Add summary hook for image summary
         eval_summary_hook = tf.train.SummarySaverHook(
             save_steps=200,
@@ -130,7 +161,7 @@ class Model:
                 for key, val in self.y_hat.iteritems():
                     self.y_hat[key] = bilinear(val, self.patch_size)
             else:
-                assert self.loss_in_HR == True
+                assert self.hr_emb
         elif self.model == 'countSRs':
             self.is_sr = True
             self.HR_hat = semi.decode(self.feat_l, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
@@ -144,7 +175,7 @@ class Model:
                 for key, val in self.y_hat.iteritems():
                     self.y_hat[key] = bilinear(val, self.patch_size)
             else:
-                assert self.loss_in_HR == True
+                assert self.hr_emb == True
         elif self.model == 'countSR_l':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
@@ -162,7 +193,7 @@ class Model:
                 feat = tf.concat([self.feat_hU, feat_lU_up[..., 3:]], axis=3)
                 _, self.ZhU = countception(feat,pad=self.pad, is_training=self.is_training, is_return_feat=True)
 
-            assert self.loss_in_HR == True
+            assert self.hr_emb == True
         elif self.model == 'countHR_la': # Using HR and LR infrared channels
 
             Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
@@ -196,37 +227,35 @@ class Model:
             sys.exit(1)
         if self.args.is_out_relu:
             self.y_hat['reg'] = tf.nn.relu(self.y_hat['reg'])
-        if self.is_domain_transfer:
+        if self.is_domain_transfer and not self.is_slim:
             Emb = tf.concat((self.Zh, self.Zl), axis=0, name='Embeddings')
             Label = tf.concat((tf.ones(tf.shape(self.Zh)[:-1]), tf.zeros(tf.shape(self.Zh)[:-1])), axis=0,
                               name='EmbeddingsLabel')
 
+    def compute_label_sem(self):
+        pass
+
     def compute_loss(self):
-
-        int_ = lambda x: tf.cast(x, dtype=tf.int32)
-        if self.is_hr_label and not self.loss_in_HR:
-            self.labels = self.compute_labels_ls(self.labels, self.scale)
-
-        self.w = self.float_(tf.where(tf.greater_equal(self.labels, 0.0),
-                                      tf.ones_like(self.labels),  ## for wherever i have labels
-                                      tf.zeros_like(self.labels)))
-        self.label_sem = tf.squeeze(int_(tf.greater(self.labels, self.sem_threshold)), axis=3)
+        labels = self.labelsh if self.hr_emb else self.labels
+        label_sem, w = self.get_sem(labels, return_w=True)
 
         self.lossTasks = 0.0
         if self.add_yhat:
-            loss_reg = tf.losses.mean_squared_error(labels=self.labels, predictions=self.y_hat['reg'], weights=self.w)
-            loss_sem = cross_entropy(labels=self.label_sem, logits=self.y_hat['sem'], weights=self.w)
 
             if self.args.lambda_reg > 0.0:
-                self.lossTasks+= self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
+                loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
+                self.lossTasks+= self.args.lambda_reg * loss_reg
                 tf.summary.scalar('loss/reg', loss_reg)
             if self.args.lambda_reg < 1.0:
+                loss_sem = cross_entropy(labels=label_sem, logits=self.y_hat['sem'], weights=w)
                 self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem
                 tf.summary.scalar('loss/sem', loss_sem)
 
-        if self.add_yhath:
-            loss_reg = tf.losses.mean_squared_error(labels=self.labels, predictions=self.y_hath['reg'], weights=self.w)
-            loss_sem = cross_entropy(labels=self.label_sem, logits=self.y_hath['sem'], weights=self.w)
+        if self.add_yhath and (self.is_training or not self.is_slim):
+
+            # label_sem, w = self.get_sem(self.labelsh, return_w=True)
+            loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
+            loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w)
 
             loss_ = self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
 
@@ -248,10 +277,11 @@ class Model:
             self.lossTasks += self.args.lambda_sr * w1 * loss_sr
 
         self.loss = 0.0
-        if self.is_semi:
-            self.add_semi_loss(self.y_hat)
-        if self.args.domain is not None:
-            self.add_domain_loss()
+        if self.is_training or not self.is_slim:
+            if self.is_semi:
+                self.add_semi_loss()
+            if self.args.domain is not None:
+                self.add_domain_loss()
 
         # L2 weight Regularizer
         W = [v for v in tf.trainable_variables()] # if ('weights' in v.name or 'kernel' in v.name)
@@ -267,85 +297,90 @@ class Model:
         tf.summary.scalar('loss/L2Grad', norm)
 
     def daH_models(self):
-        assert self.loss_in_HR
+        assert self.hr_emb
         self.is_domain_transfer = True
         self.add_yhath = True
         if self.model == 'countDA_hmid': #self.model == 'countHR_ld':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Higher-level features
 
-
-            encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
             encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
-
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, config_volume=self.config)
+            if self.is_training or not self.is_slim:
+                encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
+                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, config_volume=self.config)
 
         elif self.model == 'countDA_hlate': #self.model == 'countHR_le':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
 
-            encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
-            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
 
+            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+            if self.is_training or not self.is_slim:
+                encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
+                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         elif self.model == 'countDA_hlate1': #self.model == 'countHR_le':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
 
-            encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=False)
             encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
-
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+            if self.is_training or not self.is_slim:
+                encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=False)
+                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         else:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
 
     def daL_models(self):
+        assert not self.hr_emb
         self.is_domain_transfer = True
         self.add_yhath = True
         if self.model == 'countDAearly':  # self.model == 'countHR_lc':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Lower-level features
 
-            self.Zh = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             self.Zl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
-
             self.y_hat = countception(self.Zl, pad=self.pad, is_training=self.is_training)
-            self.y_hath = countception(self.Zh, pad=self.pad, is_training=self.is_training)
+
+            if self.is_training or not self.is_slim:
+                self.Zh = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+                self.y_hath = countception(self.Zh, pad=self.pad, is_training=self.is_training)
 
         elif self.model == 'countDAmid': #self.model == 'countHR_ld':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Higher-level features
 
-            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
-
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
+
+            if self.is_training or not self.is_slim:
+                encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
         elif self.model == 'countDAlate': #self.model == 'countHR_le':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
 
-            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
-
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+
+            if self.is_training or not self.is_slim:
+                encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         elif self.model == 'countDAlate1':
             # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
 
-            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
             encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True,is_small=False)
-
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
+            if self.is_training or not self.is_slim:
+                encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         elif self.model == 'countDApair':
             # Train on (HR,y). Test on (Lr,y). LR is paired with HR. Comparison on Higher-level features
 
-            encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
 
+            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training,
                                           is_return_feat=True)
-            self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training,
-                                          is_return_feat=True)
+            if self.is_training or not self.is_slim:
+                encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training,
+                                              is_return_feat=True)
             if self.is_training:
                 self.add_yhat = False
                 self.add_yhath = True
@@ -377,9 +412,8 @@ class Model:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
 
-
-    def add_semi_loss(self, y_hat):
-
+    def add_semi_loss(self):
+        # TODO fix label and labelh separation
         if self.args.semi == 'semiRev':
 
             if 'HR' in self.model:
@@ -398,7 +432,7 @@ class Model:
             self.loss += loss_domain
         else:
             if self.args.semi == 'semi':
-                self.fake_ = semi.discriminator(y_hat['reg'])
+                self.fake_ = semi.discriminator(self.y_hat['reg'])
                 self.real_ = semi.discriminator(self.labels)
                 # Fake predictions towards 0, real preds towards 1
                 self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32),logits=self.fake_) + \
@@ -406,7 +440,7 @@ class Model:
 
                 self.loss_gen = cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32),logits=self.fake_)
             elif self.args.semi == 'semiFeat':
-                self.fake_,feat_f = semi.discriminator(y_hat['reg'],return_feat=True)
+                self.fake_,feat_f = semi.discriminator(self.y_hat['reg'],return_feat=True)
                 self.real_,feat_r = semi.discriminator(self.labels, return_feat=True)
                 # Fake predictions towards 0, real preds towards 1
                 self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32),logits=self.fake_) + \
@@ -414,7 +448,7 @@ class Model:
                 self.loss_gen = tf.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
 
             elif self.args.semi == 'semi1':
-                self.fake_ = semi.discriminator(tf.concat((y_hat['reg'],y_hat['sem']),axis=-1))
+                self.fake_ = semi.discriminator(tf.concat((self.y_hat['reg'],self.y_hat['sem']),axis=-1))
                 self.real_ = semi.discriminator(tf.concat((self.labels,self.float_(tf.one_hot(self.label_sem,depth=2))),axis=-1))
                 # Fake predictions towards 0, real preds towards 1
                 self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32), logits=self.fake_) + \
@@ -442,7 +476,7 @@ class Model:
     def add_domain_loss(self):
         assert self.is_domain_transfer, ' domain-transfer not defined for model:{} '.format(self.model)
 
-        if self.args.domain == 'domainRev' or self.args.domain == 'domainRevL':
+        if self.args.domain == 'Rev' or self.args.domain == 'RevL':
 
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
@@ -454,7 +488,7 @@ class Model:
                 loss_domain+= tf.losses.absolute_difference(self.Zh, self.Zl)
 
             tf.summary.scalar('loss/domain', loss_domain)
-        elif self.args.domain == 'domainRevs':
+        elif self.args.domain == 'Revs':
 
             self.scoreh = semi.domain_discriminator_small(self.Zh)
             self.scorel = semi.domain_discriminator_small(self.Zl)
@@ -464,16 +498,17 @@ class Model:
                              cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
 
             tf.summary.scalar('loss/domainS', loss_domain)
-        elif self.args.domain == 'domainL1':
+        elif self.args.domain == 'L1':
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
 
             loss_domain = tf.losses.absolute_difference(self.Zh,self.Zl)
             # loss_domain=0.0
             tf.summary.scalar('loss/domain', loss_domain)
-        elif self.args.domain == 'domainAsso':
+        elif self.args.domain == 'Asso':
             self.ModelSemi = semi.SemisupModel()
-            loss_domain = self.ModelSemi.add_semisup_loss(self.Zl,self.Zh,self.label_sem)
+            label_sem = self.get_sem(self.labelsh) if self.hr_emb else self.get_sem(self.labels)
+            loss_domain = self.ModelSemi.add_semisup_loss(self.Zl,self.Zh,label_sem)
         else:
             print('{} loss domain-transfer not defined'.format(self.args.domain))
             sys.exit(1)
@@ -487,7 +522,7 @@ class Model:
 
         self.loss += loss_domain*lambda_domain
 
-    def compute_summaries(self, y_hat):
+    def compute_summaries(self):
         graph = tf.get_default_graph()
         try:
             mean_train = graph.get_tensor_by_name("mean_train_k:0")
@@ -502,7 +537,136 @@ class Model:
 
         uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
         inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
-        if self.loss_in_HR:
+
+        f1 = lambda x: tf.where(x == -1, x, x * (2.0 / max_dens))
+        inv_regh_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='jet'))
+        inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
+        inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
+        inv_difreg_ = lambda x: uint8_(colorize(x,vmin=-2,vmax=2, cmap='coolwarm'))
+
+
+        y_hat_reg = self.y_hat['reg']
+        pred_class = tf.argmax(self.y_hat['sem'], axis=3)
+
+        if self.hr_emb:
+            y_hat_reg_down = sum_pool(y_hat_reg, self.scale, name='y_reg_down')
+            pred_class_down = tf.squeeze(tf.round(avg_pool(self.float_(pred_class), self.scale, name='sem_down')), axis=3)
+        else:
+            y_hat_reg_down = y_hat_reg
+            pred_class_down = pred_class
+
+        feat_l_up = tf.map_fn(inv_, bilinear(self.feat_l, size=self.patch_size * self.scale), dtype=tf.uint8)
+
+        feat_l_ = tf.map_fn(inv_, self.feat_l, dtype=tf.uint8)
+
+        feat_h_down = uint8_(
+            bilinear(self.feat_h, self.patch_size, name='HR_down')) if self.feat_h is not None else feat_l_
+
+        if self.hr_emb:
+            assert (self.labelsh.shape[1:3] == self.feat_h.shape[1:3])
+
+            label_sem, w = self.get_sem(self.labelsh, return_w=True)
+            image_array_top = self.concat_reg(self.labelsh, y_hat_reg, inv_regh_, inv_difreg_)
+            image_array_mid = self.concat_sem(label_sem, pred_class, inv_sem_, inv_difreg_)
+            image_array_bottom = tf.concat(axis=2, values=[feat_l_up, uint8_(self.feat_h), uint8_(tf.zeros_like(self.feat_h))])
+
+            if self.args.lambda_reg == 1.0:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_bottom])
+            elif self.args.lambda_reg == 0.0:
+                image_array = tf.concat(axis=1, values=[image_array_mid, image_array_bottom])
+            else:
+                image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
+
+            tf.summary.image('HR_Loss/HR', image_array, max_outputs=self.max_output_img)
+
+        # compute summaries in LR space
+
+        label_sem, w = self.get_sem(self.labels, return_w=True)
+
+        image_array_top = self.concat_reg(self.labels, y_hat_reg_down, inv_reg_, inv_difreg_)
+        image_array_mid = self.concat_sem(label_sem, pred_class_down, inv_sem_, inv_difreg_)
+
+        image_array_bottom = tf.concat(axis=2, values=[feat_l_, feat_h_down, tf.zeros_like(feat_h_down)])
+
+        if self.args.lambda_reg == 1.0:
+            image_array = tf.concat(axis=1, values=[image_array_top, image_array_bottom])
+        elif self.args.lambda_reg == 0.0:
+            image_array = tf.concat(axis=1, values=[image_array_mid, image_array_bottom])
+        else:
+            image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
+
+        tf.summary.image('LR', image_array, max_outputs=self.max_output_img)
+
+        if self.is_sr:
+            image_array = tf.concat(axis=2, values=[feat_l_up, uint8_(self.HR_hat), uint8_(self.feat_h)])
+
+            tf.summary.image('HR_hat-HR', image_array, max_outputs=self.max_output_img)
+
+        args_tensor = tf.make_tensor_proto([([k, str(v)]) for k, v in sorted(self.args.__dict__.items())])
+        meta = tf.SummaryMetadata()
+        meta.plugin_data.plugin_name = "text"
+        summary = tf.Summary()
+        summary.value.add(tag="FLAGS", metadata=meta, tensor=args_tensor)
+        summary_writer = tf.summary.FileWriter(self.args.model_dir)
+        summary_writer.add_summary(summary)
+
+        if not self.is_training:
+            # Compute evaluation metrics.
+            metrics_reg = {
+                'metrics/mae': tf.metrics.mean_absolute_error(labels=self.labels, predictions=y_hat_reg_down, weights=w),
+                'metrics/mse': tf.metrics.mean_squared_error(labels=self.labels, predictions=y_hat_reg_down, weights=w),
+                }
+
+            metrics_sem = {
+                'metrics/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class_down, num_classes=2, weights=w),
+                'metrics/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class_down, weights=w),
+                'metrics/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class_down, weights=w),
+                'metrics/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class_down, weights=w)}
+            self.eval_metric_ops ={}
+
+            if self.args.lambda_reg > 0.0:
+                self.eval_metric_ops.update(metrics_reg)
+            if self.args.lambda_reg < 1.0:
+                self.eval_metric_ops.update(metrics_sem)
+
+            if self.is_sr:
+                self.eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(self.HR_hat, self.feat_h)
+                self.eval_metric_ops['metrics/s2nr'] = snr_metric(self.HR_hat, self.feat_h)
+        else:
+            self.eval_metric_ops = None
+
+    @staticmethod
+    def concat_reg(labels, y_hat_reg, inv_reg_, inv_difreg_):
+
+        image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
+        image_array_top = tf.concat(axis=2, values=[image_array_top,
+                                                    tf.map_fn(inv_difreg_, labels - y_hat_reg, dtype=tf.uint8)])
+        return image_array_top
+    @staticmethod
+    def concat_sem(label_sem, pred_class, inv_sem_, inv_difreg_):
+        int_ = lambda x: tf.cast(x, dtype=tf.int32)
+
+        image_array_mid = tf.map_fn(inv_sem_, tf.concat(axis=2, values=[label_sem, int_(pred_class)]), dtype=tf.uint8)
+        image_array_mid = tf.concat(axis=2, values=[image_array_mid,
+                                                    tf.map_fn(inv_difreg_, label_sem - int_(pred_class),
+                                                              dtype=tf.uint8)])
+        return image_array_mid
+    def compute_summaries_old(self, y_hat):
+        graph = tf.get_default_graph()
+        try:
+            mean_train = graph.get_tensor_by_name("mean_train_k:0")
+            scale = graph.get_tensor_by_name("std_train_k:0")
+            max_dens = graph.get_tensor_by_name("max_dens_k:0")
+        except KeyError:
+            # if constants are not defined in the graph yet,
+            # after loading pre-trained networks tf.Variables are used with the correct values
+            mean_train = tf.Variable(np.zeros(11), name='mean_train', trainable=False, dtype=tf.float32)
+            scale = tf.Variable(np.ones(11), name='std_train', trainable=False, dtype=tf.float32)
+            max_dens = tf.Variable(np.ones(1), name='max_dens', trainable=False, dtype=tf.float32)
+
+        uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
+        inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
+        if self.hr_emb:
             f1 = lambda x: tf.where(x == -1, x, x * (2.0 / max_dens))
             inv_reg_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='jet'))
         else:
@@ -534,7 +698,7 @@ class Model:
                                                     tf.map_fn(inv_difreg_, label_sem - int_(pred_class),
                                                               dtype=tf.uint8)])
 
-        if self.loss_in_HR:
+        if self.hr_emb:
             assert (self.labels.shape[1:3] == self.feat_h.shape[1:3])
 
             image_array_bottom = tf.concat(axis=2, values=[feat_l_up, uint8_(self.feat_h),uint8_(self.feat_h)])
@@ -652,8 +816,9 @@ class Model:
         else:
             print('option not defined')
             sys.exit(1)
-        slim.model_analyzer.analyze_vars(
-            tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
+
+        # slim.model_analyzer.analyze_vars(
+        #     tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
 
         with tf.control_dependencies(update_ops):

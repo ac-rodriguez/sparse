@@ -36,8 +36,8 @@ parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12"
                     help="Select the bands. Using comma-separated band names.")
 parser.add_argument("--is-padding", default=False, action="store_true",
                     help="padding train data with (patch_size-1)")
-parser.add_argument("--is-hr-label", default=False, action="store_true",
-                    help="compute label on the HR resolultion")
+# parser.add_argument("--is-hr-label", default=False, action="store_true",
+#                     help="compute label on the HR resolultion")
 parser.add_argument("--is-fake-hr-label", default=False, action="store_true",
                     help="compute label on the LR resolultion and to ")
 parser.add_argument("--is-same-volume", default=False, action="store_true",
@@ -68,6 +68,8 @@ parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to
 parser.add_argument("--unlabeled-after", default=0, type=np.int64, help="Feed unlabeled data after number of iterations")
 parser.add_argument("--sr-after", default=None, type=np.int64, help="Start SR task after number of iterations")
 parser.add_argument("--eval-every", default=600, type=int, help="Number of seconds between evaluations")
+parser.add_argument("--is-slim-eval", default=False, action="store_true",
+                    help="at eval do not add DA, and feat_h architectures in the graph to speed up evaluation")
 parser.add_argument("--model", default="simple",
                     help="Model Architecture to be used [deep_sentinel2, ...]")
 parser.add_argument("--sigma-smooth", type=int, default=None,
@@ -96,7 +98,7 @@ parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--semi-supervised",dest='semi', default=None,
                     help="semi-supervised adversarial task")
-parser.add_argument("--domain-transfer",dest='domain', default=None,
+parser.add_argument("--domain-loss",dest='domain', default=None,
                     help="domain transfer model  HR to LR")
 parser.add_argument("--optimizer", type=str, default='adam',
                     help="['adagrad', 'adam']")
@@ -131,7 +133,12 @@ def main(unused_args):
     if args.sq_kernel == 'None' or args.sq_kernel == 'none': args.sq_kernel = None
 
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
-    if args.is_hr_label: args.tag = '_hrlab' + args.tag
+    # if args.is_hr_label:
+    if ('HR' in args.model or 'SR' in args.model or 'DA_h' in args.model) and not '_l' in args.model:
+        args.is_hr_label = True
+        args.tag = '_hrlab' + args.tag
+    else:
+        args.is_hr_label = False
     if args.is_fake_hr_label: args.tag = '_fakehrlab' + args.tag
     if args.is_same_volume: args.tag = '_samevol' + args.tag
     assert not (args.is_fake_hr_label and args.is_hr_label)
@@ -163,10 +170,11 @@ def main(unused_args):
         model_dir = add_letter_path(model_dir, timestamp=False)
 
     if not args.is_train:
-        ckpt = tools.get_lastckpt(model_dir)
+        ckpt = tools.get_last_best_ckpt(model_dir, folder='best/*')
         args.ckpt = ckpt
         if not args.is_overwrite_pred:
-            assert not os.path.isfile(os.path.join(model_dir,'val1_sem_pred.png')), 'predictions exist'
+            assert not os.path.isfile(os.path.join(model_dir,'test_sem_pred.png')), 'predictions exist'
+            assert not os.path.isfile(os.path.join(model_dir,'test_reg_pred.png')), 'predictions exist'
 
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
@@ -199,7 +207,7 @@ def main(unused_args):
     Model_fn = Model(params)
     model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
                                    model_dir=model_dir, config=run_config, warm_start_from=warm_dir)
-    is_hr_pred = Model_fn.loss_in_HR
+    is_hr_pred = Model_fn.hr_emb
 
     tf.logging.set_verbosity(tf.logging.INFO)  # Show training logs.
 
@@ -209,16 +217,45 @@ def main(unused_args):
         input_fn, input_fn_val = reader.get_input_fn()
         val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size_eval))
         train_iters = np.ceil(np.sum(reader.patch_gen.nr_patches) / float(args.batch_size))
-        print "Iters per epoch Train:{} Val: {} \n training for {} epochs".format(train_iters,val_iters,args.epochs)
 
-        metric_ = 'metrics/mae' if int(args.lambda_reg) == 1 else 'metrics/iou'
+        if int(args.lambda_reg) == 1:
+            metric_ = 'metrics/mae'
+            comp_fn = lambda best, new: best > new
+            best = 99999.0
+        else:
+            metric_ = 'metrics/iou'
+            comp_fn = lambda best, new: best < new
+            best = 0.0
+        print best, metric_
+        # best_exporter = tools.BestCheckpointCopier(score_metric=metric_)
 
-        best_exporter = tools.BestCheckpointCopier(score_metric=metric_)
-        train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=train_iters*args.epochs)#, hooks=[hook])
-        eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every,
-                                          exporters=[best_exporter])
 
-        tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
+        # train_spec = tf.estimator.TrainSpec(input_fn=input_fn, max_steps=train_iters*args.epochs)#, hooks=[hook])
+        # eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_val, steps=(val_iters), throttle_secs=args.eval_every,
+        #                                   exporters=[best_exporter])
+        # model.evaluate()
+        # model.export_saved_model()
+        # # best_exporter.export(model,export_path=)
+        # tf.estimator.train_and_evaluate(model, train_spec=train_spec, eval_spec=eval_spec)
+
+
+            # if args.domain is not None:
+            #     tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
+
+        for epoch_ in range(args.epochs):
+            print 'Epoch: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters)
+            model.train(input_fn, steps=train_iters)
+            metrics = model.evaluate(input_fn_val, steps=val_iters)
+            print metrics
+            if comp_fn(best, metrics[metric_]):
+                print ('New best at epoch {}, {}:{} from {}'.format(epoch_,metric_,metrics[metric_],best))
+                best = metrics[metric_]
+                input_fn_val = reader.get_input_val()
+                tools.predict_and_recompose(model,reader,input_fn_val, reader.patch_gen_val,is_hr_pred,args.batch_size_eval,'val',
+                                            prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0), m=metrics)
+
+            else:
+                print ('Keeping old best {}:{}'.format(metric_,best))
 
         f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
         plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
@@ -234,86 +271,24 @@ def main(unused_args):
         except AttributeError:
             pass
 
-
     else:
         assert os.path.isdir(args.model_dir)
-        reader = DataReader(args, is_training=False)
-        f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
-        plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+        reader = DataReader(args, is_training=True) # TODO to avoid reading Train and Val sets check how to restore mean_train properly
 
-    reader.predict_readers()
-
-    input_fn_test, input_fn_val = reader.get_input_fn(is_test=True)
-
-    def predict(input_fn, patch_generator, suffix):
-        nr_patches = patch_generator.nr_patches
-
-        batch_idxs = (nr_patches) // args.batch_size
-
-        if is_hr_pred:
-            patch = patch_generator.patch_h
-            border = patch_generator.border_lab
-            if 'val' in suffix:
-                ref_data = reader.val_h
-            elif 'train' in suffix:
-                ref_data = reader.train_h
-            else:
-                ref_data = reader.labels_test
-        else:
-            patch = patch_generator.patch_l
-            border = patch_generator.border
-
-            if 'val' in suffix:
-                ref_data = reader.val
-            elif 'train' in suffix:
-                ref_data = reader.train
-            else:
-                ref_data = reader.data
-
-        pred_r_rec = np.empty(shape=([nr_patches, patch, patch, 1]))
-        pred_c_rec = np.empty(shape=([nr_patches, patch, patch]))
-
-        if args.domain is not None:
-            hook = [tools.SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", num_batches=10)]
-        else:
-            hook = None
-        preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False, hooks=hook, checkpoint_path=tools.get_lastckpt(model_dir))  # ,predict_keys=['hr_hat_rgb'])
-
-        print('Predicting {} Patches...'.format(nr_patches))
-        for idx in tqdm(xrange(0, batch_idxs)):
-            p_ = preds_iter.next()
-            start, stop = idx * args.batch_size, (idx + 1) * args.batch_size
-
-            pred_r_rec[start:stop] = p_['reg']
-            pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
-
-        ref_size = (ref_data.shape[1], ref_data.shape[0])
-        print ref_size
-        ## Recompose RGB
-        data_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-        np.save('{}/{}_reg_pred'.format(model_dir,suffix),data_recomposed)
-        plt_reg(data_recomposed, '{}/{}_reg_pred'.format(model_dir, suffix))
-
-        data_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
-        np.save('{}/{}_sem_pred'.format(model_dir,suffix),data_recomposed)
-
-        plt_reg(data_recomposed, '{}/{}_sem_pred'.format(model_dir, suffix))
-
-
-        if args.domain is not None:
-            tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
-    # if args.is_train:
-    #     predict(input_fn, reader.patch_gen, suffix='train')
-    #     predict(input_fn_val, reader.patch_gen_val, suffix='val')
-    # else:
-    #     predict(input_fn, reader.patch_gen_val, suffix='test')
-    # predict(input_fn, reader.patch_gen, suffix='train1')
     if args.is_train:
-        predict(input_fn_val, reader.patch_gen_val, suffix='val')
+
+        tools.predict_and_recompose(model, reader, reader.get_input_val(), reader.patch_gen_val, is_hr_pred, args.batch_size_eval,
+                                    'val', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+                                    chkpt_path=tools.get_last_best_ckpt(model.model_dir,'best/*'))
         np.save('{}/train_label'.format(model_dir), reader.labels)
         np.save('{}/val_label'.format(model_dir), reader.labels_val)
 
-    predict(input_fn_test, reader.patch_gen_test, suffix='test')
+    reader.prepare_test_data()
+    input_fn_test = reader.get_input_test()
+    tools.predict_and_recompose(model, reader, input_fn_test, reader.patch_gen_test, is_hr_pred, args.batch_size_eval,
+                                'test', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+                                chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
+
     np.save('{}/test_label'.format(model_dir), reader.labels_test)
 
 if __name__ == '__main__':

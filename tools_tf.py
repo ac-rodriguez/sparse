@@ -3,6 +3,11 @@ import tensorflow as tf
 from tensorflow.python.ops import math_ops
 from tensorflow.contrib.tensorboard.plugins import projector
 import numpy as np
+from tqdm import tqdm
+
+import plots
+
+import patches
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
@@ -176,11 +181,23 @@ def get_embeddings(hook, Model_fn, suffix=''):
             saver.save(sess, path + "/model_emb.ckpt")
 
 
-def get_lastckpt(path):
-    list_of_files = glob.glob(path+'/best_checkpoints/*.ckpt*index')
-    assert len(list_of_files) > 0, 'no .ckpt found in {}/best_checkponts'.format(path)
+def get_last_best_ckpt(path, folder='best_checkpoints'):
+    list_of_files = glob.glob(path+'/{}/*.ckpt*index'.format(folder))
+    assert len(list_of_files) > 0, 'no .ckpt found in {}/{}'.format(path, folder)
     last_file = max(list_of_files,key=os.path.getctime)
     return last_file.replace('.index','')
+
+
+def copy_last_ckpt(path, folder):
+    destination_dir = os.path.join(path,folder)
+    list_of_files = glob.glob(path+'/*.ckpt*index')
+    assert len(list_of_files) > 0, 'no .ckpt found in {}'.format(path)
+
+    last_file = max(list_of_files,key=os.path.getctime)
+    list_to_copy = glob.glob(last_file.replace('.index','')+'*')
+    for file in list_to_copy:
+      # print('copying {}'.format(file))
+      shutil.copy(file, destination_dir)
 
 class Checkpoint(object):
   dir = None
@@ -194,6 +211,94 @@ class Checkpoint(object):
     self.score = score
     self.path = path
 
+
+def save_m(name,m):
+    with open(name, 'w') as f:
+        sorted_names = sorted(m.keys(), key=lambda x: x.lower())
+        for key in sorted_names:
+            value = m[key]
+            f.write('%s:%s\n' % (key, value))
+
+
+def predict_and_recompose(model,reader, input_fn, patch_generator,is_hr_pred,batch_size, type_,
+                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None,chkpt_path=None):
+    model_dir = model.model_dir
+    save_dir = os.path.join(model_dir, prefix)
+    if not os.path.isdir(save_dir): os.makedirs(save_dir)
+    if m is not None:
+        save_m(save_dir + '/metrics.txt', m)
+
+    # copy chkpt
+    if chkpt_path is None and prefix != '':
+        copy_last_ckpt(model_dir, prefix)
+
+    f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
+    plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+    nr_patches = patch_generator.nr_patches
+
+    batch_idxs = int(np.ceil(nr_patches / batch_size))
+
+    if is_hr_pred:
+        patch = patch_generator.patch_h
+        border = patch_generator.border_lab
+        if 'val' in type_:
+            ref_data = reader.val_h
+        elif 'train' in type_:
+            ref_data = reader.train_h
+        else:
+            ref_data = reader.test_h
+    else:
+        patch = patch_generator.patch_l
+        border = patch_generator.border
+
+        if 'val' in type_:
+            ref_data = reader.val
+        elif 'train' in type_:
+            ref_data = reader.train
+        else:
+            ref_data = reader.test
+    if is_reg:
+        pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, 1]))
+    if is_sem:
+        pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
+    ref_size = (ref_data.shape[1], ref_data.shape[0])
+
+    # if args.domain is not None:
+    #     hook = [tools.SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", num_batches=10)]
+    # else:
+    hook = None
+    preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False, hooks=hook, checkpoint_path=chkpt_path)
+    # checkpoint_path=tools.get_lastckpt(model_dir))  # ,predict_keys=['hr_hat_rgb'])
+
+    print('Predicting {} Patches...'.format(nr_patches))
+    for idx in tqdm(xrange(0, batch_idxs)):
+        p_ = preds_iter.next()
+        start, stop = idx * batch_size, (idx + 1) * batch_size
+        if is_reg:
+            pred_r_rec[start:stop] = p_['reg']
+        if is_sem:
+            pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
+
+    print ref_size
+    ## Recompose RGB
+    if is_reg:
+        data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
+        if not return_array:
+            np.save('{}/{}_reg_pred'.format(save_dir, type_), data_r_recomposed)
+            plt_reg(data_r_recomposed, '{}/{}_reg_pred'.format(save_dir, type_))
+    else:
+        data_r_recomposed = None
+
+    if is_sem:
+        data_c_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
+        if not return_array:
+            np.save('{}/{}_sem_pred'.format(save_dir, type_), data_c_recomposed)
+            plt_reg(data_c_recomposed, '{}/{}_sem_pred'.format(save_dir, type_))
+    else:
+        data_c_recomposed = None
+
+    if return_array:
+        return data_r_recomposed, data_c_recomposed
 
 class BestCheckpointCopier(tf.estimator.Exporter):
   checkpoints = None
