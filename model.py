@@ -79,7 +79,7 @@ class Model:
         self.patch_size = self.feat_l.shape[1]
 
         if self.args.is_same_volume:
-            self.config = {'hr':self.is_hr_label,'scale':self.scale,'patch':self.patch_size}
+            self.config = {'hr':self.is_hr_label,'scale':self.scale,'patch':self.patch_size, 'last':'last' in self.model}
         else:
             self.config = None
 
@@ -104,13 +104,7 @@ class Model:
             self.labelsh = tf.image.resize_nearest_neighbor(self.labels, size=(self.patch_size*self.scale, self.patch_size*self.scale)) / (self.scale**2)
 
 
-        # if self.loss_in_HR:
-        # self.compute_label_sem()
         self.compute_loss()
-        # if self.loss_in_HR and not self.is_sr:
-        #     self.compute_summaries(self.y_hath)
-        # else:
-        #     self.compute_summaries(self.y_hat)
         self.compute_summaries()
 
         iters_epoch = (self.args.train_patches / self.args.batch_size)
@@ -300,32 +294,30 @@ class Model:
         assert self.hr_emb
         self.is_domain_transfer = True
         self.add_yhath = True
-        if self.model == 'countDA_hmid': #self.model == 'countHR_ld':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Higher-level features
 
-            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
-            if self.is_training or not self.is_slim:
-                encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
-                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, config_volume=self.config)
+        is_small = ('1' in self.model)
+        assert 'countDA_h' in self.model, 'model {} not defined for DA'.format(self.model)
 
-        elif self.model == 'countDA_hlate': #self.model == 'countHR_le':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
+        earlyl = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
+        self.y_hat, midl, latel = countception(earlyl, pad=self.pad, is_training=self.is_training, is_return_feat=True,
+                                           config_volume=self.config)
+        if self.is_training or not self.is_slim:
+            earlyh = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=is_small)
+            self.y_hath, midh, lateh = countception(earlyh, pad=self.pad, is_training=self.is_training, is_return_feat=True,
+                                                config_volume=self.config)
+        else:
+            earlyh = midh = lateh = None
 
+        if 'early' in self.model:
+            self.Zl = earlyl
+            self.Zh = earlyh
+        elif 'mid' in self.model:
+            self.Zl = midl
+            self.Zh = midh
+        elif 'late' in self.model:
+            self.Zl = latel
+            self.Zh = lateh
 
-            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-            if self.is_training or not self.is_slim:
-                encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True)
-                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-        elif self.model == 'countDA_hlate1': #self.model == 'countHR_le':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
-
-            encLR = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-            if self.is_training or not self.is_slim:
-                encHR = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=False)
-                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         else:
             print('Model {} not defined'.format(self.model))
             sys.exit(1)
@@ -334,46 +326,33 @@ class Model:
         assert not self.hr_emb
         self.is_domain_transfer = True
         self.add_yhath = True
-        if self.model == 'countDAearly':  # self.model == 'countHR_lc':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Lower-level features
 
-            self.Zl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
-            self.y_hat = countception(self.Zl, pad=self.pad, is_training=self.is_training)
+        is_small = ('1' in self.model)
+        assert 'countDA' in self.model, 'model {} not defined for DA'.format(self.model)
+        earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=is_small)
+        self.y_hat, midl, latel = countception(earlyl, pad=self.pad, is_training=self.is_training,
+                                               is_return_feat=True,  config_volume=self.config)
 
-            if self.is_training or not self.is_slim:
-                self.Zh = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-                self.y_hath = countception(self.Zh, pad=self.pad, is_training=self.is_training)
+        if self.is_training or not self.is_slim:
+            earlyh = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            self.y_hath, midh, lateh = countception(earlyh, pad=self.pad, is_training=self.is_training,
+                                                    is_return_feat=True,  config_volume=self.config)
+        else:
+            earlyh = midh = lateh = None
 
-        elif self.model == 'countDAmid': #self.model == 'countHR_ld':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on Higher-level features
+        if 'early' in self.model:
+            self.Zl = earlyl
+            self.Zh = earlyh
+        elif 'mid' in self.model:
+            self.Zl = midl
+            self.Zh = midh
+        elif 'late' in self.model:
+            self.Zl = latel
+            self.Zh = lateh
 
-            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
-
-            if self.is_training or not self.is_slim:
-                encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
-        elif self.model == 'countDAlate': #self.model == 'countHR_le':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
-
-            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-
-            if self.is_training or not self.is_slim:
-                encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-        elif self.model == 'countDAlate1':
-            # Train on (HR,y) and (Lr,y). Test on (Lr,y). Comparison on (last) Higher-level features
-
-            encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True,is_small=False)
-            self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
-            if self.is_training or not self.is_slim:
-                encHR = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
-                self.y_hath, self.Zh = countception(encHR, pad=self.pad, is_training=self.is_training, is_return_feat=True, last=True,  config_volume=self.config)
         elif self.model == 'countDApair':
             # Train on (HR,y). Test on (Lr,y). LR is paired with HR. Comparison on Higher-level features
-
-
+            # TODO fix
             encLR = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True)
             self.y_hat, self.Zl = countception(encLR, pad=self.pad, is_training=self.is_training,
                                           is_return_feat=True)
@@ -521,16 +500,10 @@ class Model:
                 y_hath_ = tf.concat(self.y_hath['reg'],self.y_hath['sem'], axis=-1)
 
 
-            # TODO same rand
+            # TODO same rand without random seed
             Zl = batchouter(self.Zl,y_hat_, randomized=True)
             Zh = batchouter(self.Zh,y_hath_, randomized=True)
-            # Random matrices
-            # n_feat = 500
-            # rand_matrix = np.random.rand()
-            #     np.random.choice(Zl.shape[-1],n_feat, replace=False)
-            #
-            # Zl = Zl[:,rand_vector] / (n_feat**(0.5))
-            # Zh = Zh[:,rand_vector] / (n_feat**(0.5))
+
 
             self.scoreh = semi.domain_discriminator_small(Zh)
             self.scorel = semi.domain_discriminator_small(Zl)

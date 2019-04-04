@@ -29,7 +29,7 @@ def block(x, is_training, is_bn = True):
     return x2
 
 
-def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True):
+def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True, return_feat=False):
 
     feature_size = 256
 
@@ -52,7 +52,7 @@ def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True)
 
         x5_ = tf.nn.relu(x4_ + x4)
         x5 = block(x5_, is_training, is_bn)
-
+        mid = x5_
         x6_ = tf.nn.relu(x5_ + x5)
         x6 = block(x6_, is_training, is_bn)
 
@@ -61,18 +61,21 @@ def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True)
 
         # Regression
         x8a_ = tf.nn.relu(x7_ + x7)
+        last = x8a_
         x8a = tf.layers.conv2d(x8a_, n_channels, kernel_size=3, use_bias=False, padding='same')
 
         # Semantic
         x8b_ = tf.nn.relu(x7_ + x7)
         x8b = tf.layers.conv2d(x8b_, 2, kernel_size=3, use_bias=False, padding='same')
-
-    return {'reg': x8a, 'sem': x8b}
+    if return_feat:
+        return {'reg': x8a, 'sem': x8b}, mid, last
+    else:
+        return {'reg': x8a, 'sem': x8b}
     # return x8a
 
 
 
-def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE, last=False, config_volume=None):
+def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE, config_volume=None):
 
     def selu(x):
         with tf.name_scope('elu') as scope:
@@ -107,7 +110,7 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
     n_filters_mid = 40
     if config_volume is not None:
 
-        if last:
+        if config_volume['last']:
             if config_volume['hr']:
                 n_filters_last = 3
             else:
@@ -135,18 +138,17 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
         net = ConcatBlock(net, 112, 48, name='concat_block3')
         net = ConcatBlock(net, 64, 32, name='concat_block4')
         net = ConcatBlock(net, n_filters_mid, n_filters_mid, name='concat_block5')
-        net1 = net
+        mid = net
         net = ConcatBlock(net, 32, 96, name='concat_block6')
         net = ConvLayer(net, 32, [17, 17], name='conv3', pad='VALID')
         net = ConvLayer(net, 64, [1, 1], name='conv4', pad='VALID')
         net = ConvLayer(net, n_filters_last, [1, 1], name='conv5', pad='VALID')
-        if last:
-            net1 = net
+        last = net
         net_reg = ConvLayer(net, 1, [1, 1], name='out_reg', pad='VALID', is_last=True)
         net_sem = ConvLayer(net, 2, [1, 1], name='out_sem', pad='VALID', is_last=True)
 
     if is_return_feat:
-        return {'reg': net_reg, 'sem': net_sem}, net1
+        return {'reg': net_reg, 'sem': net_sem}, mid, last
     else:
         return {'reg': net_reg, 'sem': net_sem}
 
