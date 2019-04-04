@@ -289,7 +289,7 @@ class DataReader(object):
 
     def get_input_test(self):
         self.patch_gen_test = PatchExtractor(dataset_low=self.test, dataset_high=self.test_h, label=self.labels_test,
-                                             patch_l=self.patch_l, n_workers=4, is_random=False, border=4, max_queue_size=10,
+                                             patch_l=self.patch_l_eval, n_workers=4, is_random=False, border=4, max_queue_size=10,
                                              scale=self.args.scale, lims_with_labels=self.lims_labels_test,
                                              patches_with_labels=self.args.patches_with_labels, two_ds=True)
 
