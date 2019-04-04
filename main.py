@@ -69,7 +69,7 @@ parser.add_argument("--lambda-weights", default=0.0005, type=float, help="Lambda
 parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train")
 parser.add_argument("--unlabeled-after", default=0, type=np.int64, help="Feed unlabeled data after number of iterations")
 parser.add_argument("--sr-after", default=None, type=np.int64, help="Start SR task after number of iterations")
-parser.add_argument("--eval-every", default=600, type=int, help="Number of seconds between evaluations")
+parser.add_argument("--eval-every", default=1, type=int, help="Number of epochs between evaluations")
 parser.add_argument("--is-slim-eval", default=False, action="store_true",
                     help="at eval do not add DA, and feat_h architectures in the graph to speed up evaluation")
 parser.add_argument("--model", default="simple",
@@ -244,10 +244,11 @@ def main(unused_args):
 
             # if args.domain is not None:
             #     tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
-
-        for epoch_ in range(args.epochs):
+        epoch_ = 0
+        while epoch_ < args.epochs:
             print 'Epoch: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters)
-            model.train(input_fn, steps=train_iters)
+            model.train(input_fn, steps=train_iters*args.eval_every)
+            epoch_+=args.eval_every
             metrics = model.evaluate(input_fn_val, steps=val_iters)
             print metrics
             if comp_fn(best, metrics[metric_]):

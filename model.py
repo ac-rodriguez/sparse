@@ -129,16 +129,15 @@ class Model:
         if self.model == 'simple':  # Baseline  No High Res for training
             self.y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training)
         elif self.model == 'count' or self.model == 'counth':
-            self.y_hat, self.Zl = countception(self.feat_l,pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
-            if self.two_ds:
-                    _, self.ZlU = countception(self.feat_lU,pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
+            self.y_hat = countception(self.feat_l,pad=self.pad, is_training=self.is_training, config_volume=self.config)
+            # if self.two_ds:
+            #         _ = countception(self.feat_lU,pad=self.pad, is_training=self.is_training, is_return_feat=True,  config_volume=self.config)
 
             if self.model == 'counth':  # using down-sampled HR images too
                 self.add_yhath = True
                 feat_h_down = self.down_(self.feat_h,3)
                 feat_h_down = tf.layers.conv2d(feat_h_down,self.feat_l.shape[-1],kernel_size=1,strides=1)
-                self.y_hath, self.Zh = countception(feat_h_down, pad=self.pad, is_training=self.is_training,
-                                                   is_return_feat=True)
+                self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
 
         elif self.model == 'countSR' or self.model == 'countSRu':
             self.is_sr = True
