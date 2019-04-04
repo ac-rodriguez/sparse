@@ -358,14 +358,20 @@ class DataReader(object):
         print('\n [*] Loading TRAIN data \n')
         self.train_h = readHR(self.args,
                               roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
-        self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
+        if self.args.is_noS2:
+            self.train = gp.smooth_and_downscale(self.train_h,scale=self.args.scale)
+        else:
+            self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
         self.labels, self.lims_labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
                                   roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
         print('\n [*] Loading VALIDATION data \n')
         self.val_h = readHR(self.args,
                             roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
-        self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
+        if self.args.is_noS2:
+            self.val = gp.smooth_and_downscale(self.val_h,scale=self.args.scale)
+        else:
+            self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
         self.labels_val,self.lims_labels_val = read_labels(self.args, roi=self.args.roi_lon_lat_val,
                                       roi_with_labels=self.args.roi_lon_lat_val_lb, is_HR=self.is_HR_labels)
 
@@ -446,7 +452,10 @@ class DataReader(object):
 
         self.test_h = readHR(self.args,
                              roi_lon_lat=self.args.roi_lon_lat_test) if self.args.HR_file is not None else None
-        self.test = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_test)
+        if self.args.is_noS2:
+            self.test = gp.smooth_and_downscale(self.test_h,scale=self.args.scale)
+        else:
+            self.test = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_test)
         self.labels_test, self.lims_labels_test = read_labels(self.args, roi=self.args.roi_lon_lat_test,
                                   roi_with_labels=self.args.roi_lon_lat_test, is_HR=self.is_HR_labels)
 

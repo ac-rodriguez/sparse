@@ -40,6 +40,8 @@ parser.add_argument("--is-padding", default=False, action="store_true",
 #                     help="compute label on the HR resolultion")
 parser.add_argument("--is-fake-hr-label", default=False, action="store_true",
                     help="compute label on the LR resolultion and to ")
+parser.add_argument("--is-noS2", default=False, action="store_true",
+                    help="compute LR from HR and don't use S2")
 parser.add_argument("--is-same-volume", default=False, action="store_true",
                     help="compute same embedding volume for LR and HR models")
 parser.add_argument("--not-save-arrays",dest='save_arrays', default=True, action="store_false",
@@ -140,6 +142,7 @@ def main(unused_args):
     else:
         args.is_hr_label = False
     if args.is_fake_hr_label: args.tag = '_fakehrlab' + args.tag
+    if args.is_noS2: args.tag = '_noS2' + args.tag
     if args.is_same_volume: args.tag = '_samevol' + args.tag
     assert not (args.is_fake_hr_label and args.is_hr_label)
     if args.semi is not None: args.tag = '_'+args.semi + args.tag
