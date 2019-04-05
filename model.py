@@ -110,9 +110,9 @@ class Model:
         iters_epoch = (self.args.train_patches / self.args.batch_size)
         epochs = tf.train.get_global_step() // iters_epoch
         if mode == tf.estimator.ModeKeys.TRAIN:
-            # logging_hook = tf.train.LoggingTensorHook({"EPOCH": epochs}, every_n_iter=iters_epoch)
+            logging_hook = tf.train.LoggingTensorHook({"EPOCH": epochs}, every_n_iter=iters_epoch)
             self.compute_train_op()
-            return tf.estimator.EstimatorSpec(mode, loss=self.loss, train_op=self.train_op)
+            return tf.estimator.EstimatorSpec(mode, loss=self.loss, train_op=self.train_op, training_hooks=[logging_hook])
         tf.summary.scalar('global_step/epoch',epochs)
         # Add summary hook for image summary
         eval_summary_hook = tf.train.SummarySaverHook(

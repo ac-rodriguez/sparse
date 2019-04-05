@@ -195,7 +195,7 @@ def main(unused_args):
         run_config = tf.estimator.RunConfig(
             train_distribute=strategy, eval_distribute=strategy, log_step_count_steps=200)
     else:
-        run_config = tf.estimator.RunConfig(save_checkpoints_secs=args.eval_every, log_step_count_steps=200)
+        run_config = tf.estimator.RunConfig(log_step_count_steps=200)
     if args.warm_start_from is not None:
         if args.warm_start_from == 'LOWER':
             assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
@@ -220,7 +220,8 @@ def main(unused_args):
         input_fn, input_fn_val = reader.get_input_fn()
         val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size_eval))
         train_iters = np.ceil(np.sum(reader.patch_gen.nr_patches) / float(args.batch_size))
-
+        # print train_iters
+        # assert train_iters*args.eval_every > 200.0, 'eval every should be larger than {}'.format(np.ceil(200./train_iters))
         if int(args.lambda_reg) == 1:
             metric_ = 'metrics/mae'
             comp_fn = lambda best, new: best > new
