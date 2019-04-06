@@ -211,9 +211,8 @@ class Checkpoint(object):
     self.score = score
     self.path = path
 
-def batchouter(X, Y, randomized= False):
+def batch_outerproduct(X, Y,n_feat=500, randomized= False):
 
-    n_feat=500
     X = tf.layers.flatten(X)
     Y = tf.layers.flatten(Y)
 

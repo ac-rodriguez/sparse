@@ -247,7 +247,7 @@ def main(unused_args):
             #     tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
         epoch_ = 0
         while epoch_ < args.epochs:
-            print 'Epoch: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters)
+            print '[*] EPOCH: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters)
             model.train(input_fn, steps=train_iters*args.eval_every)
             epoch_+=args.eval_every
             metrics = model.evaluate(input_fn_val, steps=val_iters)
