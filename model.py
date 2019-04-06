@@ -8,7 +8,7 @@ import tensorflow.contrib.slim as slim
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
 import models_sr as sr
-from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM, batchouter
+from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM, batch_outerproduct
 import models_semi as semi
 class Model:
     def __init__(self, params):
@@ -247,12 +247,14 @@ class Model:
         if self.add_yhath and (self.is_training or not self.is_slim):
 
             # label_sem, w = self.get_sem(self.labelsh, return_w=True)
-            loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
-            loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w)
-
-            loss_ = self.args.lambda_reg * loss_reg + (1.0 - self.args.lambda_reg) * loss_sem
-
-            self.lossTasks +=loss_
+            if self.args.lambda_reg > 0.0:
+                loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
+                self.lossTasks += self.args.lambda_reg * loss_reg
+                tf.summary.scalar('loss/regH', loss_reg)
+            if self.args.lambda_reg < 1.0:
+                loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w)
+                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem
+                tf.summary.scalar('loss/semH', loss_sem)
         # SR loss
         if self.is_sr and self.args.lambda_sr > 0:
             if self.args.sr_after is not None:
@@ -500,8 +502,8 @@ class Model:
 
 
             # TODO same rand without random seed
-            Zl = batchouter(self.Zl,y_hat_, randomized=True)
-            Zh = batchouter(self.Zh,y_hath_, randomized=True)
+            Zl = batch_outerproduct(self.Zl, y_hat_, randomized=True)
+            Zh = batch_outerproduct(self.Zh, y_hath_, randomized=True)
 
 
             self.scoreh = semi.domain_discriminator_small(Zh)
