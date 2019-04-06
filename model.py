@@ -231,8 +231,7 @@ class Model:
             self.daL_models()
 
         else:
-            print('Model {} not defined'.format(self.model))
-            sys.exit(1)
+            raise ValueError('Model {} not defined'.format(self.model))
         if self.args.is_out_relu:
             self.y_hat['reg'] = tf.nn.relu(self.y_hat['reg'])
         if self.is_domain_transfer and not self.is_slim:
@@ -335,8 +334,7 @@ class Model:
             self.Zh = lateh
 
         else:
-            print('Model {} not defined'.format(self.model))
-            sys.exit(1)
+            raise ValueError('Model {} not defined'.format(self.model))
 
     def daL_models(self):
         assert not self.hr_emb
@@ -404,8 +402,7 @@ class Model:
                 self.add_yhath = False
 
         else:
-            print('Model {} not defined'.format(self.model))
-            sys.exit(1)
+            raise ValueError('Model {} not defined'.format(self.model))
 
     def add_semi_loss(self):
         # TODO fix label and labelh separation
@@ -461,8 +458,7 @@ class Model:
                 self.loss_gen = tf.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
 
             else:
-                print('{} model semi-supervised not defined'.format(self.args.semi))
-                sys.exit(1)
+                raise ValueError('{} model semi-supervised not defined'.format(self.args.semi))
             tf.summary.scalar('loss/gen', self.loss_gen)
             tf.summary.scalar('loss/disc', self.loss_disc)
 
@@ -547,10 +543,43 @@ class Model:
                           cross_entropy(labels=tf.ones_like(self.scorel[..., 0], dtype=tf.int32), logits=self.scorel)
 
             tf.summary.scalar('loss/domain', loss_domain)
+        # elif self.args.domain == 'contrast':
+        #     if self.args.lambda_reg == 0.0:
+        #         y_hat_ = self.y_hat['sem']
+        #         y_hath_ = self.y_hath['sem']
+        #     else:
+        #         raise ValueError('not implemented for regresssion')
+        #
+        #     label_sem = self.get_sem(self.labelsh) if self.hr_emb else self.get_sem(self.labels)
+        #     weights =[tf.expand_dims(tf.equal(label_sem,0),-1),
+        #                 tf.expand_dims(tf.equal(label_sem,1),-1)]
+        #
+        #
+        #     # l1 = self.Zl[label_sem == 1,:]
+        #     # h1 = self.Zh[tf.equal(label_sem,1),:]
+        #
+        #     # l0 = self.Zl[label_sem == 0,:]
+        #     # h0 = self.Zh[label_sem == 0,:]
+        #     # same class
+        #     loss_domain = tf.losses.mean_squared_error(self.Zl,self.Zh)
+        #
+        #     # different class
+        #
+        #     # zl[class == 1] and zh[class == 0]
+        #     zl1 = tf.where(weights[1], self.Zl,0.0)
+        #     zh0 = tf.where(weights[0], self.Zh,0.0)
+        #     # TODO finish pariwise combinations
+        #     outer1 = batch_outerproduct(self.Zh*tf.cast(weights[0],tf.float32), self.Zl*tf.cast(weights[0],tf.float32), randomized=True)
+        #
+        #     d_sqrt = tf.squared_difference(self.Zl[],h0)
+        #     loss_domain+= 0.5*tf.reduce_sum(tf.square(tf.maximum(0., 1.0 - d_sqrt)))
+        #
+        #     d_sqrt = tf.squared_difference(l0, l1)
+        #     loss_domain += 0.5 * tf.reduce_sum(tf.square(tf.maximum(0., 1.0 - d_sqrt)))
+        #     tf.summary.scalar('loss/contrast', loss_domain)
         # tf.contrib.losses.metric_learning.contrastive_loss()
         else:
-            print('{} loss domain-transfer not defined'.format(self.args.domain))
-            sys.exit(1)
+            raise ValueError('{} loss domain-transfer not defined'.format(self.args.domain))
 
         height = 1.0
         lower = 0.0

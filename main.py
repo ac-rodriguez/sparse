@@ -63,7 +63,7 @@ parser.add_argument("--batch-size", default=8, type=int, help="Batch size for tr
 parser.add_argument("--batch-size-eval", default=None, type=int, help="Batch size for eval")
 parser.add_argument("--lambda-sr", default=1.0, type=float, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--lambda-reg", default=0.5, type=float, help="Lambda for reg vs semantic task")
-parser.add_argument("--lambda-weights", default=0.0005, type=float, help="Lambda for L2 weights regularizer")
+parser.add_argument("--lambda-weights", default=0.001, type=float, help="Lambda for L2 weights regularizer")
 # parser.add_argument("--weight-decay", type=float, default=0.0005,
 #                     help="Regularisation parameter for L2-loss.")
 parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train")
@@ -104,7 +104,7 @@ parser.add_argument("--domain-loss",dest='domain', default=None,
                     help="domain transfer model  HR to LR")
 parser.add_argument("--optimizer", type=str, default='adam',
                     help="['adagrad', 'adam']")
-parser.add_argument("--lr", type=float, default=2.5e-4,
+parser.add_argument("--lr", type=float, default=1e-4,
                     help="Learning rate for optimizer.")
 # Save args
 
