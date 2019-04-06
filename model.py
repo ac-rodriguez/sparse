@@ -178,7 +178,12 @@ class Model:
                 for key, val in self.y_hat.iteritems():
                     self.y_hat[key] = bilinear(val, self.patch_size)
             else:
-                assert self.hr_emb == True
+                assert self.hr_emb
+        elif self.model == 'countSRA':
+            self.is_sr = True
+            self.HR_hat = semi.decode(self.feat_l, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
+            self.y_hat = countception(self.HR_hat,pad=self.pad, is_training=self.is_training, config_volume=self.config)
+            assert self.hr_emb
         elif self.model == 'countSR_l':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
@@ -196,7 +201,7 @@ class Model:
                 feat = tf.concat([self.feat_hU, feat_lU_up[..., 3:]], axis=3)
                 _, self.ZhU = countception(feat,pad=self.pad, is_training=self.is_training, is_return_feat=True)
 
-            assert self.hr_emb == True
+            assert self.hr_emb
         elif self.model == 'countHR_la': # Using HR and LR infrared channels
 
             Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
