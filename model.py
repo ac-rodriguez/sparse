@@ -93,15 +93,16 @@ class Model:
             self.sem_threshold = 1e-5
 
         if self.is_hr_label:
-            self.labels = self.compute_labels_ls(labels, self.scale)
-            self.labelsh = labels
+            if self.args.is_fake_hr_label:
+                self.labels = labels
+                self.labelsh = tf.image.resize_nearest_neighbor(self.labels, size=(
+                self.patch_size * self.scale, self.patch_size * self.scale)) / (self.scale ** 2)
+            else:
+                self.labels = self.compute_labels_ls(labels, self.scale)
+                self.labelsh = labels
         else:
             self.labels = labels
             self.labelsh = None
-
-
-        if self.args.is_fake_hr_label:
-            self.labelsh = tf.image.resize_nearest_neighbor(self.labels, size=(self.patch_size*self.scale, self.patch_size*self.scale)) / (self.scale**2)
 
 
         self.compute_loss()
@@ -456,7 +457,7 @@ class Model:
     def add_domain_loss(self):
         assert self.is_domain_transfer, ' domain-loss not defined for model:{} '.format(self.model)
 
-        if self.args.domain == 'Rev' or self.args.domain == 'RevL':
+        if self.args.domain == 'DANNlarge' or self.args.domain == 'DANNlargeL':
 
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
@@ -468,7 +469,7 @@ class Model:
                 loss_domain+= tf.losses.absolute_difference(self.Zh, self.Zl)
 
             tf.summary.scalar('loss/domain', loss_domain)
-        elif self.args.domain == 'Revs':
+        elif self.args.domain == 'DANN':
 
             self.scoreh = semi.domain_discriminator_small(self.Zh)
             self.scorel = semi.domain_discriminator_small(self.Zl)
@@ -477,7 +478,28 @@ class Model:
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
                              cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
 
-            tf.summary.scalar('loss/domainS', loss_domain)
+            tf.summary.scalar('loss/domain', loss_domain)
+        elif self.args.domain == 'DANNc':
+            assert 'late' in self.model, 'only late embedding implemented for now'
+            zh, zl = self.Zh, self.Zl
+            if self.args.lambda_reg > 0.0:
+                label_reg = self.labelsh if self.hr_emb else self.labels
+                zh = tf.concat((zh,label_reg),axis=-1)
+                zl = tf.concat((zl,label_reg),axis=-1)
+            if self.args.lambda_reg < 1.0:
+                label_sem = self.get_sem(self.labelsh) if self.hr_emb else self.get_sem(self.labels)
+                label_sem = tf.cast(tf.expand_dims(label_sem,-1),tf.float32)
+                zh = tf.concat((zh,label_sem),axis=-1)
+                zl = tf.concat((zl,label_sem),axis=-1)
+
+            self.scoreh = semi.domain_discriminator_small(zh)
+            self.scorel = semi.domain_discriminator_small(zl)
+
+            # Fake predictions towards 0, real preds towards 1
+            loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
+                             cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
+
+            tf.summary.scalar('loss/domain', loss_domain)
         elif self.args.domain == 'L1':
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
@@ -500,8 +522,6 @@ class Model:
                 y_hat_ = tf.concat(self.y_hat['reg'],self.y_hat['sem'], axis=-1)
                 y_hath_ = tf.concat(self.y_hath['reg'],self.y_hath['sem'], axis=-1)
 
-
-            # TODO same rand without random seed
             Zl = batch_outerproduct(self.Zl, y_hat_, randomized=True)
             Zh = batch_outerproduct(self.Zh, y_hath_, randomized=True)
 
@@ -512,8 +532,8 @@ class Model:
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[..., 0], dtype=tf.int32), logits=self.scoreh) + \
                           cross_entropy(labels=tf.ones_like(self.scorel[..., 0], dtype=tf.int32), logits=self.scorel)
 
-            tf.summary.scalar('loss/domainS', loss_domain)
-
+            tf.summary.scalar('loss/domain', loss_domain)
+        # tf.contrib.losses.metric_learning.contrastive_loss()
         else:
             print('{} loss domain-transfer not defined'.format(self.args.domain))
             sys.exit(1)

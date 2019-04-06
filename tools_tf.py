@@ -211,7 +211,7 @@ class Checkpoint(object):
     self.score = score
     self.path = path
 
-def batch_outerproduct(X, Y,n_feat=500, randomized= False):
+def batch_outerproduct(X, Y,n_feat=500, randomized= False, seeds=(100,101)):
 
     X = tf.layers.flatten(X)
     Y = tf.layers.flatten(Y)
@@ -219,9 +219,8 @@ def batch_outerproduct(X, Y,n_feat=500, randomized= False):
     if not randomized:
         return tf.expand_dims(tf.expand_dims(X, 2) * tf.expand_dims(Y, 1),-1)
     else:
-        np.random.seed(1)
-        m1 = np.random.rand(X.shape[-1], n_feat).astype(np.float32)
-        m2 = np.random.rand(Y.shape[-1], n_feat).astype(np.float32)
+        m1 = tf.random.normal(tf.TensorShape([X.shape[-1], n_feat]), seed=seeds[0])
+        m2 = tf.random.normal(tf.TensorShape([Y.shape[-1], n_feat]), seed=seeds[1])
 
         Xr = tf.tensordot(X,m1,axes=1)
         Yr = tf.tensordot(Y,m2,axes=1)
