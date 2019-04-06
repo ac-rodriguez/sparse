@@ -136,7 +136,8 @@ def main(unused_args):
 
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
     # if args.is_hr_label:
-    if ('HR' in args.model or 'SR' in args.model or 'DA_h' in args.model) and not '_l' in args.model:
+    if ('HR' in args.model or 'SR' in args.model or 'DA_h' in args.model) and \
+            not '_l' in args.model and not args.is_fake_hr_label:
         args.is_hr_label = True
         args.tag = '_hrlab' + args.tag
     else:
