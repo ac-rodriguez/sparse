@@ -139,7 +139,16 @@ class Model:
                 feat_h_down = self.down_(self.feat_h,3)
                 feat_h_down = tf.layers.conv2d(feat_h_down,self.feat_l.shape[-1],kernel_size=1,strides=1)
                 self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
+        elif self.model == 'countA' or self.model == 'countAh':
 
+            earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=True)
+            self.y_hat = countception(earlyl, pad=self.pad, is_training=self.is_training,config_volume=self.config)
+
+            if self.model == 'countAh':  # using down-sampled HR images too
+                self.add_yhath = True
+                feat_h_down = self.down_(self.feat_h,3)
+                feat_h_down = tf.layers.conv2d(feat_h_down,earlyl.shape[-1],kernel_size=1,strides=1)
+                self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
         elif self.model == 'countSR' or self.model == 'countSRu':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
