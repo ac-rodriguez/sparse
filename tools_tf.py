@@ -216,15 +216,43 @@ def batch_outerproduct(X, Y,n_feat=500, randomized= False, seeds=(100,101)):
     X = tf.layers.flatten(X)
     Y = tf.layers.flatten(Y)
 
-    if not randomized:
-        return tf.expand_dims(tf.expand_dims(X, 2) * tf.expand_dims(Y, 1),-1)
-    else:
+    if randomized:
         m1 = tf.random.normal(tf.TensorShape([X.shape[-1], n_feat]), seed=seeds[0])
         m2 = tf.random.normal(tf.TensorShape([Y.shape[-1], n_feat]), seed=seeds[1])
 
-        Xr = tf.tensordot(X,m1,axes=1)
-        Yr = tf.tensordot(Y,m2,axes=1)
-        return tf.expand_dims(tf.expand_dims(Xr, 2) * tf.expand_dims(Yr, 1)/ (float(n_feat)**(0.5)),-1)
+        X = tf.tensordot(X,m1,axes=1)
+        Y = tf.tensordot(Y,m2,axes=1)
+        denominator= (float(n_feat)**(0.5))
+    else:
+        denominator = 1.0
+
+    return tf.expand_dims(tf.expand_dims(X, 2) * tf.expand_dims(Y, 1)/denominator, -1)
+
+
+def pair_distance(A,B,n_feat=500, randomized= False, seeds=(100,101)):
+    A = tf.layers.flatten(A)
+    B = tf.layers.flatten(B)
+    if randomized:
+        m1 = tf.random.normal(tf.TensorShape([A.shape[-1], n_feat]), seed=seeds[0])
+        m2 = tf.random.normal(tf.TensorShape([A.shape[-1], n_feat]), seed=seeds[1])
+
+        A = tf.tensordot(A, m1, axes=1)
+        B = tf.tensordot(B, m2, axes=1)
+        denominator= (float(n_feat)**(0.5))
+    else:
+        denominator = 1.0
+
+    A2 = tf.reduce_sum(A * A, 1)
+    A2 = tf.reshape(A2, [-1, 1, 1])
+
+    B2 = tf.reduce_sum(B * B, 1)
+    B2 = tf.reshape(B2, [-1, 1, 1])
+
+    # outer prod
+    AB = tf.expand_dims(A, 2) * tf.expand_dims(B, 1)
+
+    D = tf.square(A2 - 2 * AB + B2)
+    return D / denominator
 
 
 def save_m(name,m):
