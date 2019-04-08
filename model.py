@@ -561,15 +561,16 @@ class Model:
             zl1 = tf.where(weights[0], self.Zl,tf.zeros_like(self.Zl))
             zh0 = tf.where(weights[0], self.Zh,tf.zeros_like(self.Zh))
 
-            d_sqrt = tools.pair_distance(zl1,zh0, randomized=True)
+            d_sqrt = tools.pair_distance(zl1,zh0, randomized=False)
             loss_domain+= 0.5*tf.reduce_sum(tf.square(tf.maximum(0., 1.0 - d_sqrt)))
 
             # zl[class == 0] and zh[class == 1]
             zl0 = tf.where(weights[0], self.Zl, tf.zeros_like(self.Zl))
             zh1 = tf.where(weights[1], self.Zh, tf.zeros_like(self.Zl))
 
-            d_sqrt = tools.pair_distance(zl0, zh1, randomized=True)
+            d_sqrt = tools.pair_distance(zl0, zh1, randomized=False)
             loss_domain += 0.5 * tf.reduce_sum(tf.square(tf.maximum(0., 1.0 - d_sqrt)))
+            tf.summary.scalar('loss/domain', loss_domain)
 
         else:
             raise ValueError('{} loss domain-transfer not defined'.format(self.args.domain))
