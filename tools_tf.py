@@ -82,6 +82,27 @@ def get_lr_ADAM(optimizer, learning_rate):
     optim_learning_rate = (learning_rate * math_ops.sqrt(1 - beta2_power) / (1 - beta1_power))
 
     return optim_learning_rate
+from tensorflow.python.framework import ops
+from tensorflow.python.ops import math_ops
+from tensorflow.python.eager import context
+def inv_lr_decay(learning_rate, global_step, gamma, power, name=None):
+    if global_step is None:
+        raise ValueError("global_step is required for inv_decay.")
+    with ops.name_scope(name, "InvDecay", \
+                      [learning_rate, global_step, gamma, power]) as name:
+        learning_rate = ops.convert_to_tensor(learning_rate, name="learning_rate")
+        dtype = learning_rate.dtype
+        gamma = math_ops.cast(gamma, dtype)
+        power = math_ops.cast(power, dtype)
+
+        def decayed_lr(global_step):
+            global_step = math_ops.cast(global_step, dtype)
+            base = math_ops.multiply(gamma, global_step)
+            return math_ops.multiply( \
+                    learning_rate, math_ops.pow(1+base, -power), name=name)
+        if not context.executing_eagerly():
+            decayed_lr = decayed_lr(global_step)
+        return decayed_lr
 
 
 

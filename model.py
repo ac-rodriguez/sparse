@@ -57,7 +57,7 @@ class Model:
     def get_sem(self,lab, return_w = False):
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
 
-        if self.args.dataset == 'vaihingen':
+        if "vaihingen" in self.args.dataset:
             label_sem = tf.squeeze(int_(tf.equal(lab, 5.0)), axis=3)
         else:
             label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
@@ -916,6 +916,10 @@ class Model:
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'momentum':
             optimizer = tf.train.MomentumOptimizer(learning_rate=self.args.lr, momentum=0.9, use_nesterov=True)
+        elif self.args.optimizer == 'annealing':
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.001, power=0.75)
+            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
+            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         else:
             raise ValueError('option not defined')
 
