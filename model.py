@@ -43,8 +43,8 @@ class Model:
         self.is_semi = False
         self.is_sr = False
         self.sr_on_labeled = True
-
-        self.pad = self.args.sq_kernel*16//2
+        self.is_adversarial = False
+        self.pad = self.args.sq_kernel*16//2 if self.args.sq_kernel else 16
         if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model) and not '_l' in self.model and self.is_hr_label:
             self.hr_emb = True
 
@@ -57,7 +57,10 @@ class Model:
     def get_sem(self,lab, return_w = False):
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
 
-        label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
+        if self.args.dataset == 'vaihingen':
+            label_sem = tf.squeeze(int_(tf.equal(lab, 5.0)), axis=3)
+        else:
+            label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
         w = self.get_w(lab)
         label_sem = tf.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
                              tf.ones_like(label_sem, dtype=tf.int32) * -1)
@@ -128,8 +131,11 @@ class Model:
     def compute_predicitons(self):
         size = self.patch_size * self.args.scale
         # Baseline Models
-        if self.model == 'simple':  # Baseline  No High Res for training
-            self.y_hat = simple(self.feat_l, n_channels=1, is_training=self.is_training)
+        if self.model == 'simple' or self.model == 'simpleA':  # Baseline  No High Res for training
+            earlyl = self.feat_l
+            if self.model == 'simpleA':
+                earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=True)
+            self.y_hat = simple(earlyl, n_channels=1, is_training=self.is_training)
         elif self.model == 'count' or self.model == 'counth':
             self.y_hat = countception(self.feat_l,pad=self.pad, is_training=self.is_training, config_volume=self.config)
             # if self.two_ds:
@@ -249,14 +255,15 @@ class Model:
 
         self.lossTasks = 0.0
         if self.add_yhat:
-
+            # lam_evol = tools.evolving_lambda(self.args)
+            lam_evol = 1.0
             if self.args.lambda_reg > 0.0:
                 loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
-                self.lossTasks+= self.args.lambda_reg * loss_reg
+                self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
                 tf.summary.scalar('loss/reg', loss_reg)
             if self.args.lambda_reg < 1.0:
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hat['sem'], weights=w)
-                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem
+                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
                 tf.summary.scalar('loss/sem', loss_sem)
 
         if self.add_yhath and (self.is_training or not self.is_slim):
@@ -484,12 +491,42 @@ class Model:
 
             self.scoreh = semi.domain_discriminator_small(self.Zh)
             self.scorel = semi.domain_discriminator_small(self.Zl)
-
+            labels = tf.concat((tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), tf.ones_like(self.scorel[...,0], dtype=tf.int32)), axis=0)
+            logits = tf.concat((self.scoreh, self.scorel), axis=0)
             # Fake predictions towards 0, real preds towards 1
-            loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
-                             cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
-
+            # loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
+            #                  cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
+            loss_domain = cross_entropy(labels,logits)
             tf.summary.scalar('loss/domain', loss_domain)
+
+            tf.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
+            tf.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
+            tf.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
+            tf.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
+
+        elif self.args.domain == 'DANNadv':
+
+            self.scoreh = semi.domain_discriminator_small(self.Zh, is_flip=False)
+            self.scorel = semi.domain_discriminator_small(self.Zl, is_flip=False)
+
+            labels = tf.concat(
+                (tf.zeros_like(self.scoreh[..., 0], dtype=tf.int32), tf.ones_like(self.scorel[..., 0], dtype=tf.int32)),
+                axis=0)
+            logits = tf.concat((self.scoreh, self.scorel), axis=0)
+            self.loss_disc = cross_entropy(labels, logits)
+            self.vars_d = [v for v in tf.trainable_variables() if 'domain_discriminator' in v.name]
+            self.vars_g = [v for v in tf.trainable_variables() if not 'domain_discriminator' in v.name]
+            loss_gen = cross_entropy(tf.zeros_like(labels),logits)
+            loss_domain = loss_gen
+            self.is_adversarial = True
+            tf.summary.scalar('loss/domain', loss_domain)
+            tf.summary.scalar('loss/disc', self.loss_disc)
+
+            tf.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
+            tf.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
+            tf.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
+            tf.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
+
         elif self.args.domain == 'DANNc':
             assert 'late' in self.model, 'only late embedding implemented for now'
             zh, zl = self.Zh, self.Zl
@@ -511,6 +548,10 @@ class Model:
                              cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
 
             tf.summary.scalar('loss/domain', loss_domain)
+            tf.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
+            tf.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
+            tf.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
+            tf.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
         elif self.args.domain == 'L1':
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
@@ -575,11 +616,7 @@ class Model:
         else:
             raise ValueError('{} loss domain-transfer not defined'.format(self.args.domain))
 
-        height = 1.0
-        lower = 0.0
-        alpha = 10.0
-        progress = self.float_(tf.train.get_global_step())  / (np.sum(self.args.train_patches)*self.args.epochs / float(self.args.batch_size))
-        lambda_domain = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
+        lambda_domain = tools.evolving_lambda(self.args,height=1.0)
         tf.summary.scalar('loss/lambda_domain', lambda_domain)
 
         self.loss += loss_domain*lambda_domain
@@ -875,9 +912,12 @@ class Model:
             optimizer = tf.train.AdagradOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'adam':
             optimizer = tf.train.AdamOptimizer(learning_rate=self.args.lr)
+        elif self.args.optimizer == 'SGD':
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr)
+        elif self.args.optimizer == 'momentum':
+            optimizer = tf.train.MomentumOptimizer(learning_rate=self.args.lr, momentum=0.9, use_nesterov=True)
         else:
-            print('option not defined')
-            sys.exit(1)
+            raise ValueError('option not defined')
 
         # slim.model_analyzer.analyze_vars(
         #     tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
@@ -886,9 +926,10 @@ class Model:
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
             if self.args.l2_weights_every is None:
-                if self.args.semi is not None and not 'Rev' in self.args.semi:
-                    train_g = optimizer.minimize(self.loss, global_step=step)
-                    train_d = optimizer.minimize(self.loss_gen, global_step=step)
+                # if self.args.semi is not None and not 'Rev' in self.args.semi:
+                if self.is_adversarial:
+                    train_d = optimizer.minimize(self.loss_disc, global_step=step, var_list=self.vars_d)
+                    train_g = optimizer.minimize(self.loss, global_step=step, var_list=self.vars_g)
                     self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, 2))),
                                             true_fn=lambda: train_g,
                                             false_fn=lambda: train_d)
@@ -896,7 +937,7 @@ class Model:
                     self.train_op = optimizer.minimize(self.loss, global_step=step)
                 if self.args.optimizer == 'adam':
                     lr_adam = tools.get_lr_ADAM(optimizer, learning_rate=0.01)
-                    tf.summary.scalar('loss/adam_lr', lr_adam)
+                    tf.summary.scalar('loss/adam_lr', tf.log(lr_adam))
             else:
                 train_op1 = optimizer.minimize(self.lossTasks, global_step=step)
                 train_op2 = optimizer.minimize(self.loss_w, global_step=step)

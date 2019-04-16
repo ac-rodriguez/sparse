@@ -42,6 +42,8 @@ parser.add_argument("--is-fake-hr-label", default=False, action="store_true",
                     help="compute label on the LR resolultion and to ")
 parser.add_argument("--is-noS2", default=False, action="store_true",
                     help="compute LR from HR and don't use S2")
+parser.add_argument("--is-adversarial", default=False, action="store_true",
+                    help="use adverarial GAN-like optimization instead of GRL")
 parser.add_argument("--is-same-volume", default=False, action="store_true",
                     help="compute same embedding volume for LR and HR models")
 parser.add_argument("--not-save-arrays",dest='save_arrays', default=True, action="store_false",
@@ -59,7 +61,7 @@ parser.add_argument("--numpy-seed", default=None, type=int, help="Random seed fo
 parser.add_argument("--patch-size", default=16, type=int, help="size of the patches to be created (low-res).")
 parser.add_argument("--patch-size-eval", default=16, type=int, help="size of the patches to be created (low-res).")
 parser.add_argument("--scale", default=2, type=int, help="Upsampling scale to train")
-parser.add_argument("--batch-size", default=8, type=int, help="Batch size for training")
+parser.add_argument("--batch-size", default=32, type=int, help="Batch size for training")
 parser.add_argument("--batch-size-eval", default=None, type=int, help="Batch size for eval")
 parser.add_argument("--lambda-sr", default=1.0, type=float, help="Lambda for semi-supervised part of the loss")
 parser.add_argument("--lambda-reg", default=0.5, type=float, help="Lambda for reg vs semantic task")
@@ -132,7 +134,7 @@ def main(unused_args):
 
     args.__dict__.update(d)
     if 'SR' in args.model: args.tag = '_Lsr{:.1f}'.format(args.lambda_sr) + args.tag
-    if args.sq_kernel == 'None' or args.sq_kernel == 'none': args.sq_kernel = None
+    if args.sq_kernel <= 0: args.sq_kernel = None
 
     if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
     # if args.is_hr_label:

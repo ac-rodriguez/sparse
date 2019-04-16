@@ -69,10 +69,10 @@ def domain_discriminator(input, scope_name='domain_discriminator', is_training=T
         else:
             return x
 
-def domain_discriminator_small(input, scope_name='domain_discriminator_single', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False):
+def domain_discriminator_small(input, scope_name='domain_discriminator_single', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False, is_flip=True):
     with tf.variable_scope(scope_name, reuse=reuse):
 
-        x = flip_gradient(input)
+        x = flip_gradient(input) if is_flip else input
 
         x = tf.layers.conv2d(x, 64, kernel_size=3, strides=2, padding='valid')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x

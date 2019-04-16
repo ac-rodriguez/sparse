@@ -6,36 +6,40 @@ from osgeo import gdal
 import os, sys
 import fnmatch
 import re
+import cv2
 from collections import defaultdict
+from skimage.measure import block_reduce
 
 import gdal_processing as gp
 # from utils import patches
 # import patches
 run_60 = False
 
-def readHR(args, roi_lon_lat):
+def readHR(args, roi_lon_lat, data_file=None, as_float=True):
     # args = parseargs()
     # roi_lon_lat = args.roi_lon_lat
-    data_file = args.HR_file
+    if data_file is None:
+        data_file = args.HR_file
     print(' [*] Reading HR Data {}'.format(os.path.basename(data_file)))
 
     dsREF = gdal.Open(data_file)
 
     if roi_lon_lat:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(roi_lon_lat)
+        geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
+
+        if not gp.roi_intersection(dsREF, geo_pts_ref):
+            print(" [!] The ROI does not intersect with the data product")
+            sys.exit(0)
+
+        xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF=dsREF,
+                                              enlarge=args.scale)  # we enlarge from 5m to 20m Bands in S2
+
     else:
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -180, -90, 180, 90
+        xmin,ymin = 0,0
+        xmax,ymax = dsREF.RasterXSize -1, dsREF.RasterYSize-1
 
 
-    geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
-
-
-    if not gp.roi_intersection(dsREF, geo_pts_ref):
-        print(" [!] The ROI does not intersect with the data product")
-        sys.exit(0)
-
-
-    xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2),dsREF= dsREF, enlarge=args.scale) # we enlarge from 5m to 20m Bands in S2
 
     # elif not roi_lon_lat:
     #     tmxmin = 0
@@ -118,8 +122,10 @@ def readHR(args, roi_lon_lat):
     elif np.sum(vis) > 0:
         print(' [!] The selected image has some blank pixels')
         # sys.exit()
-
-    return data10.astype(np.float32) / 255.0
+    if as_float:
+        return data10.astype(np.float32) / 255.0
+    else:
+        return  data10
     # patches.save_numpy(data = data10, args=args,folder=str(pixel_size), view=view, filename='data_complete')
 
 
@@ -476,3 +482,76 @@ def readS2_old(args, roi_lon_lat):
         data20 = np.expand_dims(data20, axis = 2)
 
     return data10.astype(np.float32), data20.astype(np.float32)
+
+
+def read_labels(args, roi, roi_with_labels, is_HR=False):
+    # if args.HR_file is not None:
+    ref_scale = 16  # 10m -> 0.625m
+    sigma = ref_scale  # /np.pi
+    if is_HR:
+        ds_file = args.HR_file
+        ref_scale = ref_scale // args.scale
+        scale_lims = args.scale
+    else:
+        if 'USER' in args.LR_file:
+            ds_file = gp.getrefDataset(args.LR_file, is_use_gtiff=False)
+        else:
+            ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
+
+        scale_lims = 1
+
+    print(' [*] Reading Labels {}'.format(os.path.basename(args.points)))
+
+    ds = gdal.Open(ds_file)
+    print(' [*] Reading complete Area')
+
+    lims_H = gp.to_xy_box(roi, ds, enlarge=scale_lims)
+    print(' [*] Reading labeled Area')
+
+    lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
+
+    labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
+                                             lims_with_labels=lims_with_labels, up_scale=ref_scale,
+                                             sigma=sigma, sq_kernel=args.sq_kernel)
+    (xmin, ymin, xmax, ymax) = lims_with_labels
+    xmin, xmax = xmin - lims_H[0], xmax - lims_H[0]
+    ymin, ymax = ymin - lims_H[1], ymax - lims_H[1]
+    return np.expand_dims(labels, axis=2), (xmin, ymin, xmax, ymax)
+
+
+def read_labels_semseg(args, ds_file, is_HR):
+    # if args.HR_file is not None:
+    # ref_scale = 16  # 10m -> 0.625m
+    # ref_scale = ref_scale // args.scale
+
+    print(' [*] Reading Labels {}'.format(os.path.basename(ds_file)))
+
+    # ds = gdal.Open(ds_file)
+    print(' [*] Reading complete Area')
+
+    # lims_H = gp.to_xy_box(roi, ds, enlarge=scale_lims)
+    print(' [*] Reading labeled Area')
+
+    # lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
+
+    labels = readHR(args, roi_lon_lat=None, data_file=args.train_gt, as_float=False)
+    lut = np.ones(256, dtype=np.uint8) * 255
+    lut[[255, 29, 179, 150, 226, 76]] = np.arange(6, dtype=np.uint8)
+    im_out = cv2.LUT(cv2.cvtColor(labels, cv2.COLOR_BGR2GRAY), lut)
+    # 3 vegetation
+    # 5 buildings
+    # 255 with or without gt
+
+    if not is_HR:
+        ref_scale = args.scale
+        im_out = block_reduce(im_out,(ref_scale,ref_scale),np.median)
+
+    im_out = im_out.astype(np.float32)
+    im_out[im_out == 255.0] = -1
+
+    # TODO smoothing
+
+
+    xmin, xmax = 0, im_out.shape[1]
+    ymin, ymax = 0, im_out.shape[1]
+    return np.expand_dims(im_out, axis=2), (xmin, ymin, xmax, ymax)

@@ -255,6 +255,16 @@ def pair_distance(A,B,n_feat=500, randomized= False, seeds=(100,101)):
     return D / denominator
 
 
+def evolving_lambda(args, height=1.0,lower=0.1,alpha=10.0):
+    # height = 100.0
+    # lower = 0.0
+    # alpha = 10.0
+    progress = tf.cast(tf.train.get_global_step(),tf.float32) / (
+                np.sum(args.train_patches) * args.epochs / float(args.batch_size))
+    lambda_evol = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
+    return lambda_evol
+
+
 def save_m(name,m):
     with open(name, 'w') as f:
         sorted_names = sorted(m.keys(), key=lambda x: x.lower())

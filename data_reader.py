@@ -7,14 +7,14 @@ from skimage.transform import resize
 from Queue import Queue
 from threading import Thread, Lock
 from functools import partial
-import gdal
+
 
 from plots import check_dims, plot_rgb, plot_heatmap
 
-from read_geoTiff import readHR, readS2, readS2_old
+import read_geoTiff as geotif
 import gdal_processing as gp
 
-IS_DEBUG=False
+IS_DEBUG=True
 ### ZRH 1 Sentinel-2 and Google-high res data
 
 def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
@@ -39,9 +39,9 @@ def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
 
 def read_and_upsample_sen2(args, roi_lon_lat):
     if 'USER' in args.LR_file:
-        data10, data20 = readS2_old(args, roi_lon_lat)
+        data10, data20 = geotif.readS2_old(args, roi_lon_lat)
     else:
-        data10, data20 = readS2(args, roi_lon_lat)
+        data10, data20 = geotif.readS2(args, roi_lon_lat)
     data20 = interpPatches(data20, data10.shape[0:2], squeeze=True)
 
     data = np.concatenate((data10, data20), axis=2)
@@ -51,40 +51,6 @@ def read_and_upsample_sen2(args, roi_lon_lat):
     print('{:.2f} GB loaded in memory'.format(size / 1e9))
     return data
 
-
-def read_labels(args, roi, roi_with_labels, is_HR=False):
-    # if args.HR_file is not None:
-    ref_scale=16 # 10m -> 0.625m
-    sigma = ref_scale/np.pi
-    if is_HR:
-        ds_file = args.HR_file
-        ref_scale = ref_scale//args.scale
-        scale_lims = args.scale
-    else:
-        if 'USER' in args.LR_file:
-            ds_file = gp.getrefDataset(args.LR_file,is_use_gtiff=False)
-        else:
-            ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
-
-        scale_lims = 1
-
-    print(' [*] Reading Labels {}'.format(os.path.basename(args.points)))
-
-    ds = gdal.Open(ds_file)
-    print(' [*] Reading complete Area')
-
-    lims_H = gp.to_xy_box(roi, ds, enlarge=scale_lims)
-    print(' [*] Reading labeled Area')
-
-    lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
-
-    labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
-                                             lims_with_labels=lims_with_labels, up_scale=ref_scale,
-                                             sigma=sigma, sq_kernel=args.sq_kernel)
-    (xmin,ymin,xmax,ymax) = lims_with_labels
-    xmin, xmax = xmin -lims_H[0], xmax - lims_H[0]
-    ymin, ymax = ymin -lims_H[1], ymax - lims_H[1]
-    return np.expand_dims(labels, axis=2), (xmin,ymin,xmax,ymax)
 
 
 def read_and_upsample_test_file(path):
@@ -162,7 +128,11 @@ class DataReader(object):
 
         self.scale = self.args.scale
         self.gsd = str(10.0/self.scale)
-        self.args.HR_file = os.path.join(self.args.HR_file,'3000_gsd{}.tif'.format(self.gsd))
+        if self.args.dataset == 'vaihingen':
+            self.args.HR_file = os.path.join(self.args.HR_file, 'top_9cm.tif')
+        else:
+            self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
+
         self.patch_h = self.args.patch_size * self.scale
 
         self.args.max_N = 1e5
@@ -356,24 +326,34 @@ class DataReader(object):
         self.is_HR_labels = self.args.is_hr_label
 
         print('\n [*] Loading TRAIN data \n')
-        self.train_h = readHR(self.args,
+        self.train_h = geotif.readHR(self.args,
                               roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
         if self.args.is_noS2:
             self.train = gp.smooth_and_downscale(self.train_h,scale=self.args.scale)
         else:
             self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-        self.labels, self.lims_labels = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
-                                  roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
+        if self.args.dataset == 'vaihingen':
+            self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, ds_file=self.args.train_gt, is_HR=self.is_HR_labels)
+        else:
+            self.labels, self.lims_labels = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_tr,
+                                      roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
         print('\n [*] Loading VALIDATION data \n')
-        self.val_h = readHR(self.args,
-                            roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
-        if self.args.is_noS2:
-            self.val = gp.smooth_and_downscale(self.val_h,scale=self.args.scale)
+        if self.args.dataset == 'vaihingen':
+            self.val_h = self.train_h
+            self.val = self.train
+            self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, ds_file=self.args.val_gt, is_HR=self.is_HR_labels)
+
         else:
-            self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
-        self.labels_val,self.lims_labels_val = read_labels(self.args, roi=self.args.roi_lon_lat_val,
-                                      roi_with_labels=self.args.roi_lon_lat_val_lb, is_HR=self.is_HR_labels)
+            self.val_h = geotif.readHR(self.args,
+                                roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
+            if self.args.is_noS2:
+                self.val = gp.smooth_and_downscale(self.val_h,scale=self.args.scale)
+            else:
+                self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
+
+            self.labels_val,self.lims_labels_val = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_val,
+                                          roi_with_labels=self.args.roi_lon_lat_val_lb, is_HR=self.is_HR_labels)
 
         # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
         # self.N_pixels = self.train.shape[0] * self.train.shape[1]
@@ -450,13 +430,13 @@ class DataReader(object):
     def read_test_data(self):
         self.is_HR_labels = self.args.is_hr_label
 
-        self.test_h = readHR(self.args,
+        self.test_h = geotif.readHR(self.args,
                              roi_lon_lat=self.args.roi_lon_lat_test) if self.args.HR_file is not None else None
         if self.args.is_noS2:
             self.test = gp.smooth_and_downscale(self.test_h,scale=self.args.scale)
         else:
             self.test = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_test)
-        self.labels_test, self.lims_labels_test = read_labels(self.args, roi=self.args.roi_lon_lat_test,
+        self.labels_test, self.lims_labels_test = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_test,
                                   roi_with_labels=self.args.roi_lon_lat_test, is_HR=self.is_HR_labels)
 
         scale = self.args.scale
@@ -643,44 +623,61 @@ class PatchExtractor:
             print('Extracted random patches = {}'.format(max_patches))
 
 
-            if self.two_ds:
-                buffer_size = 0
-                size_label_ind = max_patches
+            # if self.two_ds:
 
-            else:
-                size_label_ind = int(max_patches*self.patches_with_labels)
+            size_label_ind = max_patches
 
-                # Patches with ground truth
-                buffer_size = self.patch_l //2
+            # else:
+            #     size_label_ind = int(max_patches*self.patches_with_labels)
+            #
+            #     # Patches with ground truth
+            #     buffer_size = self.patch_l //2
 
-            if self.is_HR_label:
-                ymin, xmin, ymax, xmax = map(lambda x: x // self.scale, self.lims_lab)
-            else:
-                ymin, xmin, ymax, xmax = self.lims_lab
-            print  self.lims_lab
-            xmax,ymax = min(xmax, n_x), min(ymax, self.n_y)
-            xmin,ymin = max(xmin-buffer_size,0),max(ymin-buffer_size,0)
-            area_labels = (xmax-xmin+buffer_size,ymax-ymin+buffer_size)
+
+            # print  self.lims_lab
+            # xmax,ymax = min(xmax, n_x), min(ymax, self.n_y)
+            # xmin,ymin = max(xmin-buffer_size,0),max(ymin-buffer_size,0)
+            # area_labels = (xmax-xmin+buffer_size,ymax-ymin+buffer_size)
             # area_labels = (50,50)
 
-            indices = np.random.choice(area_labels[0]*area_labels[1],size=min(area_labels[0]*area_labels[1],size_label_ind),replace=False)
-            dx, dy, n_y_lab = max(0,xmin -buffer_size//2), max(0,ymin -buffer_size//2), area_labels[1]
+            # indices = range(n_x * self.n_y)
+            # coords = np.array(map(lambda x: divmod(x,self.n_y),indices))
 
-            coords = np.array(map(lambda x: divmod(x,n_y_lab),indices))
+            valid_coords = np.logical_and.reduce(~np.equal(self.label, -1), axis=2)
+            buffer_size = self.patch_lab
 
-            coords1 = coords + (dx,dy)
+            valid_coords = np.argwhere(valid_coords[buffer_size:-buffer_size, buffer_size:-buffer_size])
+            # add patch//2 to y and x coordinates to correct the cropping
+            valid_coords += (buffer_size)
 
-            indices = coords1[:,0]*self.n_y + coords1[:,1]
-            assert np.max(indices) < (n_x*self.n_y), (np.max(indices), (n_x*self.n_y))
+            if self.is_HR_label:
+                valid_coords = np.array(map(lambda x: x // self.scale,valid_coords))
+                # ymin, xmin, ymax, xmax = map(lambda x: x // self.scale, self.lims_lab)
+            # else:
+            #     ymin, xmin, ymax, xmax = self.lims_lab
+
+            indices = np.random.choice(len(valid_coords),min(size_label_ind,len(valid_coords)),replace=False)
+            indices = valid_coords[indices]
+            # indices = np.random.choice(len(valid_coords),size=min(len(valid_coords),size_label_ind),replace=False)
+
+            # dx, dy, n_y_lab = max(0,xmin -buffer_size//2), max(0,ymin -buffer_size//2), area_labels[1]
+
+            # coords = np.array(map(lambda x: divmod(x,n_y_lab),indices))
+
+            # coords1 = coords + (dx,dy)
+
+            # indices = coords1[:,0]*self.n_y + coords1[:,1]
+            # assert np.max(indices) < (n_x*self.n_y), (np.max(indices), (n_x*self.n_y))
 
             if self.two_ds:
                 self.indices1 = indices
-                self.indices2 = np.random.choice(n_x * self.n_y, size=len(self.indices1), replace=False)
-
+                self.indices2 = np.random.choice(len(valid_coords), size=len(self.indices1),replace=False)
+                self.indices2 = valid_coords[self.indices2]
+                # self.indices2 = np.random.choice(n_x * self.n_y, size=len(self.indices1), replace=False)
                 print(' labeled and unlabeled data are always fed within a batch')
 
             else:
-
+                assert False
                 # Corner is always computed in low_res data
                 indices1 = np.random.choice(n_x * self.n_y, size=int(max_patches)-len(indices), replace=False)
 
@@ -784,9 +781,9 @@ class PatchExtractor:
                 # print ' rand_index={}'.format(self.rand_ind)
                 self.rand_ind+=1
             # ind = 50
-            corner_ = divmod(ind, self.n_y)
+            # corner_ = divmod(ind, self.n_y)
 
-            return self.get_patches(corner_)
+            return self.get_patches(ind)
         else:
             with self.lock:
                 ind1 = self.indices1[np.mod(self.rand_ind, len(self.indices1))]
@@ -795,10 +792,10 @@ class PatchExtractor:
                 # print ' rand_index={}'.format(self.rand_ind)
                 self.rand_ind += 1
                 # ind = 50
-            corner1_ = divmod(ind1, self.n_y)
-            corner2_ = divmod(ind2, self.n_y)
-            patches1 = self.get_patches(corner1_)
-            patches2 = self.get_patches(corner2_)
+            # corner1_ = divmod(ind1, self.n_y)
+            # corner2_ = divmod(ind2, self.n_y)
+            patches1 = self.get_patches(ind1)
+            patches2 = self.get_patches(ind2)
             patches = np.concatenate((patches1[0],patches2[0]),axis=-1) , np.concatenate((patches1[1],patches2[1]),axis=-1)
             return patches
 
