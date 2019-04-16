@@ -128,10 +128,8 @@ class DataReader(object):
 
         self.scale = self.args.scale
         self.gsd = str(10.0/self.scale)
-        if self.args.dataset == 'vaihingen':
-            self.args.HR_file = os.path.join(self.args.HR_file, 'top_9cm.tif')
-        else:
-            self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
+
+        self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
 
         self.patch_h = self.args.patch_size * self.scale
 
@@ -326,20 +324,24 @@ class DataReader(object):
         self.is_HR_labels = self.args.is_hr_label
 
         print('\n [*] Loading TRAIN data \n')
-        self.train_h = geotif.readHR(self.args,
-                              roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
-        if self.args.is_noS2:
-            self.train = gp.smooth_and_downscale(self.train_h,scale=self.args.scale)
-        else:
-            self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-        if self.args.dataset == 'vaihingen':
+
+        if 'vaihingen' in self.args.dataset:
+            self.train_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.train_top)
+            self.train = gp.smooth_and_downscale(self.train_h, scale=self.args.scale)
             self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, ds_file=self.args.train_gt, is_HR=self.is_HR_labels)
         else:
+            self.train_h = geotif.readHR(self.args,
+                                         roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
+            if self.args.is_noS2:
+                self.train = gp.smooth_and_downscale(self.train_h, scale=self.args.scale)
+            else:
+                self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
+
             self.labels, self.lims_labels = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_tr,
                                       roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
 
         print('\n [*] Loading VALIDATION data \n')
-        if self.args.dataset == 'vaihingen':
+        if 'vaihingen' in self.args.dataset:
             self.val_h = self.train_h
             self.val = self.train
             self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, ds_file=self.args.val_gt, is_HR=self.is_HR_labels)
@@ -644,6 +646,13 @@ class PatchExtractor:
             # coords = np.array(map(lambda x: divmod(x,self.n_y),indices))
 
             valid_coords = np.logical_and.reduce(~np.equal(self.label, -1), axis=2)
+            if self.is_HR_label:
+                valid_input = np.logical_and.reduce(~np.equal(self.d_h, 0), axis=2)
+            else:
+                valid_input = np.logical_and.reduce(~np.equal(self.d_l, 0), axis=2)
+
+
+            valid_coords = valid_coords & valid_input
             buffer_size = self.patch_lab
 
             valid_coords = np.argwhere(valid_coords[buffer_size:-buffer_size, buffer_size:-buffer_size])
@@ -728,6 +737,7 @@ class PatchExtractor:
 
             assert patch.shape == (size, size, data.shape[-1],), \
                 'Shapes: Dataset={} Patch={} xy_corner={}'.format(data.shape, patch.shape, (x, y))
+            assert not np.all(patch == 0.0) or not np.all(patch == -1.0)
         else:
             patch=None
         return patch

@@ -56,14 +56,14 @@ class Model:
         return w
     def get_sem(self,lab, return_w = False):
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
+        w = self.get_w(lab)
 
         if "vaihingen" in self.args.dataset:
             label_sem = tf.squeeze(int_(tf.equal(lab, 5.0)), axis=3)
         else:
             label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
-        w = self.get_w(lab)
-        label_sem = tf.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
-                             tf.ones_like(label_sem, dtype=tf.int32) * -1)
+            label_sem = tf.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
+                                 tf.ones_like(label_sem, dtype=tf.int32) * -1)
         if return_w:
             return label_sem,w
         else:

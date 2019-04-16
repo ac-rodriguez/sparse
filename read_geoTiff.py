@@ -547,7 +547,7 @@ def read_labels_semseg(args, ds_file, is_HR):
         im_out = block_reduce(im_out,(ref_scale,ref_scale),np.median)
 
     im_out = im_out.astype(np.float32)
-    im_out[im_out == 255.0] = -1
+    im_out[im_out == 255.0] = -1.
 
     # TODO smoothing
 
