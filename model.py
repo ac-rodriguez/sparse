@@ -924,6 +924,14 @@ class Model:
             learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.001, power=0.75)
             tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
             optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+        elif self.args.optimizer == 'annealing0':
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.0001, power=0.75)
+            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
+            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+        elif self.args.optimizer == 'annealing00':
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.00001, power=0.75)
+            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
+            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         elif self.args.optimizer == 'annealingA':
             progress = tools.get_progress(self.args)
             learning_rate = tools.inv_lr_decay(self.args.lr, progress, gamma=10.0, power=0.75)
