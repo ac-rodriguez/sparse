@@ -97,9 +97,10 @@ def inv_lr_decay(learning_rate, global_step, gamma, power, name=None):
 
         def decayed_lr(global_step):
             global_step = math_ops.cast(global_step, dtype)
-            base = math_ops.multiply(gamma, global_step)
-            return math_ops.multiply( \
-                    learning_rate, math_ops.pow(1+base, -power), name=name)
+            # base = math_ops.multiply(gamma, global_step)
+            # return math_ops.multiply( \
+            #         learning_rate, math_ops.pow(1+base, -power), name=name)
+            return tf.identity(learning_rate * ((1 + gamma*global_step)**(-power)),name=name)
         if not context.executing_eagerly():
             decayed_lr = decayed_lr(global_step)
         return decayed_lr

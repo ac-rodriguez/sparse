@@ -914,15 +914,19 @@ class Model:
             optimizer = tf.train.AdamOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'SGD':
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr)
+        elif self.args.optimizer == 'SGDa':
+            progress = tools.get_progress(self.args)
+            lr = tf.where(tf.less(progress,0.8), 1.0, 0.1)
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
         elif self.args.optimizer == 'momentum':
             optimizer = tf.train.MomentumOptimizer(learning_rate=self.args.lr, momentum=0.9, use_nesterov=True)
         elif self.args.optimizer == 'annealing':
             learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.001, power=0.75)
             tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
             optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
-        elif self.args.optimizer == 'annealing1':
+        elif self.args.optimizer == 'annealingA':
             progress = tools.get_progress(self.args)
-            learning_rate = tools.inv_lr_decay(self.args.lr, progress, gamma=0.001, power=0.75)
+            learning_rate = tools.inv_lr_decay(self.args.lr, progress, gamma=10.0, power=0.75)
             tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
             optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         else:
