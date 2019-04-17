@@ -920,8 +920,13 @@ class Model:
             learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.001, power=0.75)
             tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
             optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+        elif self.args.optimizer == 'annealing1':
+            progress = tools.get_progress(self.args)
+            learning_rate = tools.inv_lr_decay(self.args.lr, progress, gamma=0.001, power=0.75)
+            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
+            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         else:
-            raise ValueError('option not defined')
+            raise ValueError('optimizer {} not defined'.format(self.args.optimizer))
 
         # slim.model_analyzer.analyze_vars(
         #     tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)

@@ -275,13 +275,15 @@ def pair_distance(A,B,n_feat=500, randomized= False, seeds=(100,101)):
     D = tf.square(A2 - 2 * AB + B2)
     return D / denominator
 
-
+def get_progress(args):
+    progress = tf.cast(tf.train.get_global_step(), tf.float32) / (
+            np.sum(args.train_patches) * args.epochs / float(args.batch_size))
+    return progress
 def evolving_lambda(args, height=1.0,lower=0.1,alpha=10.0):
     # height = 100.0
     # lower = 0.0
     # alpha = 10.0
-    progress = tf.cast(tf.train.get_global_step(),tf.float32) / (
-                np.sum(args.train_patches) * args.epochs / float(args.batch_size))
+    progress = get_progress(args)
     lambda_evol = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
     return lambda_evol
 
