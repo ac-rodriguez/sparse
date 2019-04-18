@@ -342,9 +342,9 @@ class DataReader(object):
         print('\n [*] Loading TRAIN data \n')
 
         if 'vaihingen' in self.args.dataset:
-            self.train_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.train_top)
+            self.train_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_train)
             self.train = gp.smooth_and_downscale(self.train_h, scale=self.args.scale)
-            self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, ds_file=self.args.train_gt, is_HR=self.is_HR_labels)
+            self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_train,dsm_file=self.args.dsm_train, is_HR=self.is_HR_labels)
         else:
             self.train_h = geotif.readHR(self.args,
                                          roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
@@ -358,9 +358,11 @@ class DataReader(object):
 
         print('\n [*] Loading VALIDATION data \n')
         if 'vaihingen' in self.args.dataset:
-            self.val_h = self.train_h
-            self.val = self.train
-            self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, ds_file=self.args.val_gt, is_HR=self.is_HR_labels)
+            self.val_h = self.train_h if self.args.top_train == self.args.top_val else geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_val)
+            self.val = self.train if self.args.top_train == self.args.top_val else gp.smooth_and_downscale(self.val_h, scale=self.args.scale)
+            self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_val, dsm_file=self.args.dsm_val, is_HR=self.is_HR_labels)
+            if self.args.dataset == 'vaihingen':
+                self.labels_val[self.labels != -1.] = -1.
 
         else:
             self.val_h = geotif.readHR(self.args,

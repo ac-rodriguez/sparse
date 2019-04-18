@@ -122,11 +122,26 @@ def get_dataset(DATASET, is_mounted = False):
         dset_config['roi_lon_lat_tr'] = None
         dset_config['roi_lon_lat_val'] = None
         dset_config['roi_lon_lat_tr_lb'] = None
-        path_ = PATH+'/sparse/data/vaihingen/area1/' if DATASET == 'vaihingen1' else PATH+'/sparse/data/vaihingen/'
-        dset_config['val_gt'] = path_ + 'gt_9cm.tif'
-        dset_config['train_gt'] = path_ + 'gt_9cm.tif'
-        dset_config['dsm_gt'] = path_ + 'gt_dsm_9cm.tif'
-        dset_config['train_top'] = path_ + 'top_9cm.tif'
+        if DATASET == 'vaihingen1':
+            path_ = PATH+'/sparse/data/vaihingen/small/'
+
+            dset_config['sem_train'] = path_ + 'sem_9cm_area1.tif'
+            dset_config['dsm_train'] = path_ + 'dsm_9cm_area1.tif'
+            dset_config['top_train'] = path_ + 'top_9cm_area1.tif'
+
+            dset_config['sem_val'] = path_ + 'sem_9cm_area4.tif'
+            dset_config['dsm_val'] = path_ + 'dsm_9cm_area4.tif'
+            dset_config['top_val'] = path_ + 'top_9cm_area4.tif'
+        else:
+            path_ = PATH+'/sparse/data/vaihingen/'
+
+            dset_config['sem_train'] = path_ + 'sem_9cm.tif'
+            dset_config['dsm_train'] = path_ + 'dsm_9cm.tif'
+            dset_config['top_train'] = path_ + 'top_9cm.tif'
+
+            dset_config['sem_val'] = path_ + 'sem_9cm.tif'
+            dset_config['dsm_val'] = path_ + 'dsm_9cm.tif'
+            dset_config['top_val'] = path_ + 'top_9cm.tif'
 
         dset_config['is_noS2'] = True
     else:

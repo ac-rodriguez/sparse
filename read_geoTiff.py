@@ -525,12 +525,12 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
     return np.expand_dims(labels, axis=2), (xmin, ymin, xmax, ymax)
 
 
-def read_labels_semseg(args, ds_file, is_HR):
+def read_labels_semseg(args, sem_file,dsm_file, is_HR):
     # if args.HR_file is not None:
     # ref_scale = 16  # 10m -> 0.625m
     # ref_scale = ref_scale // args.scale
 
-    print(' [*] Reading Labels {}'.format(os.path.basename(ds_file)))
+    print(' [*] Reading Labels {}'.format(os.path.basename(sem_file)))
 
     # ds = gdal.Open(ds_file)
     print(' [*] Reading complete Area')
@@ -540,7 +540,7 @@ def read_labels_semseg(args, ds_file, is_HR):
 
     # lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
 
-    labels = readHR(args, roi_lon_lat=None, data_file=ds_file, as_float=False)
+    labels = readHR(args, roi_lon_lat=None, data_file=sem_file, as_float=False)
     lut = np.ones(256, dtype=np.uint8) * 255
     lut[[255, 29, 179, 150, 226, 76]] = np.arange(6, dtype=np.uint8)
     labels = cv2.LUT(cv2.cvtColor(labels, cv2.COLOR_BGR2GRAY), lut)
@@ -556,7 +556,7 @@ def read_labels_semseg(args, ds_file, is_HR):
     mask_out = labels == 255.0
     labels[mask_out] = -1.
 
-    labels_reg = readHR(args, roi_lon_lat=None, data_file=args.dsm_gt, as_float=False)
+    labels_reg = readHR(args, roi_lon_lat=None, data_file=dsm_file, as_float=False)
     labels_reg = labels_reg.astype(np.float32)
     if not is_HR:
         ref_scale = args.scale
