@@ -49,7 +49,8 @@ class Model:
             self.hr_emb = True
 
     def get_w(self, lab):
-
+        if "vaihingen" in self.args.dataset:
+            lab = tf.expand_dims(lab[...,0],-1)
         w = self.float_(tf.where(tf.greater_equal(lab, 0.0),
                                       tf.ones_like(lab),  ## for wherever i have labels
                                       tf.zeros_like(lab)))
@@ -59,7 +60,7 @@ class Model:
         w = self.get_w(lab)
 
         if "vaihingen" in self.args.dataset:
-            label_sem = tf.squeeze(int_(tf.equal(lab, 5.0)), axis=3)
+            label_sem = int_(tf.equal(lab[...,0], 5.0))
         else:
             label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
             label_sem = tf.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
@@ -252,7 +253,8 @@ class Model:
     def compute_loss(self):
         labels = self.labelsh if self.hr_emb else self.labels
         label_sem, w = self.get_sem(labels, return_w=True)
-
+        if "vaihingen" in self.args.dataset:
+            labels = tf.expand_dims(labels[...,0],-1)
         self.lossTasks = 0.0
         if self.add_yhat:
             # lam_evol = tools.evolving_lambda(self.args)
@@ -532,6 +534,8 @@ class Model:
             zh, zl = self.Zh, self.Zl
             if self.args.lambda_reg > 0.0:
                 label_reg = self.labelsh if self.hr_emb else self.labels
+                if "vaihingen" in self.args.dataset:
+                    label_reg = tf.expand_dims(label_reg[..., 0],-1)
                 zh = tf.concat((zh,label_reg),axis=-1)
                 zl = tf.concat((zl,label_reg),axis=-1)
             if self.args.lambda_reg < 1.0:
@@ -638,8 +642,8 @@ class Model:
         inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale)
 
         f1 = lambda x: tf.where(x == -1, x, x * (2.0 / max_dens))
-        inv_regh_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='jet'))
-        inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='jet'))
+        inv_regh_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='viridis'))
+        inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='viridis'))
         inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
         inv_difreg_ = lambda x: uint8_(colorize(x,vmin=-2,vmax=2, cmap='coolwarm'))
 
@@ -711,9 +715,11 @@ class Model:
 
         if not self.is_training:
             # Compute evaluation metrics.
+            labels = tf.expand_dims(self.labels[...,0],-1) if "vaihingen" in self.args.dataset else self.labels
+
             metrics_reg = {
-                'metrics/mae': tf.metrics.mean_absolute_error(labels=self.labels, predictions=y_hat_reg_down, weights=w),
-                'metrics/mse': tf.metrics.mean_squared_error(labels=self.labels, predictions=y_hat_reg_down, weights=w),
+                'metrics/mae': tf.metrics.mean_absolute_error(labels=labels, predictions=y_hat_reg_down, weights=w),
+                'metrics/mse': tf.metrics.mean_squared_error(labels=labels, predictions=y_hat_reg_down, weights=w),
                 }
 
             metrics_sem = {
@@ -734,9 +740,10 @@ class Model:
         else:
             self.eval_metric_ops = None
 
-    @staticmethod
-    def concat_reg(labels, y_hat_reg, inv_reg_, inv_difreg_):
 
+    def concat_reg(self, labels, y_hat_reg, inv_reg_, inv_difreg_):
+        if "vaihingen" in self.args.dataset:
+            labels = tf.expand_dims(labels[...,0],axis=-1)
         image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
         image_array_top = tf.concat(axis=2, values=[image_array_top,
                                                     tf.map_fn(inv_difreg_, labels - y_hat_reg, dtype=tf.uint8)])

@@ -17,7 +17,7 @@ def check_dims(data):
         data = np.expand_dims(data, axis=3)
         data = np.expand_dims(data, axis=0)
     return data
-def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='hot', file=None):
+def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='viridis', file=None):
 
     data[np.isnan(data)] = -1
     data = np.float32(data)

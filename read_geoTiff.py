@@ -74,7 +74,7 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
 
     dsBANDS = dict()
 
-    for band_id in range(3):
+    for band_id in range(dsREF.RasterCount):
         dsBANDS[band_id] = dsREF.GetRasterBand(band_id+1)
 
     # x1_0, y1_0 = gp.to_xy(roi_lon1, roi_lat1, dsREF)
@@ -106,18 +106,24 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
     data10 = None
 
     ## Load 10m bands
-    for band_name in range(3):
-        Btemp = dsBANDS[band_name].ReadAsArray(xoff=xmin, yoff=ymin, win_xsize=xmax - xmin + 1, win_ysize=ymax - ymin + 1, buf_xsize=xmax - xmin + 1,
+    # for band_name in range(3):
+    for key, val in dsBANDS.iteritems():
+        Btemp = val.ReadAsArray(xoff=xmin, yoff=ymin, win_xsize=xmax - xmin + 1, win_ysize=ymax - ymin + 1, buf_xsize=xmax - xmin + 1,
                              buf_ysize=ymax - ymin + 1)
         data10 = np.dstack((data10, Btemp)) if data10 is not None else Btemp
 
 
     ## Check if the dataset covers the actual roi with data
     # b3_10_ind = select_bands10.index('B3')
-    chan3 = data10[:, :, 2]
+    if dsREF.RasterCount == 3:
+        id_ = 2
+        chan3 = data10[:, :, id_]
+    else:
+        id_ = 0
+        chan3 = data10
     vis = (chan3 < 1).astype(np.int)
     if np.all(chan3 < 1):
-        print(" [!] All data is blank on Band 3")
+        print(" [!] All data is blank on Band {}".format(id_+1))
         sys.exit(0)
     elif np.sum(vis) > 0:
         print(' [!] The selected image has some blank pixels')
@@ -534,24 +540,31 @@ def read_labels_semseg(args, ds_file, is_HR):
 
     # lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
 
-    labels = readHR(args, roi_lon_lat=None, data_file=args.train_gt, as_float=False)
+    labels = readHR(args, roi_lon_lat=None, data_file=ds_file, as_float=False)
     lut = np.ones(256, dtype=np.uint8) * 255
     lut[[255, 29, 179, 150, 226, 76]] = np.arange(6, dtype=np.uint8)
-    im_out = cv2.LUT(cv2.cvtColor(labels, cv2.COLOR_BGR2GRAY), lut)
+    labels = cv2.LUT(cv2.cvtColor(labels, cv2.COLOR_BGR2GRAY), lut)
     # 3 vegetation
     # 5 buildings
     # 255 with or without gt
 
     if not is_HR:
         ref_scale = args.scale
-        im_out = block_reduce(im_out,(ref_scale,ref_scale),np.median)
+        labels = block_reduce(labels,(ref_scale,ref_scale),np.median)
 
-    im_out = im_out.astype(np.float32)
-    im_out[im_out == 255.0] = -1.
+    labels = labels.astype(np.float32)
+    mask_out = labels == 255.0
+    labels[mask_out] = -1.
 
-    # TODO smoothing
+    labels_reg = readHR(args, roi_lon_lat=None, data_file=args.dsm_gt, as_float=False)
+    labels_reg = labels_reg.astype(np.float32)
+    if not is_HR:
+        ref_scale = args.scale
+        labels_reg = block_reduce(labels_reg,(ref_scale,ref_scale),np.mean)
+    labels_reg[mask_out] = -1.
 
+    im_out = np.stack((labels,labels_reg), axis=-1)
 
     xmin, xmax = 0, im_out.shape[1]
     ymin, ymax = 0, im_out.shape[1]
-    return np.expand_dims(im_out, axis=2), (xmin, ymin, xmax, ymax)
+    return im_out,(xmin, ymin, xmax, ymax)

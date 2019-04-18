@@ -122,14 +122,12 @@ def get_dataset(DATASET, is_mounted = False):
         dset_config['roi_lon_lat_tr'] = None
         dset_config['roi_lon_lat_val'] = None
         dset_config['roi_lon_lat_tr_lb'] = None
-        if DATASET == 'vaihingen1':
-            dset_config['val_gt'] = PATH + '/sparse/data/vaihingen/area1/gt_9cm.tif'
-            dset_config['train_gt'] = PATH + '/sparse/data/vaihingen/area1/gt_9cm.tif'
-            dset_config['train_top'] = PATH + '/sparse/data/vaihingen/area1/top_9cm.tif'
-        else:
-            dset_config['val_gt'] = PATH+'/sparse/data/vaihingen/gt_complete_9cm.tif'
-            dset_config['train_gt'] = PATH+'/sparse/data/vaihingen/gt_9cm.tif'
-            dset_config['train_top'] = PATH+'/sparse/data/vaihingen/top_9cm.tif'
+        path_ = PATH+'/sparse/data/vaihingen/area1/' if DATASET == 'vaihingen1' else PATH+'/sparse/data/vaihingen/'
+        dset_config['val_gt'] = path_ + 'gt_9cm.tif'
+        dset_config['train_gt'] = path_ + 'gt_9cm.tif'
+        dset_config['dsm_gt'] = path_ + 'gt_dsm_9cm.tif'
+        dset_config['train_top'] = path_ + 'top_9cm.tif'
+
         dset_config['is_noS2'] = True
     else:
         print('DATASET {} Not defined'.format(DATASET))

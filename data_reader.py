@@ -299,26 +299,42 @@ class DataReader(object):
         return features, labels
     def reorder_ds(self, data_l, data_h):
         n = self.n_channels
-        if not self.two_ds:
-            if self.is_HR_labels:
-                return {'feat_l': data_l,
-                        'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1], axis=-1)
-            else:
-                return {'feat_l': data_l[..., 0:n],
-                        'feat_h': data_h}, tf.expand_dims(data_l[..., -1], axis=-1)
-        else:
+        if 'vaihingen' in self.args.dataset:
             if self.is_HR_labels:
                 return {'feat_l': data_l[...,:n],
                         'feat_h': data_h[..., 0:3],
                         'feat_lU': data_l[...,n:],
-                        'feat_hU': data_h[..., 4:7],},\
-                       tf.expand_dims(data_h[..., 3], axis=-1)
+                        'feat_hU': data_h[..., 5:8],},\
+                       data_h[..., 3:5]
             else:
                 return {'feat_l': data_l[..., 0:n],
                         'feat_h': data_h[...,0:3],
-                        'feat_lU': data_l[..., (n+1):2*n+1],
+                        'feat_lU': data_l[..., (n+2):2*n+2],
                         'feat_hU': data_h[..., 3:]},\
-                       tf.expand_dims(data_l[..., n], axis=-1)
+                       data_l[..., n:n+2]
+
+        else:
+
+            if not self.two_ds:
+                if self.is_HR_labels:
+                    return {'feat_l': data_l,
+                            'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1], axis=-1)
+                else:
+                    return {'feat_l': data_l[..., 0:n],
+                            'feat_h': data_h}, tf.expand_dims(data_l[..., -1], axis=-1)
+            else:
+                if self.is_HR_labels:
+                    return {'feat_l': data_l[...,:n],
+                            'feat_h': data_h[..., 0:3],
+                            'feat_lU': data_l[...,n:],
+                            'feat_hU': data_h[..., 4:7],},\
+                           tf.expand_dims(data_h[..., 3], axis=-1)
+                else:
+                    return {'feat_l': data_l[..., 0:n],
+                            'feat_h': data_h[...,0:3],
+                            'feat_lU': data_l[..., (n+1):2*n+1],
+                            'feat_hU': data_h[..., 3:]},\
+                           tf.expand_dims(data_l[..., n], axis=-1)
 
     def read_train_data(self):
         self.is_HR_labels = self.args.is_hr_label
@@ -365,13 +381,16 @@ class DataReader(object):
         self.std_train = self.train.std(axis=(0, 1))
         if self.args.save_arrays:
             f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
-            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
             # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
             # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
             # np.save(self.args.model_dir + '/train_HR',self.train_h)
             # np.save(self.args.model_dir + '/train_S2', self.train)
-
-            plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
+            if 'vaihingen' in self.args.dataset:
+                plot_heatmap(self.labels_val[...,1], file=self.args.model_dir + '/val_reg_label', min=0,percentiles=(0,100))
+                plot_rgb(self.labels_val[...,0], file=self.args.model_dir + '/val_sem_label', reorder=False, percentiles=(0, 100))
+            else:
+                plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
             plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
             plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
             np.save(self.args.model_dir + '/val_S2', self.val)
@@ -462,7 +481,7 @@ class DataReader(object):
 
         if self.args.save_arrays:
             f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
-            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
             # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
             # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
             # np.save(self.args.model_dir + '/train_HR',self.train_h)
@@ -543,12 +562,13 @@ class DataReader(object):
         else:
             sys.exit(1)
         multiplier = 2 if self.two_ds else 1
-
+        self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset else 1
+        n_lab = self.n_channels_lab
         if self.is_HR_labels:
             n_low = self.n_channels *multiplier
-            n_high = 4 *multiplier
+            n_high = (3+n_lab) *multiplier
         else:
-            n_low = (self.n_channels + 1)*multiplier
+            n_low = (self.n_channels + n_lab)*multiplier
             n_high = 3 *multiplier
         ds = tf.data.Dataset.from_generator(
             gen_func, (tf.float32, tf.float32),

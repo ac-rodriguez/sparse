@@ -266,7 +266,7 @@ def main(unused_args):
                 print ('Keeping old best {}:{}'.format(metric_,best))
 
         f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
-        plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='jet')
+        plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='vidiris')
 
         try:
             plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/sample_train_LR')
