@@ -925,6 +925,14 @@ class Model:
             progress = tools.get_progress(self.args)
             lr = tf.where(tf.less(progress,0.8), 1.0, 0.1)
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
+        elif self.args.optimizer == 'SGDb':
+            progress = tools.get_progress(self.args)
+            lr = tf.where(tf.less(progress,0.7), 1.0, 0.1)
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
+        elif self.args.optimizer == 'SGDc':
+            progress = tools.get_progress(self.args)
+            lr = tf.where(tf.less(progress,0.6), 1.0, 0.1)
+            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
         elif self.args.optimizer == 'momentum':
             optimizer = tf.train.MomentumOptimizer(learning_rate=self.args.lr, momentum=0.9, use_nesterov=True)
         elif self.args.optimizer == 'annealing':
