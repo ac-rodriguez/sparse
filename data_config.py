@@ -21,8 +21,10 @@ def get_dataset(DATASET, is_mounted = False):
     dset_config = {}
     if 'pf-pc' in socket.gethostname():
         PATH='/home/pf/pfstaff/projects/andresro'
+        PATH_TRAIN=PATH
     else:
         PATH='/cluster/work/igp_psr/andresro'
+        PATH_TRAIN='/cluster/scratch/andresro'
     if "coco" in DATASET:
         OBJECT='coco'
         dset_config['LR_file']=PATH+'/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
@@ -152,8 +154,8 @@ def get_dataset(DATASET, is_mounted = False):
     dset_config['HR_file']=os.path.join(PATH,'sparse/data',OBJECT)
 
     if is_mounted and 'pf-pc' in socket.gethostname():
-        PATH = '/scratch/andresro/leon_work'
-    dset_config['save_dir']=os.path.join(PATH,'sparse/training/snapshots',OBJECT,DATASET)
+        PATH_TRAIN = '/scratch/andresro/leon_work'
+    dset_config['save_dir']=os.path.join(PATH_TRAIN,'sparse/training/snapshots',OBJECT,DATASET)
 
     # dset_config = Namespace(**dset_config)
     return dset_config
