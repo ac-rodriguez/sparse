@@ -1,9 +1,10 @@
 import tensorflow as tf
-from tensorflow.contrib.tensorboard.plugins import projector
-import sys
+# from tensorflow.contrib.tensorboard.plugins import projector
+# import sys
 import numpy as np
 cross_entropy = tf.losses.sparse_softmax_cross_entropy
-import tensorflow.contrib.slim as slim
+# import tensorflow.contrib.slim as slim
+from AdaBound import AdaBoundOptimizer
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
@@ -919,6 +920,8 @@ class Model:
             optimizer = tf.train.AdagradOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'adam':
             optimizer = tf.train.AdamOptimizer(learning_rate=self.args.lr)
+        elif self.args.optimizer == 'adabound':
+            optimizer = AdaBoundOptimizer(learning_rate=self.args.lr, final_lr=10*self.args.lr)
         elif self.args.optimizer == 'SGD':
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'SGDa':
