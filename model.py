@@ -922,6 +922,10 @@ class Model:
             optimizer = tf.train.AdamOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'adabound':
             optimizer = AdaBoundOptimizer(learning_rate=self.args.lr, final_lr=10*self.args.lr)
+        elif self.args.optimizer == 'adaboundA':
+            optimizer = AdaBoundOptimizer(learning_rate=self.args.lr, final_lr=self.args.lr)
+        elif self.args.optimizer == 'adaboundB':
+            optimizer = AdaBoundOptimizer(learning_rate=self.args.lr, final_lr=0.1*self.args.lr)
         elif self.args.optimizer == 'SGD':
             optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'SGDa':
