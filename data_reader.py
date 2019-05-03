@@ -35,6 +35,16 @@ def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
         data20_interp = np.squeeze(data20_interp, axis=0)
 
     return data20_interp
+def downscale(img, scale):
+    scale = int(scale)
+    h, w, ch = img.shape
+    ref_shape = (h// scale,w//scale,ch)
+    imout = np.zeros(ref_shape)
+    for c in range(ch):
+        imout[...,c] = resize(img[...,c], ref_shape[0:2], anti_aliasing=True, anti_aliasing_sigma=float(scale)/np.pi, mode='reflect')
+
+    # img = (img - img.min()) / (img.max()-img.min())
+    return imout
 
 
 def read_and_upsample_sen2(args, roi_lon_lat):
@@ -342,14 +352,17 @@ class DataReader(object):
         print('\n [*] Loading TRAIN data \n')
 
         if 'vaihingen' in self.args.dataset:
+            # LR space reference is always 16 ds. from original HR image
             self.train_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_train)
-            self.train = gp.smooth_and_downscale(self.train_h, scale=self.args.scale)
+            self.train = downscale(self.train_h,16.0)
+            self.train_h = downscale(self.train_h,16//self.args.scale)
+            #  TODO check val label for vaihingen complete
             self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_train,dsm_file=self.args.dsm_train, is_HR=self.is_HR_labels)
         else:
             self.train_h = geotif.readHR(self.args,
                                          roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
             if self.args.is_noS2:
-                self.train = gp.smooth_and_downscale(self.train_h, scale=self.args.scale)
+                self.train = downscale(self.train_h, scale=self.args.scale)
             else:
                 self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
 
@@ -358,8 +371,14 @@ class DataReader(object):
 
         print('\n [*] Loading VALIDATION data \n')
         if 'vaihingen' in self.args.dataset:
-            self.val_h = self.train_h if self.args.top_train == self.args.top_val else geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_val)
-            self.val = self.train if self.args.top_train == self.args.top_val else gp.smooth_and_downscale(self.val_h, scale=self.args.scale)
+            if self.args.top_train == self.args.top_val:
+                self.val_h = self.train_h
+                self.val = self.train
+            else:
+                self.val_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_val)
+                self.val = downscale(self.val_h, scale=16)
+                self.val_h = downscale(self.val_h, scale=16//self.args.scale)
+
             self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_val, dsm_file=self.args.dsm_val, is_HR=self.is_HR_labels)
             if self.args.dataset == 'vaihingen':
                 self.labels_val[self.labels != -1.] = -1.
@@ -368,7 +387,7 @@ class DataReader(object):
             self.val_h = geotif.readHR(self.args,
                                 roi_lon_lat=self.args.roi_lon_lat_val) if self.args.HR_file is not None else None
             if self.args.is_noS2:
-                self.val = gp.smooth_and_downscale(self.val_h,scale=self.args.scale)
+                self.val = downscale(self.val_h,scale=self.args.scale)
             else:
                 self.val = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_val)
 
@@ -381,24 +400,7 @@ class DataReader(object):
         self.mean_train = self.train.mean(axis=(0, 1))
         self.max_dens = self.labels.max()
         self.std_train = self.train.std(axis=(0, 1))
-        if self.args.save_arrays:
-            f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
-            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
-            # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
-            # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
-            # np.save(self.args.model_dir + '/train_HR',self.train_h)
-            # np.save(self.args.model_dir + '/train_S2', self.train)
-            if 'vaihingen' in self.args.dataset:
-                plot_heatmap(self.labels_val[...,1], file=self.args.model_dir + '/val_reg_label', min=0,percentiles=(0,100))
-                plot_rgb(self.labels_val[...,0], file=self.args.model_dir + '/val_sem_label', reorder=False, percentiles=(0, 100))
-            else:
-                plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
-            plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, percentiles=(0, 100))
-            plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
-            np.save(self.args.model_dir + '/val_S2', self.val)
-            np.save(self.args.model_dir + '/val_HR', self.val_h)
-            np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
-            # sys.exit(0)
+
 
         if self.args.is_empty_aerial:
             self.train[(self.labels == -1)[..., 0], :] = 2000.0
@@ -441,6 +443,28 @@ class DataReader(object):
             print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
                                                                self.val_h.shape[0], self.val_h.shape[1]))
 
+        if self.args.save_arrays:
+            f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
+            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
+            # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
+            # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
+            # np.save(self.args.model_dir + '/train_HR',self.train_h)
+            # np.save(self.args.model_dir + '/train_S2', self.train)
+            if 'vaihingen' in self.args.dataset:
+                plot_heatmap(self.labels_val[...,1], file=self.args.model_dir + '/val_reg_label', min=0,percentiles=(0,100))
+                plot_rgb(self.labels_val[...,0], file=self.args.model_dir + '/val_sem_label', reorder=False, percentiles=(0, 100))
+                plot_rgb(self.val, file=self.args.model_dir + '/val_S2', reorder=False,normalize=False)
+
+            else:
+                plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
+                plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
+
+            plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, normalize=False)
+            np.save(self.args.model_dir + '/val_S2', self.val)
+            np.save(self.args.model_dir + '/val_HR', self.val_h)
+            np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
+            # sys.exit(0)
+
         if self.args.is_padding:
             a = self.patch_l - 1
             self.train =  np.pad(self.train, ((a,a),(a,a),(0,0)), mode='constant', constant_values=0.0)
@@ -456,7 +480,7 @@ class DataReader(object):
         self.test_h = geotif.readHR(self.args,
                              roi_lon_lat=self.args.roi_lon_lat_test) if self.args.HR_file is not None else None
         if self.args.is_noS2:
-            self.test = gp.smooth_and_downscale(self.test_h,scale=self.args.scale)
+            self.test = downscale(self.test_h,scale=self.args.scale)
         else:
             self.test = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_test)
         self.labels_test, self.lims_labels_test = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_test,

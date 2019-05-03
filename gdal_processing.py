@@ -650,9 +650,9 @@ def read_gt(refDataset, lims, ref_obj, scale_points=1,  path = None):
     # sys.exit(0)
     return labels, points
 
-def smooth_and_downscale(data, scale, sigma = None):
-
-    if sigma is None:
-        sigma = scale / np.pi
-    data = ndimage.gaussian_filter(data.astype(np.float32), sigma=sigma)
-    return block_reduce(data, (scale, scale, 1), np.sum)
+# def smooth_and_downscale(data, scale, sigma = None, func = np.sum):
+#
+#     if sigma is None:
+#         sigma = scale / np.pi
+#     data = ndimage.gaussian_filter(data.astype(np.float32), sigma=sigma)
+#     return block_reduce(data, (scale, scale, 1), func)

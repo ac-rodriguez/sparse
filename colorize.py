@@ -125,7 +125,7 @@ def colorize1(value, vmin=None, vmax=None, colors=None):
 #         outputs.append(img)
 #     return outputs
 
-def inv_preprocess_tf(imgs, img_mean, scale_luminosity, reorder=True):
+def inv_preprocess_tf(imgs, img_mean, scale_luminosity, s2=True):
     """Inverse preprocessing of the batch of images.
        Add the mean vector and convert from BGR to RGB.
 
@@ -144,13 +144,15 @@ def inv_preprocess_tf(imgs, img_mean, scale_luminosity, reorder=True):
 
     # img = (imgs[i]) * scale_luminosity
     # img = scale * imgs[i] / (1 - imgs[i])
-    img = plot_rgb(value)
+    if s2:
+        value = plot_rgb(value)
+    else:
+        value = tf.cast(value * 255.0, dtype=tf.uint8)
+    return value
 
-    return img
 
 
-
-def plot_rgb(value, max_luminance=4000, percentiles = (1,99)):
+def plot_rgb(value, max_luminance=4000, percentiles = (1,99), reorder = True):
 
     mi = tf.contrib.distributions.percentile(value,q=percentiles[0])
     ma = tf.contrib.distributions.percentile(value, q=percentiles[1])
@@ -169,8 +171,10 @@ def plot_rgb(value, max_luminance=4000, percentiles = (1,99)):
     # quantize
     # value = tf.to_int32(tf.round(value * 255))
     value = tf.cast(value * 255.0, dtype=tf.uint8)
-
-    return slice_last_dim(value, (2,1,0))
+    if reorder:
+        return slice_last_dim(value, (2,1,0))
+    else:
+        return value
 
 def slice_last_dim(tensor,dims):
     output = None

@@ -41,18 +41,20 @@ def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='viridis', f
     else:
         Image.fromarray(cm(band_data, bytes=True)).save(file+'.png')
 
-def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, percentiles = (1,99), bw = False):
+def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, percentiles = (1,99), bw = False, normalize=True):
 
     data[np.isnan(data)] = -1
 
-    mi, ma = np.nanpercentile(data, percentiles)
-    if mi < max_luminance:
-        ma = min(ma, max_luminance)
+    if normalize:
+        mi, ma = np.nanpercentile(data, percentiles)
+        if mi < max_luminance:
+            ma = min(ma, max_luminance)
 
-    band_data = np.clip(data, mi, ma)
-    if mi < ma: # added for when all uniform pixels are given
-        band_data = (band_data - mi) / (ma - mi)
-
+        band_data = np.clip(data, mi, ma)
+        if mi < ma: # added for when all uniform pixels are given
+            band_data = (band_data - mi) / (ma - mi)
+    else:
+        band_data = data
     band_data  = np.squeeze(band_data)
 
     if len(band_data.shape) == 2: ## If only one band is present plot as a heatmap

@@ -92,6 +92,8 @@ parser.add_argument("--scale-points", default=10, type=int,
                     help="Original Scale in which the GT points was calculated")
 parser.add_argument("--l2-weights-every", default=None, type=int,
                     help="How often to update the L2 norm of the weights")
+parser.add_argument("--gen-loss-every", default=2, type=int,
+                    help="How often to run generator loss on adversarial settings")
 parser.add_argument("--is-conv",dest='is_bilinear', default=True, action="store_false",
                     help="downsampling of HR_hat is bilinear (True) or conv (False).")
 parser.add_argument("--is-out-relu", default=False, action="store_true",
@@ -164,10 +166,14 @@ def main(unused_args):
     if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
     if args.batch_size_eval is None: args.batch_size_eval = args.batch_size
+    if args.lambda_reg == 0.0:
+        args.save_dir = args.save_dir+'_sem'
+    elif args.lambda_reg == 1.0:
+        args.save_dir = args.save_dir + '_reg'
 
     lambdas = 'Lr{:.1f}_Lw{:.4f}'.format(args.lambda_reg, args.lambda_weights)
-    model_dir = os.path.join(args.save_dir, 'MODEL{}_PATCH{}_{}_SCALE{}_CH{}_{}{}'.format(
-        args.model, args.patch_size, args.patch_size_eval, args.scale, args.n_channels, lambdas, args.tag))
+    model_dir = os.path.join(args.save_dir, '{}/PATCH{}_{}_SCALE{}_{}{}'.format(
+        args.model, args.patch_size, args.patch_size_eval, args.scale, lambdas, args.tag))
 
     if args.is_overwrite and os.path.exists(model_dir):
         print(' [!] Removing exsiting model and starting training from iter 0...')
@@ -192,13 +198,13 @@ def main(unused_args):
 
     params['model_dir'] = model_dir
     params['args'] = args
-
+    log_steps = 500
     if args.is_multi_gpu:
         strategy = tf.contrib.distribute.MirroredStrategy()
         run_config = tf.estimator.RunConfig(
-            train_distribute=strategy, eval_distribute=strategy, log_step_count_steps=200)
+            train_distribute=strategy, eval_distribute=strategy, log_step_count_steps=log_steps)
     else:
-        run_config = tf.estimator.RunConfig(log_step_count_steps=200)
+        run_config = tf.estimator.RunConfig(log_step_count_steps=log_steps)
     if args.warm_start_from is not None:
         if args.warm_start_from == 'LOWER':
             assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'

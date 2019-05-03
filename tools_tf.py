@@ -53,6 +53,13 @@ def avg_pool(X, scale, name=None):
     if len(X.shape) == 3: X = tf.expand_dims(X,-1)
     return tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
                           strides=(1, scale, scale, 1), padding='VALID', name=name)
+def median_pool(X, scale, name=None):
+    if len(X.shape) == 3: X = tf.expand_dims(X,-1)
+
+    patches = tf.extract_image_patches(X, [1, scale, scale, 1],[1, scale, scale, 1],4*[1], padding='VALID' )
+    median = tf.contrib.distributions.percentile(patches, 50, axis=-1)
+    return tf.identity(tf.expand_dims(median,-1), name=name)
+
 
 
 def bilinear(X, size, name=None):

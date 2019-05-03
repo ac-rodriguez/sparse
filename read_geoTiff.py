@@ -548,9 +548,9 @@ def read_labels_semseg(args, sem_file,dsm_file, is_HR):
     # 5 buildings
     # 255 with or without gt
 
-    if not is_HR:
-        ref_scale = args.scale
-        labels = block_reduce(labels,(ref_scale,ref_scale),np.median)
+    ref_scale = 16 //args.scale if is_HR else 16
+
+    labels = block_reduce(labels,(ref_scale,ref_scale),np.median)
 
     labels = labels.astype(np.float32)
     mask_out = labels == 255.0
@@ -558,9 +558,9 @@ def read_labels_semseg(args, sem_file,dsm_file, is_HR):
 
     labels_reg = readHR(args, roi_lon_lat=None, data_file=dsm_file, as_float=False)
     labels_reg = labels_reg.astype(np.float32)
-    if not is_HR:
-        ref_scale = args.scale
-        labels_reg = block_reduce(labels_reg,(ref_scale,ref_scale),np.mean)
+
+    labels_reg = block_reduce(labels_reg,(ref_scale,ref_scale),np.mean)
+
     labels_reg[mask_out] = -1.
 
     im_out = np.stack((labels,labels_reg), axis=-1)
