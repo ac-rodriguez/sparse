@@ -49,6 +49,7 @@ parser.add_argument("--is-same-volume", default=False, action="store_true",
 parser.add_argument("--not-save-arrays",dest='save_arrays', default=True, action="store_false",
                     help="save arrays of GT and input data")
 parser.add_argument("--warm-start-from", default=None, help="fine tune from MODELNAME or LOWER flag checkpoint")
+parser.add_argument("--low-task-evol", default=None,type=float, help="add an increasing lambda over time for low-res task")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
 parser.add_argument("--train-patches", default=5000, type=int,

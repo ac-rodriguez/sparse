@@ -260,7 +260,8 @@ class Model:
         self.lossTasks = 0.0
         if self.add_yhat:
             # lam_evol = tools.evolving_lambda(self.args)
-            lam_evol = 1.0
+            # lam_evol = 1.0
+            lam_evol = tools.evolving_lambda(self.args, height=self.args.low_task_evol) if self.args.low_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
                 loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
                 self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
