@@ -151,6 +151,7 @@ def main(unused_args):
     if args.is_same_volume: args.tag = '_samevol' + args.tag
     assert not (args.is_fake_hr_label and args.is_hr_label)
     if args.semi is not None: args.tag = '_'+args.semi + args.tag
+    if args.domain == 'None' or args.domain == 'none': args.domain = None
     if args.domain is not None: args.tag = '_'+args.domain + args.tag
 
     if args.is_lower_bound:
