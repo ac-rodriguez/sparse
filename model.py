@@ -111,7 +111,8 @@ class Model:
             self.labels = labels
             self.labelsh = None
 
-
+        self.losses = []
+        self.scale_losses = []
         self.compute_loss()
         self.compute_summaries()
 
@@ -257,18 +258,22 @@ class Model:
         label_sem, w = self.get_sem(labels, return_w=True)
         if "vaihingen" in self.args.dataset:
             labels = tf.expand_dims(labels[...,0],-1)
-        self.lossTasks = 0.0
+        # self.lossTasks = 0.0
         if self.add_yhat:
             # lam_evol = tools.evolving_lambda(self.args)
             # lam_evol = 1.0
             lam_evol = tools.evolving_lambda(self.args, height=self.args.low_task_evol) if self.args.low_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
                 loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
-                self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
+                self.losses.append(loss_reg)
+                self.scale_losses.append(self.args.lambda_reg * loss_reg * lam_evol)
+                # self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
                 tf.summary.scalar('loss/reg', loss_reg)
             if self.args.lambda_reg < 1.0:
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hat['sem'], weights=w)
-                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
+                self.losses.append(loss_sem)
+                self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
+                # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
                 tf.summary.scalar('loss/sem', loss_sem)
 
         if self.add_yhath and (self.is_training or not self.is_slim):
@@ -276,11 +281,15 @@ class Model:
             lam_evol = tools.evolving_lambda(self.args, height=self.args.high_task_evol) if self.args.high_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
                 loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
-                self.lossTasks += self.args.lambda_reg * loss_reg * lam_evol
+                self.losses.append(loss_reg)
+                self.scale_losses.append(self.args.lambda_reg * lam_evol)
+                # self.lossTasks += self.args.lambda_reg * loss_reg * lam_evol
                 tf.summary.scalar('loss/regH', loss_reg)
             if self.args.lambda_reg < 1.0:
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w)
-                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
+                self.losses.append(loss_sem)
+                self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
+                # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
                 tf.summary.scalar('loss/semH', loss_sem)
         # SR loss
         if self.is_sr and self.args.lambda_sr > 0:
@@ -296,7 +305,9 @@ class Model:
             else:
                 loss_sr = tf.nn.l2_loss(self.HR_hatU - self.feat_hU)
             tf.summary.scalar('loss/SR', loss_sr)
-            self.lossTasks += self.args.lambda_sr * w1 * loss_sr
+            self.losses.append(w1*loss_sr)
+            self.scale_losses.append(self.args.lambda_sr)
+            # self.lossTasks += self.args.lambda_sr * w1 * loss_sr
 
         self.loss = 0.0
         if self.is_training or not self.is_slim:
@@ -310,9 +321,12 @@ class Model:
         # Lambda_weights is always rescaled with 0.0005
         l2_weights = tf.add_n([tf.nn.l2_loss(v) for v in W])
         tf.summary.scalar('loss/L2Weigths', l2_weights)
-        self.loss_w = self.args.lambda_weights * l2_weights
-
-        self.loss = self.lossTasks + self.loss_w
+        # self.loss_w = self.args.lambda_weights * l2_weights
+        self.losses.append(l2_weights)
+        self.scale_losses.append(self.args.lambda_weights)
+        loss_with_scales = [a*b for a,b in zip(self.losses,self.scale_losses)]
+        self.loss = tf.reduce_sum(loss_with_scales)
+        # self.loss = self.lossTasks + self.loss_w
         grads = tf.gradients(self.loss, W, name='gradients')
         norm = tf.add_n([tf.norm(g, name='norm') for g in grads])
 
@@ -433,8 +447,9 @@ class Model:
                           cross_entropy(labels=tf.ones_like(self.score[..., 0], dtype=tf.int32), logits=self.scoreU)
 
             tf.summary.scalar('loss/domain_semi', loss_domain)
-
-            self.loss += loss_domain
+            self.losses.append(loss_domain)
+            self.scale_losses.append(1.0)
+            # self.loss += loss_domain
         else:
             if self.args.semi == 'semi':
                 self.fake_ = semi.discriminator(self.y_hat['reg'])
@@ -475,8 +490,9 @@ class Model:
             tf.summary.scalar('loss/gen', self.loss_gen)
             tf.summary.scalar('loss/disc', self.loss_disc)
 
-            self.loss+= self.loss_gen
-
+            # self.loss+= self.loss_gen
+            self.losses.append(self.loss_gen)
+            self.scale_losses.append(1.0)
     def add_domain_loss(self):
         assert self.is_domain_transfer, ' domain-loss not defined for model:{} '.format(self.model)
         lambda_domain = tools.evolving_lambda(self.args, height=1.0)
@@ -625,7 +641,9 @@ class Model:
         else:
             raise ValueError('{} loss domain-transfer not defined'.format(self.args.domain))
 
-        self.loss += loss_domain*lambda_domain
+        # self.loss += loss_domain*lambda_domain
+        self.losses.append(loss_domain)
+        self.scale_losses.append(lambda_domain)
 
     def compute_summaries(self):
         graph = tf.get_default_graph()
