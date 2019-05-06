@@ -273,14 +273,14 @@ class Model:
 
         if self.add_yhath and (self.is_training or not self.is_slim):
 
-            # label_sem, w = self.get_sem(self.labelsh, return_w=True)
+            lam_evol = tools.evolving_lambda(self.args, height=self.args.high_task_evol) if self.args.high_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
                 loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
-                self.lossTasks += self.args.lambda_reg * loss_reg
+                self.lossTasks += self.args.lambda_reg * loss_reg * lam_evol
                 tf.summary.scalar('loss/regH', loss_reg)
             if self.args.lambda_reg < 1.0:
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w)
-                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem
+                self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
                 tf.summary.scalar('loss/semH', loss_sem)
         # SR loss
         if self.is_sr and self.args.lambda_sr > 0:
