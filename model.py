@@ -49,7 +49,7 @@ class Model:
         self.is_adversarial = False
         self.not_s2 = "vaihingen" in self.args.dataset
         self.pad = self.args.sq_kernel*16//2 if self.args.sq_kernel else 16
-        if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model) and not '_l' in self.model and self.is_hr_label:
+        if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model or 'B_h' in self.model) and not '_l' in self.model and self.is_hr_label:
             self.hr_emb = True
 
     def get_w(self, lab):
@@ -235,15 +235,32 @@ class Model:
 
             Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
             self.y_hat = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
-            if self.two_ds:
-                EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
+            # if self.two_ds:
+                # EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
                 # _, = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
         elif self.model == 'countHRA_h': # Using only HR data on hr embedding
 
             Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             self.y_hat = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
-            if self.two_ds:
-                EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
+            # if self.two_ds:
+                # EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
+                # _, self.ZhU = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=True, config_volume=self.config)
+
+        elif self.model == 'countB_l': # Using only upscaled LR data on lr embedding
+            feat_l_up = self.up_(self.feat_l, 8)
+
+            Ench = semi.encode(input=feat_l_up, is_training=self.is_training, is_bn=True, scale = self.scale)
+            self.y_hat = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
+            # if self.two_ds:
+                # EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
+                # _, = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
+        elif self.model == 'countB_h': # Using only HR data on hr embedding
+            feat_l_up = self.up_(self.feat_l, 8)
+
+            Ench = semi.encode_same(input=feat_l_up, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+            self.y_hat = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
+            # if self.two_ds:
+                # EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
                 # _, self.ZhU = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=True, config_volume=self.config)
 
         elif 'DA_h' in self.model:
