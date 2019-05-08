@@ -92,6 +92,10 @@ class Model:
         else:
             self.config = None
 
+        if self.args.degraded_hr and self.is_training:
+
+            self.feat_h = tools.progressive_blur(self.feat_h, self.args, blur_probability=1.0)
+
         self.compute_predicitons()
 
         if mode == tf.estimator.ModeKeys.PREDICT:

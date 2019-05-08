@@ -1,6 +1,8 @@
 import os, glob, shutil
 import tensorflow as tf
+from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
+from tensorflow.python.eager import context
 from tensorflow.contrib.tensorboard.plugins import projector
 import numpy as np
 from tqdm import tqdm
@@ -8,6 +10,7 @@ from tqdm import tqdm
 import plots
 
 import patches
+
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
@@ -45,21 +48,24 @@ def sum_pool(X, scale, name=None):
                                       strides=(1, scale, scale, 1), padding='VALID'),
                        name=name)
 
+
 def max_pool(X, scale, name=None):
     return tf.nn.max_pool(X, ksize=(1, scale, scale, 1),
-                                      strides=(1, scale, scale, 1), padding='VALID', name=name)
+                          strides=(1, scale, scale, 1), padding='VALID', name=name)
+
 
 def avg_pool(X, scale, name=None):
-    if len(X.shape) == 3: X = tf.expand_dims(X,-1)
+    if len(X.shape) == 3: X = tf.expand_dims(X, -1)
     return tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
                           strides=(1, scale, scale, 1), padding='VALID', name=name)
+
+
 def median_pool(X, scale, name=None):
-    if len(X.shape) == 3: X = tf.expand_dims(X,-1)
+    if len(X.shape) == 3: X = tf.expand_dims(X, -1)
 
-    patches = tf.extract_image_patches(X, [1, scale, scale, 1],[1, scale, scale, 1],4*[1], padding='VALID' )
+    patches = tf.extract_image_patches(X, [1, scale, scale, 1], [1, scale, scale, 1], 4 * [1], padding='VALID')
     median = tf.contrib.distributions.percentile(patches, 50, axis=-1)
-    return tf.identity(tf.expand_dims(median,-1), name=name)
-
+    return tf.identity(tf.expand_dims(median, -1), name=name)
 
 
 def bilinear(X, size, name=None):
@@ -89,14 +95,13 @@ def get_lr_ADAM(optimizer, learning_rate):
     optim_learning_rate = (learning_rate * math_ops.sqrt(1 - beta2_power) / (1 - beta1_power))
 
     return optim_learning_rate
-from tensorflow.python.framework import ops
-from tensorflow.python.ops import math_ops
-from tensorflow.python.eager import context
+
+
 def inv_lr_decay(learning_rate, global_step, gamma, power, name=None):
     if global_step is None:
         raise ValueError("global_step is required for inv_decay.")
     with ops.name_scope(name, "InvDecay", \
-                      [learning_rate, global_step, gamma, power]) as name:
+                        [learning_rate, global_step, gamma, power]) as name:
         learning_rate = ops.convert_to_tensor(learning_rate, name="learning_rate")
         dtype = learning_rate.dtype
         gamma = math_ops.cast(gamma, dtype)
@@ -107,11 +112,11 @@ def inv_lr_decay(learning_rate, global_step, gamma, power, name=None):
             # base = math_ops.multiply(gamma, global_step)
             # return math_ops.multiply( \
             #         learning_rate, math_ops.pow(1+base, -power), name=name)
-            return tf.identity(learning_rate * ((1 + gamma*global_step)**(-power)),name=name)
+            return tf.identity(learning_rate * ((1 + gamma * global_step) ** (-power)), name=name)
+
         if not context.executing_eagerly():
             decayed_lr = decayed_lr(global_step)
         return decayed_lr
-
 
 
 class SessionHook(tf.train.SessionRunHook):
@@ -128,7 +133,7 @@ class SessionHook(tf.train.SessionRunHook):
 
         self._tensor_names = [values, labels]
         self._embeddings = [[], []]
-        self.num_batches= num_batches
+        self.num_batches = num_batches
         self.iter = 0
 
     def begin(self):
@@ -138,6 +143,7 @@ class SessionHook(tf.train.SessionRunHook):
         self._embeddings = [[], []]
 
         pass
+
     #     """ Initialise the iterator after the session has been created."""
     #     self.iterator_initializer_func(session)
 
@@ -149,14 +155,15 @@ class SessionHook(tf.train.SessionRunHook):
             self.n_batch = run_values[0][0].shape[0]
             self.n_feat = run_values[0][0].shape[-1]
             self.n_pixels = run_values[0][0].shape[1] * run_values[0][0].shape[2]
-            self.sample_ind = np.random.choice(self.n_pixels,int(self.n_pixels *0.1), replace=False)
+            self.sample_ind = np.random.choice(self.n_pixels, int(self.n_pixels * 0.1), replace=False)
         if self.iter <= self.num_batches:
-            val_ = run_values[0][0].reshape(self.n_batch, -1,self.n_feat)[:,self.sample_ind,:].reshape(-1,self.n_feat)
-            lab_ = run_values[0][1].reshape(self.n_batch, -1)[:,self.sample_ind].reshape(-1)
+            val_ = run_values[0][0].reshape(self.n_batch, -1, self.n_feat)[:, self.sample_ind, :].reshape(-1,
+                                                                                                          self.n_feat)
+            lab_ = run_values[0][1].reshape(self.n_batch, -1)[:, self.sample_ind].reshape(-1)
             # lab_ = np.mean(lab_,axis=0)
             self._embeddings[0].extend(val_)
             self._embeddings[1].extend(lab_)
-            self.iter+=1
+            self.iter += 1
 
     def end(self, session):
         pass
@@ -182,7 +189,7 @@ def get_embeddings(hook, Model_fn, suffix=''):
 
         embedding_var = tf.Variable(np.array(values), name='emb_values')
 
-        path = os.path.join(Model_fn.model_dir, 'projector'+suffix)
+        path = os.path.join(Model_fn.model_dir, 'projector' + suffix)
         metadata = os.path.join(path, 'metadata.tsv')
         if not os.path.isdir(path):
             os.makedirs(path)
@@ -211,37 +218,38 @@ def get_embeddings(hook, Model_fn, suffix=''):
 
 
 def get_last_best_ckpt(path, folder='best_checkpoints'):
-    list_of_files = glob.glob(path+'/{}/*.ckpt*index'.format(folder))
+    list_of_files = glob.glob(path + '/{}/*.ckpt*index'.format(folder))
     assert len(list_of_files) > 0, 'no .ckpt found in {}/{}'.format(path, folder)
-    last_file = max(list_of_files,key=os.path.getctime)
-    return last_file.replace('.index','')
+    last_file = max(list_of_files, key=os.path.getctime)
+    return last_file.replace('.index', '')
 
 
 def copy_last_ckpt(path, folder):
-    destination_dir = os.path.join(path,folder)
-    list_of_files = glob.glob(path+'/*.ckpt*index')
+    destination_dir = os.path.join(path, folder)
+    list_of_files = glob.glob(path + '/*.ckpt*index')
     assert len(list_of_files) > 0, 'no .ckpt found in {}'.format(path)
 
-    last_file = max(list_of_files,key=os.path.getctime)
-    list_to_copy = glob.glob(last_file.replace('.index','')+'*')
+    last_file = max(list_of_files, key=os.path.getctime)
+    list_to_copy = glob.glob(last_file.replace('.index', '') + '*')
     for file in list_to_copy:
-      # print('copying {}'.format(file))
-      shutil.copy(file, destination_dir)
+        # print('copying {}'.format(file))
+        shutil.copy(file, destination_dir)
+
 
 class Checkpoint(object):
-  dir = None
-  file = None
-  score = None
-  path = None
+    dir = None
+    file = None
+    score = None
+    path = None
 
-  def __init__(self, path, score):
-    self.dir = os.path.dirname(path)
-    self.file = os.path.basename(path)
-    self.score = score
-    self.path = path
+    def __init__(self, path, score):
+        self.dir = os.path.dirname(path)
+        self.file = os.path.basename(path)
+        self.score = score
+        self.path = path
 
-def batch_outerproduct(X, Y,n_feat=500, randomized= False, seeds=(100,101)):
 
+def batch_outerproduct(X, Y, n_feat=500, randomized=False, seeds=(100, 101)):
     X = tf.layers.flatten(X)
     Y = tf.layers.flatten(Y)
 
@@ -249,16 +257,16 @@ def batch_outerproduct(X, Y,n_feat=500, randomized= False, seeds=(100,101)):
         m1 = tf.random.normal(tf.TensorShape([X.shape[-1], n_feat]), seed=seeds[0])
         m2 = tf.random.normal(tf.TensorShape([Y.shape[-1], n_feat]), seed=seeds[1])
 
-        X = tf.tensordot(X,m1,axes=1)
-        Y = tf.tensordot(Y,m2,axes=1)
-        denominator= (float(n_feat)**(0.5))
+        X = tf.tensordot(X, m1, axes=1)
+        Y = tf.tensordot(Y, m2, axes=1)
+        denominator = (float(n_feat) ** 0.5)
     else:
         denominator = 1.0
 
-    return tf.expand_dims(tf.expand_dims(X, 2) * tf.expand_dims(Y, 1)/denominator, -1)
+    return tf.expand_dims(tf.expand_dims(X, 2) * tf.expand_dims(Y, 1) / denominator, -1)
 
 
-def pair_distance(A,B,n_feat=500, randomized= False, seeds=(100,101)):
+def pair_distance(A, B, n_feat=500, randomized=False, seeds=(100, 101)):
     A = tf.layers.flatten(A)
     B = tf.layers.flatten(B)
     if randomized:
@@ -267,7 +275,7 @@ def pair_distance(A,B,n_feat=500, randomized= False, seeds=(100,101)):
 
         A = tf.tensordot(A, m1, axes=1)
         B = tf.tensordot(B, m2, axes=1)
-        denominator= (float(n_feat)**(0.5))
+        denominator = (float(n_feat) ** 0.5)
     else:
         denominator = 1.0
 
@@ -283,11 +291,14 @@ def pair_distance(A,B,n_feat=500, randomized= False, seeds=(100,101)):
     D = tf.square(A2 - 2 * AB + B2)
     return D / denominator
 
+
 def get_progress(args):
     progress = tf.cast(tf.train.get_global_step(), tf.float32) / (
             np.sum(args.train_patches) * args.epochs / float(args.batch_size))
     return progress
-def evolving_lambda(args, height=1.0,lower=0.1,alpha=10.0):
+
+
+def evolving_lambda(args, height=1.0, lower=0.1, alpha=10.0):
     # height = 100.0
     # lower = 0.0
     # alpha = 10.0
@@ -296,7 +307,46 @@ def evolving_lambda(args, height=1.0,lower=0.1,alpha=10.0):
     return lambda_evol
 
 
-def save_m(name,m):
+def gaussian_kernel(size, mean, std, ):
+    """Makes 2D gaussian Kernel for convolution."""
+
+    d = tf.distributions.Normal(mean, std)
+
+    vals = d.prob(tf.range(start=-size, limit=size + 1, dtype=tf.float32))
+
+    gauss_kernel = tf.einsum('i,j->ij',
+                             vals,
+                             vals)
+
+    return gauss_kernel / tf.reduce_sum(gauss_kernel)
+
+
+def gaussian_noise_layer(input_layer, std):
+    noise = tf.random_normal(shape=tf.shape(input_layer), mean=0.0, stddev=std, dtype=tf.float32)
+    return input_layer + noise
+
+
+def progressive_blur(img, args, blur_probability=0.0):
+    progress = get_progress(args)
+    alpha = 5.0
+    lower = 0.0001
+    filter_size = 5
+    height = args.scale
+    scale_evol = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
+
+    sigma = scale_evol * tf.where(tf.greater(blur_probability, tf.random.uniform([1])), [1.0], [0.0])
+
+    # # Make Gaussian Kernel with desired specs.
+    gauss_kernel = gaussian_kernel(5, (filter_size - 1) / 2.0, sigma)
+    #
+    gauss_kernel = gauss_kernel[:, :, tf.newaxis]
+    kernel = tf.stack([gauss_kernel for _ in range(3)], 2)
+
+    imout = tf.nn.depthwise_conv2d(img, kernel, strides=[1, 1, 1, 1], padding="SAME")
+    return imout
+
+
+def save_m(name, m):
     with open(name, 'w') as f:
         sorted_names = sorted(m.keys(), key=lambda x: x.lower())
         for key in sorted_names:
@@ -304,8 +354,8 @@ def save_m(name,m):
             f.write('%s:%s\n' % (key, value))
 
 
-def predict_and_recompose(model,reader, input_fn, patch_generator,is_hr_pred,batch_size, type_,
-                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None,chkpt_path=None):
+def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
+                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None):
     model_dir = model.model_dir
     save_dir = os.path.join(model_dir, prefix)
     if not os.path.isdir(save_dir): os.makedirs(save_dir)
@@ -384,74 +434,76 @@ def predict_and_recompose(model,reader, input_fn, patch_generator,is_hr_pred,bat
     if return_array:
         return data_r_recomposed, data_c_recomposed
 
+
 class BestCheckpointCopier(tf.estimator.Exporter):
-  checkpoints = None
-  checkpoints_to_keep = None
-  compare_fn = None
-  name = None
-  score_metric = None
-  sort_key_fn = None
-  sort_reverse = None
+    checkpoints = None
+    checkpoints_to_keep = None
+    compare_fn = None
+    name = None
+    score_metric = None
+    sort_key_fn = None
+    sort_reverse = None
 
-  def __init__(self, name='best_checkpoints', checkpoints_to_keep=5, score_metric='Loss/total_loss', compare_fn=lambda x,y: x.score < y.score, sort_key_fn=lambda x: x.score, sort_reverse=False):
-    self.checkpoints = []
-    self.checkpoints_to_keep = checkpoints_to_keep
-    self.compare_fn = compare_fn
-    self.name = name
-    self.score_metric = score_metric
-    self.sort_key_fn = sort_key_fn
-    self.sort_reverse = sort_reverse
-    super(BestCheckpointCopier, self).__init__()
+    def __init__(self, name='best_checkpoints', checkpoints_to_keep=5, score_metric='Loss/total_loss',
+                 compare_fn=lambda x, y: x.score < y.score, sort_key_fn=lambda x: x.score, sort_reverse=False):
+        self.checkpoints = []
+        self.checkpoints_to_keep = checkpoints_to_keep
+        self.compare_fn = compare_fn
+        self.name = name
+        self.score_metric = score_metric
+        self.sort_key_fn = sort_key_fn
+        self.sort_reverse = sort_reverse
+        super(BestCheckpointCopier, self).__init__()
 
-  def _copyCheckpoint(self, checkpoint):
-    desination_dir = self._destinationDir(checkpoint)
-    if not os.path.isdir(desination_dir):os.makedirs(desination_dir)
+    def _copyCheckpoint(self, checkpoint):
+        desination_dir = self._destinationDir(checkpoint)
+        if not os.path.isdir(desination_dir): os.makedirs(desination_dir)
 
-    for file in glob.glob(r'{}*'.format(checkpoint.path)):
-      self._log('copying {} to {}'.format(file, desination_dir))
-      shutil.copy(file, desination_dir)
+        for file in glob.glob(r'{}*'.format(checkpoint.path)):
+            self._log('copying {} to {}'.format(file, desination_dir))
+            shutil.copy(file, desination_dir)
 
-  def _destinationDir(self, checkpoint):
-    return os.path.join(checkpoint.dir, self.name)
+    def _destinationDir(self, checkpoint):
+        return os.path.join(checkpoint.dir, self.name)
 
-  def _keepCheckpoint(self, checkpoint):
-    self._log('keeping checkpoint {} with score {}'.format(checkpoint.file, checkpoint.score))
+    def _keepCheckpoint(self, checkpoint):
+        self._log('keeping checkpoint {} with score {}'.format(checkpoint.file, checkpoint.score))
 
-    self.checkpoints.append(checkpoint)
-    self.checkpoints = sorted(self.checkpoints, key=self.sort_key_fn, reverse=self.sort_reverse)
+        self.checkpoints.append(checkpoint)
+        self.checkpoints = sorted(self.checkpoints, key=self.sort_key_fn, reverse=self.sort_reverse)
 
-    self._copyCheckpoint(checkpoint)
+        self._copyCheckpoint(checkpoint)
 
-  def _log(self, statement):
-    tf.logging.info('[{}] {}'.format(self.__class__.__name__, statement))
+    def _log(self, statement):
+        tf.logging.info('[{}] {}'.format(self.__class__.__name__, statement))
 
-  def _pruneCheckpoints(self, checkpoint):
-    destination_dir = self._destinationDir(checkpoint)
+    def _pruneCheckpoints(self, checkpoint):
+        destination_dir = self._destinationDir(checkpoint)
 
-    for checkpoint in self.checkpoints[self.checkpoints_to_keep:]:
-      self._log('removing old checkpoint {} with score {}'.format(checkpoint.file, checkpoint.score))
+        for checkpoint in self.checkpoints[self.checkpoints_to_keep:]:
+            self._log('removing old checkpoint {} with score {}'.format(checkpoint.file, checkpoint.score))
 
-      old_checkpoint_path = os.path.join(destination_dir, checkpoint.file)
-      for file in glob.glob(r'{}*'.format(old_checkpoint_path)):
-        self._log('removing old checkpoint file {}'.format(file))
-        os.remove(file)
+            old_checkpoint_path = os.path.join(destination_dir, checkpoint.file)
+            for file in glob.glob(r'{}*'.format(old_checkpoint_path)):
+                self._log('removing old checkpoint file {}'.format(file))
+                os.remove(file)
 
-    self.checkpoints = self.checkpoints[0:self.checkpoints_to_keep]
+        self.checkpoints = self.checkpoints[0:self.checkpoints_to_keep]
 
-  def _score(self, eval_result):
-    return float(eval_result[self.score_metric])
+    def _score(self, eval_result):
+        return float(eval_result[self.score_metric])
 
-  def _shouldKeep(self, checkpoint):
-    return len(self.checkpoints) < self.checkpoints_to_keep or self.compare_fn(checkpoint, self.checkpoints[-1])
+    def _shouldKeep(self, checkpoint):
+        return len(self.checkpoints) < self.checkpoints_to_keep or self.compare_fn(checkpoint, self.checkpoints[-1])
 
-  def export(self, estimator, export_path, checkpoint_path, eval_result, is_the_final_export):
-    self._log('export checkpoint {}'.format(checkpoint_path))
+    def export(self, estimator, export_path, checkpoint_path, eval_result, is_the_final_export):
+        self._log('export checkpoint {}'.format(checkpoint_path))
 
-    score = self._score(eval_result)
-    checkpoint = Checkpoint(path=checkpoint_path, score=score)
+        score = self._score(eval_result)
+        checkpoint = Checkpoint(path=checkpoint_path, score=score)
 
-    if self._shouldKeep(checkpoint):
-      self._keepCheckpoint(checkpoint)
-      self._pruneCheckpoints(checkpoint)
-    else:
-      self._log('skipping checkpoint {}'.format(checkpoint.path))
+        if self._shouldKeep(checkpoint):
+            self._keepCheckpoint(checkpoint)
+            self._pruneCheckpoints(checkpoint)
+        else:
+            self._log('skipping checkpoint {}'.format(checkpoint.path))

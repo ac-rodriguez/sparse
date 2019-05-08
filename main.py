@@ -42,6 +42,8 @@ parser.add_argument("--is-fake-hr-label", default=False, action="store_true",
                     help="compute label on the LR resolultion and to ")
 parser.add_argument("--is-noS2", default=False, action="store_true",
                     help="compute LR from HR and don't use S2")
+parser.add_argument("--is-degraded-hr", dest='degraded_hr',default=False, action="store_true",
+                    help="add a progressive blur to HR images, (scale 1 to low res equivalence)")
 parser.add_argument("--is-adversarial", default=False, action="store_true",
                     help="use adverarial GAN-like optimization instead of GRL")
 parser.add_argument("--is-multi-task", default=False, action="store_true",
