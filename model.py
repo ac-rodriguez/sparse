@@ -206,7 +206,7 @@ class Model:
             feat = semi.encode(self.HR_hat, is_training=self.is_training, is_bn=True)
             feat = tf.concat([feat, self.feat_l], axis=3)
             self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
-        elif self.model == 'countHR':
+        elif self.model == 'countHR_lb':
             feat_l_up = self.up_(self.feat_l, 8)
             feat = tf.concat([self.feat_h, feat_l_up[..., 3:]], axis=3)
             self.y_hat , mid,last = countception(feat,pad=self.pad, is_training=self.is_training, is_return_feat=True)
@@ -231,13 +231,21 @@ class Model:
 
                 _, self.ZhU = countception(feat, pad=self.pad, is_training=self.is_training,
                                                   is_return_feat=True)
-        elif self.model == 'countHR_lb': # Using HR channels only
+        elif self.model == 'countHRA_l': # Using only HR data on lr embedding
 
             Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale = self.scale)
-            self.y_hat, self.Zh = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=True)
+            self.y_hat = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
             if self.two_ds:
                 EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
-                _, self.ZhU = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=True)
+                # _, = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
+        elif self.model == 'countHRA_h': # Using only HR data on hr embedding
+
+            Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+            self.y_hat = countception(Ench,pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
+            if self.two_ds:
+                EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
+                # _, self.ZhU = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=True, config_volume=self.config)
+
         elif 'DA_h' in self.model:
             self.daH_models()
 
