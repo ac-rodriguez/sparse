@@ -3,15 +3,17 @@ import tensorflow as tf
 # import sys
 import numpy as np
 cross_entropy = tf.losses.sparse_softmax_cross_entropy
-# import tensorflow.contrib.slim as slim
+
 from AdaBound import AdaBoundOptimizer
 
 from colorize import colorize, inv_preprocess_tf
 from models_reg import simple, countception
 import models_sr as sr
-# from tools_tf import bilinear, snr_metric, sum_pool, avg_pool, max_pool, get_lr_ADAM, batch_outerproduct
+
 import tools_tf as tools
 import models_semi as semi
+# import min_norm_solvers_tf as solver
+# import min_norm_solvers_numpy as solvernp
 class Model:
     def __init__(self, params):
         self.args = params['args']
@@ -134,11 +136,12 @@ class Model:
 
     def compute_predicitons(self):
         size = self.patch_size * self.args.scale
+        self.is_small = not ('1' in self.model)
         # Baseline Models
         if self.model == 'simple' or self.model == 'simpleA':  # Baseline  No High Res for training
             earlyl = self.feat_l
             if self.model == 'simpleA':
-                earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=True)
+                earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             self.y_hat = simple(earlyl, n_channels=1, is_training=self.is_training)
         elif self.model == 'count' or self.model == 'counth':
             self.y_hat = countception(self.feat_l,pad=self.pad, is_training=self.is_training, config_volume=self.config)
@@ -152,7 +155,7 @@ class Model:
                 self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
         elif self.model == 'countA' or self.model == 'countAh':
 
-            earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=True)
+            earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             self.y_hat = countception(earlyl, pad=self.pad, is_training=self.is_training,config_volume=self.config)
 
             if self.model == 'countAh':  # using down-sampled HR images too
@@ -309,7 +312,29 @@ class Model:
             self.scale_losses.append(self.args.lambda_sr)
             # self.lossTasks += self.args.lambda_sr * w1 * loss_sr
 
-        self.loss = 0.0
+        # if self.args.is_multi_task:
+        #
+        #     optimizer = self.get_optimiter()
+        #
+        #     grads = {}
+        #     tasks = range(len(self.losses))
+        #     shared_vars = [x for x in tf.trainable_variables() if 'countception' in x.name]
+        #     for t in tasks:
+        #         # only the gradient for each task
+        #         grads[t] = [x[0] for x in optimizer.compute_gradients(self.losses[t], var_list=shared_vars) if x[0] is not None]
+        #
+        #     gn = solver.gradient_normalizers(grads, self.losses, 'loss+')
+        #     for t in tasks:
+        #         for gr_i in range(len(grads[t])):
+        #             grads[t][gr_i] = grads[t][gr_i] / gn[t]
+        #     NormSolver = solvernp.MinNormSolverNumpy()
+        #     # Frank-Wolfe iteration to compute scales.
+        #
+        #     sol, min_norm = tf.py_func(NormSolver.find_min_norm_element, [grads[t] for t in tasks], tf.float32)
+        #
+        #     for i, t in enumerate(tasks):
+        #         self.scale_losses[t] = sol[i]
+
         if self.is_training or not self.is_slim:
             if self.is_semi:
                 self.add_semi_loss()
@@ -324,7 +349,10 @@ class Model:
         # self.loss_w = self.args.lambda_weights * l2_weights
         self.losses.append(l2_weights)
         self.scale_losses.append(self.args.lambda_weights)
-        loss_with_scales = [a*b for a,b in zip(self.losses,self.scale_losses)]
+
+
+
+        loss_with_scales = [a * b for a, b in zip(self.losses, self.scale_losses)]
         self.loss = tf.reduce_sum(loss_with_scales)
         # self.loss = self.lossTasks + self.loss_w
         grads = tf.gradients(self.loss, W, name='gradients')
@@ -332,19 +360,20 @@ class Model:
 
         tf.summary.scalar('loss/L2Grad', norm)
 
+
     def daH_models(self):
         assert self.hr_emb
         self.is_domain_transfer = True
         self.add_yhath = True
 
-        is_small = ('1' in self.model)
+
         assert 'countDA_h' in self.model, 'model {} not defined for DA'.format(self.model)
 
         earlyl = semi.decode(self.feat_l, is_training=self.is_training, is_bn=True, scale=self.scale)
         self.y_hat, midl, latel = countception(earlyl, pad=self.pad, is_training=self.is_training, is_return_feat=True,
                                            config_volume=self.config)
         if self.is_training or not self.is_slim:
-            earlyh = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=is_small)
+            earlyh = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             self.y_hath, midh, lateh = countception(earlyh, pad=self.pad, is_training=self.is_training, is_return_feat=True,
                                                 config_volume=self.config)
         else:
@@ -368,9 +397,8 @@ class Model:
         self.is_domain_transfer = True
         self.add_yhath = True
 
-        is_small = ('1' in self.model)
         assert 'countDA' in self.model, 'model {} not defined for DA'.format(self.model)
-        earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=is_small)
+        earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
         self.y_hat, midl, latel = countception(earlyl, pad=self.pad, is_training=self.is_training,
                                                is_return_feat=True,  config_volume=self.config)
 

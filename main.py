@@ -44,6 +44,8 @@ parser.add_argument("--is-noS2", default=False, action="store_true",
                     help="compute LR from HR and don't use S2")
 parser.add_argument("--is-adversarial", default=False, action="store_true",
                     help="use adverarial GAN-like optimization instead of GRL")
+parser.add_argument("--is-multi-task", default=False, action="store_true",
+                    help="use multi task optimizarion for all the losses")
 parser.add_argument("--is-same-volume", default=False, action="store_true",
                     help="compute same embedding volume for LR and HR models")
 parser.add_argument("--not-save-arrays",dest='save_arrays', default=True, action="store_false",
@@ -216,6 +218,10 @@ def main(unused_args):
             warm_dir = os.path.join(args.save_dir,args.warm_start_from)
             if not os.path.isdir(warm_dir):
                 warm_dir = args.warm_start_from
+            best = False
+            if best:
+                warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
+
         warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
     else:
         warm_dir = None
