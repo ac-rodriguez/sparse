@@ -94,7 +94,10 @@ class Model:
 
         if self.args.degraded_hr and self.is_training:
 
-            self.feat_h = tools.progressive_blur(self.feat_h, self.args, blur_probability=1.0)
+            self.feat_h = tools.low_pass_filter(self.feat_h, self.args, blur_probability=1.0)
+        else:
+            self.feat_h = tools.low_pass_filter(self.feat_h, self.args, blur_probability=1.0, progressive=False)
+
 
         self.compute_predicitons()
 
@@ -365,13 +368,28 @@ class Model:
         #         self.scale_losses[t] = sol[i]
 
         if self.is_training or not self.is_slim:
+            if self.args.distill_from is not None:
+                best = True
+                if best:
+                    distill_from = tools.get_last_best_ckpt(self.args.distill_from,'best/*')
+                else:
+                    distill_from = self.args.distill_from
+                # scope1 = 'encode_same' if 'h' in self.model else 'encode'
+                # scope2 = 'countception' if 'count' in self.model else 'simple'
+                # dict_vars = [x for x in tf.trainable_variables() if scope1 in x.name or scope2 in x.name]
+                # dict_vars = {x.name.split(':')[0]:x.name.split(':')[0] for x in dict_vars}
+                # tf.train.init_from_checkpoint(distill_from,dict_vars)
+                self.DIS_models()
+                tf.train.init_from_checkpoint(distill_from,{'/': 'teacher/'})
+
+                self.add_distilled_loss()
             if self.is_semi:
                 self.add_semi_loss()
             if self.args.domain is not None:
                 self.add_domain_loss()
 
         # L2 weight Regularizer
-        W = [v for v in tf.trainable_variables()] # if ('weights' in v.name or 'kernel' in v.name)
+        W = [v for v in tf.trainable_variables() if not 'teacher' in v.name] # if ('weights' in v.name or 'kernel' in v.name)
         # Lambda_weights is always rescaled with 0.0005
         l2_weights = tf.add_n([tf.nn.l2_loss(v) for v in W])
         tf.summary.scalar('loss/L2Weigths', l2_weights)
@@ -487,6 +505,19 @@ class Model:
 
         else:
             raise ValueError('Model {} not defined'.format(self.model))
+    def DIS_models(self):
+
+        if 'h' in self.model:
+            with tf.variable_scope('teacher'):
+                Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+                self.y_hath = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
+                                          config_volume=self.config)
+        else:
+            with tf.variable_scope('teacher'):
+                Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True)
+                self.y_hath = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
+                                          config_volume=self.config)
+
 
     def add_semi_loss(self):
         # TODO fix label and labelh separation
@@ -594,8 +625,8 @@ class Model:
                 axis=0)
             logits = tf.concat((self.scoreh, self.scorel), axis=0)
             self.loss_disc = lambda_domain*cross_entropy(labels, logits)
-            self.vars_d = [v for v in tf.trainable_variables() if 'domain_discriminator' in v.name]
-            self.vars_g = [v for v in tf.trainable_variables() if not 'domain_discriminator' in v.name]
+            self.vars_d = [v for v in tf.trainable_variables() if 'domain_discriminator' in v.name and not 'teacher' in v.name]
+            self.vars_g = [v for v in tf.trainable_variables() if not 'domain_discriminator' in v.name and not 'teacher' in v.name]
             loss_gen = cross_entropy(tf.ones_like(self.scorel[..., 0], dtype=tf.int32),self.scorel)
             loss_domain = loss_gen
             self.is_adversarial = True
@@ -701,6 +732,21 @@ class Model:
         # self.loss += loss_domain*lambda_domain
         self.losses.append(loss_domain)
         self.scale_losses.append(lambda_domain)
+    def add_distilled_loss(self):
+        if self.args.lambda_reg == 1.0:
+            y_hat_ = self.y_hat['reg']
+            y_hath_ = self.y_hath['reg']
+        elif self.args.lambda_reg == 0.0:
+            y_hat_ = self.y_hat['sem']
+            y_hath_ = self.y_hath['sem']
+        else:
+            y_hat_ = tf.concat((self.y_hat['reg'], self.y_hat['sem']), axis=-1)
+            y_hath_ = tf.concat((self.y_hath['reg'], self.y_hath['sem']), axis=-1)
+        loss_dst = tf.losses.mean_squared_error(y_hat_, y_hath_)
+        lambda_dst = 1.0
+        self.losses.append(loss_dst)
+        self.scale_losses.append(lambda_dst)
+        tf.summary.scalar('loss/distilled', loss_dst)
 
     def compute_summaries(self):
         graph = tf.get_default_graph()
@@ -911,7 +957,7 @@ class Model:
         # slim.model_analyzer.analyze_vars(
         #     tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-
+        vars_train = [x for x in tf.trainable_variables() if not 'teacher' in x.name]
         with tf.control_dependencies(update_ops):
             step = tf.train.get_global_step()
             if self.args.l2_weights_every is None:
@@ -923,13 +969,13 @@ class Model:
                                             true_fn=lambda: train_g,
                                             false_fn=lambda: train_d)
                 else:
-                    self.train_op = optimizer.minimize(self.loss, global_step=step)
+                    self.train_op = optimizer.minimize(self.loss, global_step=step, var_list=vars_train)
                 if self.args.optimizer == 'adam':
-                    lr_adam = tools.get_lr_ADAM(optimizer, learning_rate=0.01)
+                    lr_adam = tools.get_lr_ADAM(optimizer, learning_rate=self.args.lr)
                     tf.summary.scalar('loss/adam_lr', tf.log(lr_adam))
             else:
-                train_op1 = optimizer.minimize(self.lossTasks, global_step=step)
-                train_op2 = optimizer.minimize(self.loss_w, global_step=step)
+                train_op1 = optimizer.minimize(self.lossTasks, global_step=step,var_list=vars_train)
+                train_op2 = optimizer.minimize(self.loss_w, global_step=step, var_list=vars_train)
                 self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, self.args.l2_weights_every))),
                                         true_fn=lambda: train_op1,
                                         false_fn=lambda: train_op2)

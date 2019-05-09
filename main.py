@@ -110,6 +110,8 @@ parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--semi-supervised",dest='semi', default=None,
                     help="semi-supervised adversarial task")
+parser.add_argument("--distill-from", default=None, type=str,
+                    help="distill from a pretrained HR based model")
 parser.add_argument("--domain-loss",dest='domain', default=None,
                     help="domain transfer model  HR to LR")
 parser.add_argument("--optimizer", type=str, default='adam',
@@ -212,6 +214,8 @@ def main(unused_args):
             train_distribute=strategy, eval_distribute=strategy, log_step_count_steps=log_steps)
     else:
         run_config = tf.estimator.RunConfig(log_step_count_steps=log_steps)
+    best_ckpt = True
+
     if args.warm_start_from is not None:
         if args.warm_start_from == 'LOWER':
             assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
@@ -220,11 +224,15 @@ def main(unused_args):
             warm_dir = os.path.join(args.save_dir,args.warm_start_from)
             if not os.path.isdir(warm_dir):
                 warm_dir = args.warm_start_from
-            best = False
-            if best:
+            if best_ckpt:
                 warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
 
         warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
+    elif args.distill_from is not None:
+        warm_dir = args.distill_from
+        if best_ckpt:
+            warm_dir = tools.get_last_best_ckpt(args.distill_from, 'best/*')
+        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=["encode_same.*","counception.*","teacher[^/]"])
     else:
         warm_dir = None
     Model_fn = Model(params)
@@ -269,6 +277,8 @@ def main(unused_args):
         while epoch_ < args.epochs:
             print '[*] EPOCH: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters)
             model.train(input_fn, steps=train_iters*args.eval_every)
+            if epoch_ == 0: # warm settings only at the first iteration
+                model._warm_start_settings = None
             epoch_+=args.eval_every
             metrics = model.evaluate(input_fn_val, steps=val_iters)
             print metrics

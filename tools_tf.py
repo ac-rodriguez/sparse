@@ -326,16 +326,19 @@ def gaussian_noise_layer(input_layer, std):
     return input_layer + noise
 
 
-def progressive_blur(img, args, blur_probability=0.0):
+def low_pass_filter(img, args, blur_probability=0.0, progressive=True):
     progress = get_progress(args)
     alpha = 5.0
     lower = 0.0001
     filter_size = 5
-    height = args.scale
-    scale_evol = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
+    height = float(args.scale)
+    if progressive:
 
-    sigma = scale_evol * tf.where(tf.greater(blur_probability, tf.random.uniform([1])), [1.0], [0.0])
+        scale_evol = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
 
+        sigma = scale_evol * tf.where(tf.greater(blur_probability, tf.random.uniform([1])), [1.0], [0.0])
+    else:
+        sigma = height
     # # Make Gaussian Kernel with desired specs.
     gauss_kernel = gaussian_kernel(5, (filter_size - 1) / 2.0, sigma)
     #
