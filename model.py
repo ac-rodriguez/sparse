@@ -21,6 +21,7 @@ class Model:
 
         self.scale = self.args.scale
         self.is_hr_label = self.args.is_hr_label
+        self.is_hr_pred = self.args.is_hr_pred
         self.is_slim = self.args.is_slim_eval
         if self.args.is_fake_hr_label:
             self.is_hr_label = True
@@ -262,7 +263,7 @@ class Model:
             # if self.two_ds:
                 # EnchU = semi.encode(input=self.feat_hU, is_training=self.is_training, is_bn=True, scale=self.scale)
                 # _, = countception(EnchU, pad=self.pad, is_training=self.is_training, is_return_feat=False, config_volume=self.config)
-        elif self.model == 'countB_h': # Using only HR data on hr embedding
+        elif self.model == 'countB_h': # Using only upscaled LR on hr embedding
             feat_l_up = self.up_(self.feat_l, 8)
 
             Ench = semi.encode_same(input=feat_l_up, is_training=self.is_training, is_bn=True, is_small=self.is_small)
@@ -521,7 +522,6 @@ class Model:
             self.y_hath = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
                                       config_volume=self.config)
 
-
     def add_semi_loss(self):
         # TODO fix label and labelh separation
         if self.args.semi == 'semiRev':
@@ -753,6 +753,7 @@ class Model:
 
     def compute_summaries(self):
         graph = tf.get_default_graph()
+        self.eval_metric_ops = {}
         try:
             mean_train = graph.get_tensor_by_name("mean_train_k:0")
             scale = graph.get_tensor_by_name("std_train_k:0")
@@ -807,6 +808,23 @@ class Model:
                 image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
             tf.summary.image('HR_Loss/HR', image_array, max_outputs=self.max_output_img)
+            if self.is_hr_pred:
+                metrics_reg = {
+                    'metricsHR/mae': tf.metrics.mean_absolute_error(labels=self.get_reg(self.labelsh), predictions=y_hat_reg, weights=w),
+                    'metricsHR/mse': tf.metrics.mean_squared_error(labels=self.get_reg(self.labelsh), predictions=y_hat_reg, weights=w),
+                }
+
+                metrics_sem = {
+                    'metricsHR/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class, num_classes=2,
+                                                       weights=w),
+                    'metricsHR/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class, weights=w),
+                    'metricsHR/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class, weights=w),
+                    'metricsHR/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class, weights=w)}
+
+                if self.args.lambda_reg > 0.0:
+                    self.eval_metric_ops.update(metrics_reg)
+                if self.args.lambda_reg < 1.0:
+                    self.eval_metric_ops.update(metrics_sem)
 
         # compute summaries in LR space
 
@@ -853,7 +871,6 @@ class Model:
                 'metrics/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class_down, weights=w),
                 'metrics/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class_down, weights=w),
                 'metrics/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class_down, weights=w)}
-            self.eval_metric_ops ={}
 
             if self.args.lambda_reg > 0.0:
                 self.eval_metric_ops.update(metrics_reg)
@@ -866,10 +883,13 @@ class Model:
         else:
             self.eval_metric_ops = None
 
-
-    def concat_reg(self, labels, y_hat_reg, inv_reg_, inv_difreg_):
+    def get_reg(self,labels):
         if "vaihingen" in self.args.dataset:
             labels = tf.expand_dims(labels[...,0],axis=-1)
+        return labels
+
+    def concat_reg(self, labels, y_hat_reg, inv_reg_, inv_difreg_):
+        labels = self.get_reg(labels)
         image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
         image_array_top = tf.concat(axis=2, values=[image_array_top,
                                                     tf.map_fn(inv_difreg_, labels - y_hat_reg, dtype=tf.uint8)])

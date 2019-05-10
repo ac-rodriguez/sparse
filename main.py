@@ -57,6 +57,8 @@ parser.add_argument("--low-task-evol", default=None,type=float, help="add an inc
 parser.add_argument("--high-task-evol", default=None,type=float, help="add an increasing lambda over time for high-res task")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
                     help="remove aerial data for areas without label")
+parser.add_argument("--is-hr-pred", default=False, action="store_true",
+                    help="predict and eval in hr")
 parser.add_argument("--train-patches", default=5000, type=int,
                     help="Number of random patches extracted from train area")
 parser.add_argument("--patches-with-labels", default=0.5, type=float, help="Percent of patches with labels")
@@ -155,6 +157,7 @@ def main(unused_args):
     else:
         args.is_hr_label = False
     if args.is_fake_hr_label: args.tag = '_fakehrlab' + args.tag
+    if args.is_hr_pred: args.tag = '_hrpred' + args.tag
     if args.is_noS2: args.tag = '_noS2' + args.tag
     if args.is_same_volume: args.tag = '_samevol' + args.tag
     assert not (args.is_fake_hr_label and args.is_hr_label)
@@ -253,12 +256,13 @@ def main(unused_args):
         train_iters = np.ceil(np.sum(reader.patch_gen.nr_patches) / float(args.batch_size))
         # print train_iters
         # assert train_iters*args.eval_every > 200.0, 'eval every should be larger than {}'.format(np.ceil(200./train_iters))
+        metrics_scope = 'metricsHR' if args.is_hr_pred else 'metrics'
         if int(args.lambda_reg) == 1:
-            metric_ = 'metrics/mae'
+            metric_ = metrics_scope+'/mae'
             comp_fn = lambda best, new: best > new
             best = 99999.0
         else:
-            metric_ = 'metrics/iou'
+            metric_ = metrics_scope+'/iou'
             comp_fn = lambda best, new: best < new
             best = 0.0
         print best, metric_
