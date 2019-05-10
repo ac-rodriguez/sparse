@@ -161,6 +161,8 @@ def main(unused_args):
     if args.semi is not None: args.tag = '_'+args.semi + args.tag
     if args.domain == 'None' or args.domain == 'none': args.domain = None
     if args.domain is not None: args.tag = '_'+args.domain + args.tag
+    if args.degraded_hr: args.tag = '_degHR' + args.tag
+    if args.distill_from is not None: args.tag = '_distilled' + args.tag
 
     if args.is_lower_bound:
         print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,
