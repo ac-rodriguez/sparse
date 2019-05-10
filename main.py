@@ -227,12 +227,13 @@ def main(unused_args):
             if best_ckpt:
                 warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
 
-        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
+        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=["encode.*","countception.*"]) #,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
     elif args.distill_from is not None:
         warm_dir = args.distill_from
         if best_ckpt:
             warm_dir = tools.get_last_best_ckpt(args.distill_from, 'best/*')
-        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=["encode_same.*","counception.*","teacher[^/]"])
+
+        warm_dir = tf.estimator.WarmStartSettings(warm_dir, vars_to_warm_start=["encode.*", "countception.*"]) #,"teacher[^/]"])
     else:
         warm_dir = None
     Model_fn = Model(params)

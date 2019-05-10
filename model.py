@@ -48,6 +48,7 @@ class Model:
         self.sr_on_labeled = True
         self.is_adversarial = False
         self.not_s2 = "vaihingen" in self.args.dataset
+        self.is_first_train = True # added for init variables only in the first train loop
         self.pad = self.args.sq_kernel*16//2 if self.args.sq_kernel else 16
         if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model or 'B_h' in self.model) and not '_l' in self.model and self.is_hr_label:
             self.hr_emb = True
@@ -374,13 +375,18 @@ class Model:
                     distill_from = tools.get_last_best_ckpt(self.args.distill_from,'best/*')
                 else:
                     distill_from = self.args.distill_from
-                # scope1 = 'encode_same' if 'h' in self.model else 'encode'
-                # scope2 = 'countception' if 'count' in self.model else 'simple'
-                # dict_vars = [x for x in tf.trainable_variables() if scope1 in x.name or scope2 in x.name]
-                # dict_vars = {x.name.split(':')[0]:x.name.split(':')[0] for x in dict_vars}
-                # tf.train.init_from_checkpoint(distill_from,dict_vars)
+                # if self.is_first_train:
+                #     scope1 = 'encode_same' if 'h' in self.model else 'encode'
+                #     scope2 = 'countception' if 'count' in self.model else 'simple'
+                #     dict_vars = [x for x in tf.trainable_variables() if scope1 in x.name or scope2 in x.name]
+                #     dict_vars = {x.name.split(':')[0]:x.name.split(':')[0] for x in dict_vars}
+                #     tf.train.init_from_checkpoint(distill_from,dict_vars)
+                #     print('init {} and {} variables from teacher model'.format(scope1,scope2))
+                #
+                #     self.is_first_train = False
                 self.DIS_models()
                 tf.train.init_from_checkpoint(distill_from,{'/': 'teacher/'})
+                print('init teacher variables from checkpoint')
 
                 self.add_distilled_loss()
             if self.is_semi:
@@ -507,16 +513,13 @@ class Model:
             raise ValueError('Model {} not defined'.format(self.model))
     def DIS_models(self):
 
-        if 'h' in self.model:
-            with tf.variable_scope('teacher'):
+        with tf.variable_scope('teacher'):
+            if 'h' in self.model:
                 Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
-                self.y_hath = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
-                                          config_volume=self.config)
-        else:
-            with tf.variable_scope('teacher'):
+            else:
                 Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True)
-                self.y_hath = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
-                                          config_volume=self.config)
+            self.y_hath = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
+                                      config_volume=self.config)
 
 
     def add_semi_loss(self):
