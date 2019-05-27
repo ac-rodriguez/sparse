@@ -97,8 +97,8 @@ class Model:
         if self.args.degraded_hr and self.is_training:
 
             self.feat_h = tools.low_pass_filter(self.feat_h, self.args, blur_probability=1.0)
-        else:
-            self.feat_h = tools.low_pass_filter(self.feat_h, self.args, blur_probability=1.0, progressive=False)
+        # else:
+        #     self.feat_h = tools.low_pass_filter(self.feat_h, self.args, blur_probability=1.0, progressive=False)
 
 
         self.compute_predicitons()
@@ -172,7 +172,7 @@ class Model:
                 feat_h_down = self.down_(self.feat_h,3)
                 feat_h_down = tf.layers.conv2d(feat_h_down,earlyl.shape[-1],kernel_size=1,strides=1)
                 self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
-        elif self.model == 'countSR' or self.model == 'countSRu':
+        elif self.model == 'countSR' or self.model == 'countSRu' or self.model =='countSRonly':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
             self.HR_hatU = sr.SR_task(feat_l=self.feat_lU, size=size, is_batch_norm=True, is_training=self.is_training)
@@ -188,7 +188,11 @@ class Model:
                     self.y_hat[key] = tools.bilinear(val, self.patch_size)
             else:
                 assert self.hr_emb
-        elif self.model == 'countSRs':
+            if 'only' in self.model:
+                assert self.args.lambda_sr > 0, 'set a lambda_sr > 0'
+                self.add_yhat = False
+
+        elif self.model == 'countSRs' or self.model == 'countSRsonly':
             self.is_sr = True
             self.HR_hat = semi.decode(self.feat_l, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
             self.HR_hatU = semi.decode(self.feat_lU, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
@@ -202,11 +206,18 @@ class Model:
                     self.y_hat[key] = tools.bilinear(val, self.patch_size)
             else:
                 assert self.hr_emb
-        elif self.model == 'countSRA':
+            if 'only' in self.model:
+                assert self.args.lambda_sr > 0, 'set a lambda_sr > 0'
+                self.add_yhat = False
+        elif self.model == 'countSRA' or self.model == 'countSRAonly':
             self.is_sr = True
             self.HR_hat = semi.decode(self.feat_l, scale=self.scale, is_bn=True, is_training=self.is_training, n_feat_last=3)
             self.y_hat = countception(self.HR_hat,pad=self.pad, is_training=self.is_training, config_volume=self.config)
             assert self.hr_emb
+            if 'only' in self.model:
+                assert self.args.lambda_sr > 0, 'set a lambda_sr > 0'
+                self.add_yhat = False
+
         elif self.model == 'countSR_l':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
@@ -342,7 +353,7 @@ class Model:
             else:
                 loss_sr = tf.nn.l2_loss(self.HR_hatU - self.feat_hU)
             tf.summary.scalar('loss/SR', loss_sr)
-            self.losses.append(w1*loss_sr)
+            self.losses.append(tf.identity(w1*loss_sr,'sr_loss'))
             self.scale_losses.append(self.args.lambda_sr)
             # self.lossTasks += self.args.lambda_sr * w1 * loss_sr
 
@@ -398,7 +409,7 @@ class Model:
         # L2 weight Regularizer
         W = [v for v in tf.trainable_variables() if not 'teacher' in v.name] # if ('weights' in v.name or 'kernel' in v.name)
         # Lambda_weights is always rescaled with 0.0005
-        l2_weights = tf.add_n([tf.nn.l2_loss(v) for v in W])
+        l2_weights = tf.add_n([tf.nn.l2_loss(v) for v in W], name='w_loss')
         tf.summary.scalar('loss/L2Weigths', l2_weights)
         # self.loss_w = self.args.lambda_weights * l2_weights
         self.losses.append(l2_weights)
