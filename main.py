@@ -32,7 +32,7 @@ parser = argparse.ArgumentParser(description="Partial Supervision",
 # parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
 # # parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
 parser.add_argument("--dataset", default='palm')
-parser.add_argument("--select_bands", default="B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12",
+parser.add_argument("--select_bands", default="B02,B03,B04,B05,B06,B07,B08,B8A,B11,B12",
                     help="Select the bands. Using comma-separated band names.")
 parser.add_argument("--is-padding", default=False, action="store_true",
                     help="padding train data with (patch_size-1)")

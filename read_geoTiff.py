@@ -9,6 +9,7 @@ import re
 import cv2
 from collections import defaultdict
 from skimage.measure import block_reduce
+import glob
 
 import gdal_processing as gp
 # from utils import patches
@@ -138,6 +139,12 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
     # print(" [*] Success.")
 
 
+def get_jp2(path,band,res=10):
+    if band == 'CLD':
+        return glob.glob(path + '/GRANULE/*/QI_DATA/*_CLD_{}m.jp2'.format(res))[0]
+    else:
+        return glob.glob("{}/GRANULE/*/IMG_DATA/R{}m/*_{}_{}m.jp2".format(path, res,band, res))[0]
+
 def readS2(args, roi_lon_lat):
 
     data_file = args.LR_file
@@ -155,8 +162,8 @@ def readS2(args, roi_lon_lat):
 
     _, folder = os.path.split(data_file)
 
-
-    dsREFfile = os.path.join(data_file, 'geotif', 'Band_B3.tif')
+    dsREFfile = get_jp2(data_file, 'B03', res=10)
+    # dsREFfile = os.path.join(data_file, 'geotif', 'Band_B3.tif')
     if not os.path.isfile(dsREFfile):
         print('{} does not exist..'.format(dsREFfile))
         sys.exit(1)
@@ -218,18 +225,29 @@ def readS2(args, roi_lon_lat):
 
 
     data10 = data20 = None
-    bands10m = {'B2','B3','B4','B8'}
-    bands20m = {'B5', 'B6', 'B7', 'B8A','B8B','B11','B12','CLD','SCL'}
+    bands10m = {'B02','B03','B04','B08'}
+    bands20m = {'B05', 'B06', 'B07', 'B8A','B8B','B11','B12','CLD','SCL'}
     select_bands10 = sorted(list(bands10m & set(select_bands)))
     select_bands20 = sorted(list(bands20m & set(select_bands)))
 
     dsBANDS = dict()
 
-    for band_id in select_bands:
-        dsBANDS[band_id] = gdal.Open(os.path.join(data_file,'geotif','Band_{}.tif'.format(band_id)))
+    # for band_id in select_bands:
+    #     dsBANDS[band_id] = gdal.Open(os.path.join(data_file,'geotif','Band_{}.tif'.format(band_id)))
+    #     if dsBANDS[band_id] is None:
+    #         print(' [!] Band {} is not avaliable'.format(band_id))
+    #         sys.exit(1)
+    for band_id in select_bands10:
+        filename = get_jp2(data_file, band_id, res=10)
+        dsBANDS[band_id] = gdal.Open(filename)
         if dsBANDS[band_id] is None:
-            print(' [!] Band {} is not avaliable'.format(band_id))
-            sys.exit(1)
+            raise ValueError(' [!] Band {} is not avaliable'.format(band_id))
+    for band_id in select_bands20:
+        filename = get_jp2(data_file, band_id, res=20)
+        dsBANDS[band_id] = gdal.Open(filename)
+        if dsBANDS[band_id] is None:
+            raise ValueError(' [!] Band {} is not avaliable'.format(band_id))
+
 
     ## Load 10m bands
     for band_name in select_bands10:
@@ -238,7 +256,7 @@ def readS2(args, roi_lon_lat):
         data10 = np.dstack((data10, Btemp)) if data10 is not None else Btemp
 
     ## Check if the dataset covers the actual roi with data
-    b3_10_ind = select_bands10.index('B3')
+    b3_10_ind = select_bands10.index('B03')
     chan3 = data10[:, :, b3_10_ind]
     vis = (chan3 < 1).astype(np.int)
     if np.all(chan3 < 1):
@@ -525,7 +543,7 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
     return np.expand_dims(labels, axis=2), (xmin, ymin, xmax, ymax)
 
 
-def read_labels_semseg(args, sem_file,dsm_file, is_HR):
+def read_labels_semseg(args, sem_file,dsm_file, is_HR, ref_scale=16):
     # if args.HR_file is not None:
     # ref_scale = 16  # 10m -> 0.625m
     # ref_scale = ref_scale // args.scale
@@ -548,7 +566,7 @@ def read_labels_semseg(args, sem_file,dsm_file, is_HR):
     # 5 buildings
     # 255 with or without gt
 
-    ref_scale = 16 //args.scale if is_HR else 16
+    if is_HR: ref_scale = ref_scale //args.scale
 
     labels = block_reduce(labels,(ref_scale,ref_scale),np.median)
 

@@ -354,15 +354,16 @@ class DataReader(object):
         if 'vaihingen' in self.args.dataset:
             # LR space reference is always 16 ds. from original HR image
             self.train_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_train)
-            self.train = downscale(self.train_h,16.0)
-            self.train_h = downscale(self.train_h,16//self.args.scale)
+            ref_scale = 16
+            self.train = downscale(self.train_h.copy(),ref_scale)
+            self.train_h = downscale(self.train_h,ref_scale//self.args.scale)
             #  TODO check val label for vaihingen complete
-            self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_train,dsm_file=self.args.dsm_train, is_HR=self.is_HR_labels)
+            self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_train, dsm_file=self.args.dsm_train, is_HR=self.is_HR_labels, ref_scale=ref_scale)
         else:
             self.train_h = geotif.readHR(self.args,
                                          roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
             if self.args.is_noS2:
-                self.train = downscale(self.train_h, scale=self.args.scale)
+                self.train = downscale(self.train_h.copy(), scale=self.args.scale)
             else:
                 self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
 
@@ -371,15 +372,16 @@ class DataReader(object):
 
         print('\n [*] Loading VALIDATION data \n')
         if 'vaihingen' in self.args.dataset:
+            ref_scale = 16
             if self.args.top_train == self.args.top_val:
                 self.val_h = self.train_h
                 self.val = self.train
             else:
                 self.val_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_val)
-                self.val = downscale(self.val_h, scale=16)
-                self.val_h = downscale(self.val_h, scale=16//self.args.scale)
+                self.val = downscale(self.val_h.copy(), scale=ref_scale)
+                self.val_h = downscale(self.val_h, scale=ref_scale//self.args.scale)
 
-            self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_val, dsm_file=self.args.dsm_val, is_HR=self.is_HR_labels)
+            self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_val, dsm_file=self.args.dsm_val, is_HR=self.is_HR_labels, ref_scale=ref_scale)
             if self.args.dataset == 'vaihingen':
                 self.labels_val[self.labels != -1.] = -1.
 
