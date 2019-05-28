@@ -47,11 +47,12 @@ def downscale(img, scale):
     return imout
 
 
-def read_and_upsample_sen2(args, roi_lon_lat):
-    if 'USER' in args.LR_file:
-        data10, data20 = geotif.readS2_old(args, roi_lon_lat)
+def read_and_upsample_sen2(args, roi_lon_lat, LR_file=None):
+    if LR_file is None: LR_file = args.LR_file
+    if 'USER' in LR_file:
+        data10, data20 = geotif.readS2_old(args, roi_lon_lat, data_file=LR_file)
     else:
-        data10, data20 = geotif.readS2(args, roi_lon_lat)
+        data10, data20 = geotif.readS2(args, roi_lon_lat,data_file=LR_file)
     data20 = interpPatches(data20, data10.shape[0:2], squeeze=True)
 
     data = np.concatenate((data10, data20), axis=2)
@@ -156,7 +157,9 @@ class DataReader(object):
             d2_after = self.args.unlabeled_after * self.batch_tr
             self.patch_gen = PatchExtractor(dataset_low=self.train, dataset_high=self.train_h, label=self.labels,
                                             patch_l=self.patch_l, n_workers=4,max_queue_size=10, is_random=is_random_patches,
-                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels,  patches_with_labels=self.args.patches_with_labels, d2_after=d2_after, two_ds=self.two_ds)
+                                            scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels,
+                                            patches_with_labels=self.args.patches_with_labels, d2_after=d2_after, two_ds=self.two_ds,
+                                            unlab=self.unlab)
 
             # featl,datah = self.patch_gen.get_inputs()
             # plt.imshow(datah[...,0:3])
@@ -369,6 +372,10 @@ class DataReader(object):
 
             self.labels, self.lims_labels = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_tr,
                                       roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
+            if self.args.unlabeled_data is not None:
+                self.unlab = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_unlab,LR_file=self.args.unlabeled_data)
+            else:
+                self.unlab = None
 
         print('\n [*] Loading VALIDATION data \n')
         if 'vaihingen' in self.args.dataset:
@@ -629,7 +636,7 @@ class DataReader(object):
 
 class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
-                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, d2_after=0, two_ds=True):
+                 border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, d2_after=0, two_ds=True, unlab = None):
         self.two_ds = two_ds
 
         self.d_l = dataset_low
@@ -638,6 +645,7 @@ class PatchExtractor:
         self.patches_with_labels = patches_with_labels
         self.lims_lab = lims_with_labels
         self.d2_after = d2_after
+        self.unlab = unlab
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
             self.label_1 = np.zeros_like(self.label)
@@ -728,8 +736,20 @@ class PatchExtractor:
 
             if self.two_ds:
                 self.indices1 = indices
-                self.indices2 = np.random.choice(len(valid_coords), size=len(self.indices1),replace=False)
-                self.indices2 = valid_coords[self.indices2]
+                if self.unlab is None:
+                    self.indices2 = np.random.choice(len(valid_coords), size=len(self.indices1),replace=False)
+                    self.indices2 = valid_coords[self.indices2]
+                else:
+                    valid_coords_unlab = np.less(self.unlab[...,-1], 90)
+
+                    buffer_size_unlab = self.patch_lab
+
+                    valid_coords_unlab = np.argwhere(valid_coords_unlab[buffer_size_unlab:-buffer_size_unlab, buffer_size_unlab:-buffer_size_unlab])
+                    # add patch//2 to y and x coordinates to correct the cropping
+                    valid_coords_unlab += (buffer_size_unlab)
+
+                    self.indices2 = np.random.choice(len(valid_coords_unlab), size=len(self.indices1),replace=False)
+                    self.indices2 = valid_coords_unlab[self.indices2]
                 # self.indices2 = np.random.choice(n_x * self.n_y, size=len(self.indices1), replace=False)
                 print(' labeled and unlabeled data are always fed within a batch')
 
@@ -821,7 +841,18 @@ class PatchExtractor:
             return patch_l, data_h, xy_corner
         else:
             return patch_l, data_h
+    def get_patches_unlab(self, xy_corner):
 
+        x_l, y_l = map(int, xy_corner)
+
+        patch_l = self.get_patch_corner(self.unlab, x_l, y_l, self.patch_l)
+        label = np.ones((self.patch_l,self.patch_l,1))*-1.0
+        patch_l = np.dstack((patch_l, label))
+        data_h = None
+        if self.return_corner:
+            return patch_l, data_h, xy_corner
+        else:
+            return patch_l, data_h
     def get_random_patches(self):
 
 
@@ -853,9 +884,15 @@ class PatchExtractor:
             # corner1_ = divmod(ind1, self.n_y)
             # corner2_ = divmod(ind2, self.n_y)
             patches1 = self.get_patches(ind1)
-            patches2 = self.get_patches(ind2)
-            patches = np.concatenate((patches1[0],patches2[0]),axis=-1) , np.concatenate((patches1[1],patches2[1]),axis=-1)
-            return patches
+            if self.unlab is None:
+                patches2 = self.get_patches(ind2)
+                patches = np.concatenate((patches1[0], patches2[0]), axis=-1), np.concatenate(
+                    (patches1[1], patches2[1]), axis=-1)
+                return patches
+            else:
+                patches2 = self.get_patches_unlab(ind2)
+                return np.concatenate((patches1[0],patches2[0]),axis=-1) , np.concatenate(
+                    (patches1[1], patches1[1]), axis=-1)
 
 
     def compute_tile_ranges(self):

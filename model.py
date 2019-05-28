@@ -44,7 +44,7 @@ class Model:
         self.add_yhat = True
 
         self.is_domain_transfer = False
-        self.is_semi = False
+        self.is_semi = self.args.semi is not None
         self.is_sr = False
         self.sr_on_labeled = True
         self.is_adversarial = False
@@ -165,13 +165,19 @@ class Model:
         elif self.model == 'countA' or self.model == 'countAh':
 
             earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
-            self.y_hat = countception(earlyl, pad=self.pad, is_training=self.is_training,config_volume=self.config)
+            self.y_hat,midl,latel = countception(earlyl, pad=self.pad, is_training=self.is_training,config_volume=self.config, is_return_feat=True)
 
             if self.model == 'countAh':  # using down-sampled HR images too
                 self.add_yhath = True
                 feat_h_down = self.down_(self.feat_h,3)
                 feat_h_down = tf.layers.conv2d(feat_h_down,earlyl.shape[-1],kernel_size=1,strides=1)
                 self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
+            if self.is_semi:
+                earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+                self.y_hatU,midlU,latelU = countception(earlylU, pad=self.pad, is_training=self.is_training, config_volume=self.config,is_return_feat=True)
+                self.Zl = latel
+                self.ZlU =latelU
+
         elif self.model == 'countSR' or self.model == 'countSRu' or self.model =='countSRonly':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)

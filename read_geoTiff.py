@@ -145,9 +145,9 @@ def get_jp2(path,band,res=10):
     else:
         return glob.glob("{}/GRANULE/*/IMG_DATA/R{}m/*_{}_{}m.jp2".format(path, res,band, res))[0]
 
-def readS2(args, roi_lon_lat):
-
-    data_file = args.LR_file
+def readS2(args, roi_lon_lat, data_file =None):
+    if data_file is None: data_file = args.LR_file
+    # data_file = args.LR_file
     # if '_USER_' in data_file:
     #     print("use createPatches_old_format.py to create the patches!")
     #     sys.exit(0)
@@ -285,10 +285,11 @@ def readS2(args, roi_lon_lat):
 
 
 
-def readS2_old(args, roi_lon_lat):
+def readS2_old(args, roi_lon_lat, data_file =None):
+    if data_file is None: data_file = args.LR_file
 
     # data_type = args.data_type
-    data_file = args.LR_file
+    # data_file = args.LR_file
     # if '_USER_' in data_file:
     #     print("use createPatches_old_format.py to create the patches!")
     #     sys.exit(0)
@@ -520,7 +521,8 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
         if 'USER' in args.LR_file:
             ds_file = gp.getrefDataset(args.LR_file, is_use_gtiff=False)
         else:
-            ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
+            ds_file = get_jp2(os.path.dirname(args.LR_file), 'B03', res=10)
+            # ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
 
         scale_lims = 1
 

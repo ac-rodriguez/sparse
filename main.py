@@ -25,9 +25,10 @@ parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 # Input data args
 # parser.add_argument("--HR_file", default=HRFILE)
-# parser.add_argument("--LR_file", default=LRFILE)
+parser.add_argument("--unlabeled_data", default=None)
+
 # parser.add_argument("--points", default=POINTSFILE)
-# parser.add_argument("--roi_lon_lat_tr", default='117.84,8.82,117.92,8.9')
+parser.add_argument("--roi_lon_lat_unlab", default=None)
 # parser.add_argument("--roi_lon_lat_tr_lb", default='117.8821,8.87414,117.891,8.8654')
 # parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
 # # parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
@@ -111,7 +112,7 @@ parser.add_argument("--is-masking", default=False, action="store_true",
 parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--semi-supervised",dest='semi', default=None,
-                    help="semi-supervised adversarial task")
+                    help="semi-supervised task")
 parser.add_argument("--distill-from", default=None, type=str,
                     help="distill from a pretrained HR based model")
 parser.add_argument("--domain-loss",dest='domain', default=None,
