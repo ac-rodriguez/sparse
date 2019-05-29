@@ -351,6 +351,7 @@ class DataReader(object):
 
     def read_train_data(self):
         self.is_HR_labels = self.args.is_hr_label
+        self.unlab = None
 
         print('\n [*] Loading TRAIN data \n')
 
@@ -374,8 +375,6 @@ class DataReader(object):
                                       roi_with_labels=self.args.roi_lon_lat_tr_lb, is_HR=self.is_HR_labels)
             if self.args.unlabeled_data is not None:
                 self.unlab = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_unlab,LR_file=self.args.unlabeled_data)
-            else:
-                self.unlab = None
 
         print('\n [*] Loading VALIDATION data \n')
         if 'vaihingen' in self.args.dataset:
