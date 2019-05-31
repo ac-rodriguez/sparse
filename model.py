@@ -82,11 +82,12 @@ class Model:
 
         if isinstance(features, dict):
             self.feat_l, self.feat_h = features['feat_l'], features['feat_h']
+            if self.two_ds:
+                self.feat_lU, self.feat_hU = features['feat_lU'], features['feat_hU']
         else:
             self.feat_l = features
             self.feat_h = None
-        if self.two_ds:
-            self.feat_lU, self.feat_hU = features['feat_lU'], features['feat_hU']
+
         self.patch_size = self.feat_l.shape[1]
 
         if self.args.is_same_volume:
@@ -600,7 +601,9 @@ class Model:
 
             # self.loss+= self.loss_gen
             self.losses.append(self.loss_gen)
-            self.scale_losses.append(1.0)
+            lambda_semi = tools.evolving_lambda(self.args, height=1.0)
+            tf.summary.scalar('loss/lambda_semi', lambda_semi)
+            self.scale_losses.append(lambda_semi)
     def add_domain_loss(self):
         assert self.is_domain_transfer, ' domain-loss not defined for model:{} '.format(self.model)
         lambda_domain = tools.evolving_lambda(self.args, height=1.0)
