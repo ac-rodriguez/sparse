@@ -926,9 +926,13 @@ class Model:
 
     def compute_labels_ls(self,labels,scale):
         if self.not_s2:
-            assert not self.args.dataset == 'vaihingen', 'implement for missing points with -1'
-            lb_reg = tools.avg_pool(labels[...,1], self.scale, name='lb_reg_down')
-            lb_sem = tools.median_pool(labels[...,0], self.scale, name='lb_sem_down')
+            # assert not self.args.dataset == 'vaihingen', 'implement for missing points with -1'
+            x = tf.clip_by_value(labels[...,1],0,10000)
+            x = tools.avg_pool(x, scale)
+            xm = tools.max_pool(labels[...,1], scale)
+
+            lb_reg = tf.where(tf.equal(xm,-1),xm,x, name='lb_reg_down')
+            lb_sem = tools.median_pool(labels[...,0], scale, name='lb_sem_down')
             return tf.concat((lb_sem,lb_reg),axis=3)
 
         else:
