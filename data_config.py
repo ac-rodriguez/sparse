@@ -141,7 +141,7 @@ def get_dataset(DATASET, is_mounted = False):
             dset_config['dsm_train'] = path_ + 'dsm_9cm.tif'
             dset_config['top_train'] = path_ + 'top_9cm.tif'
 
-            dset_config['sem_val'] = path_ + 'sem_9cm.tif'
+            dset_config['sem_val'] = path_ + 'sem_complete_9cm.tif'
             dset_config['dsm_val'] = path_ + 'dsm_9cm.tif'
             dset_config['top_val'] = path_ + 'top_9cm.tif'
 
