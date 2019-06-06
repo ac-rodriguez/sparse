@@ -583,8 +583,8 @@ def roi_intersection(ds, geo_pts_ref, return_polygon = False):
                 pyproj.Proj(init='EPSG:4326'),
                 pyproj.Proj(
                     proj='aea',
-                    lat1=intersection.bounds[1],
-                    lat2=intersection.bounds[3])),
+                    lat_1=intersection.bounds[1],
+                    lat_2=intersection.bounds[3])),
             intersection)
 
         # Print the area in m^2
