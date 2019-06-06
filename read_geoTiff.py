@@ -108,7 +108,7 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
 
     ## Load 10m bands
     # for band_name in range(3):
-    for key, val in dsBANDS.iteritems():
+    for key, val in dsBANDS.items():
         Btemp = val.ReadAsArray(xoff=xmin, yoff=ymin, win_xsize=xmax - xmin + 1, win_ysize=ymax - ymin + 1, buf_xsize=xmax - xmin + 1,
                              buf_ysize=ymax - ymin + 1)
         data10 = np.dstack((data10, Btemp)) if data10 is not None else Btemp
@@ -139,11 +139,6 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
     # print(" [*] Success.")
 
 
-def get_jp2(path,band,res=10):
-    if band == 'CLD':
-        return glob.glob(path + '/GRANULE/*/QI_DATA/*_CLD_{}m.jp2'.format(res))[0]
-    else:
-        return glob.glob("{}/GRANULE/*/IMG_DATA/R{}m/*_{}_{}m.jp2".format(path, res,band, res))[0]
 
 def readS2(args, roi_lon_lat, data_file =None):
     if data_file is None: data_file = args.LR_file
@@ -162,11 +157,10 @@ def readS2(args, roi_lon_lat, data_file =None):
 
     _, folder = os.path.split(data_file)
 
-    dsREFfile = get_jp2(data_file, 'B03', res=10)
+    dsREFfile = gp.get_jp2(data_file, 'B03', res=10)
     # dsREFfile = os.path.join(data_file, 'geotif', 'Band_B3.tif')
     if not os.path.isfile(dsREFfile):
-        print('{} does not exist..'.format(dsREFfile))
-        sys.exit(1)
+        raise ValueError('{} does not exist..'.format(dsREFfile))
 
     print(' [*] Reading S2 Data {}'.format(os.path.dirname(os.path.basename(dsREFfile))))
 
@@ -175,39 +169,16 @@ def readS2(args, roi_lon_lat, data_file =None):
     if roi_lon_lat:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(roi_lon_lat)
 
+        xmin, ymin, xmax, ymax = gp.to_xy_box((roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF, enlarge=1)
 
+        geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
 
-
-        # x1, y1 = gp.to_xy(roi_lon1, roi_lat1, dsREF)
-        # x2, y2 = gp.to_xy(roi_lon2, roi_lat2, dsREF)
-        # tmxmin = max(min(x1, x2, dsREF.RasterXSize - 1), 0)
-        # tmxmax = min(max(x1, x2, 0), dsREF.RasterXSize - 1)
-        # tmymin = max(min(y1, y2, dsREF.RasterYSize - 1), 0)
-        # tmymax = min(max(y1, y2, 0), dsREF.RasterYSize - 1)
+        if not gp.roi_intersection(dsREF, geo_pts_ref):
+            raise ValueError(" [!] The ROI does not intersect with the data product")
 
     else:
-
-        # roi_x1, roi_y1, roi_x2, roi_y2 =0,dsREF.RasterXSize+1,0,dsREF.RasterYSize +1
-        #
-        # tmxmin = max(min(roi_x1, roi_x2, dsREF.RasterXSize - 1), 0)
-        # tmxmax = min(max(roi_x1, roi_x2, 0), dsREF.RasterXSize - 1)
-        # tmymin = max(min(roi_y1, roi_y2, dsREF.RasterYSize - 1), 0)
-        # tmymax = min(max(roi_y1, roi_y2, 0), dsREF.RasterYSize - 1)
-
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = -180, -90, 180, 90
-
-    xmin, ymin, xmax, ymax = gp.to_xy_box((roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF, enlarge=1)
-
-    # xmin, ymin, xmax, ymax = tmxmin, tmymin, tmxmax, tmymax
-    utm = 'NaN'
-
-    geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
-
-
-    # dsREF = gdal.Open(tenMsets[0][0])
-    if not gp.roi_intersection(dsREF, geo_pts_ref):
-        print(" [!] The ROI does not intersect with the data product")
-        sys.exit(0)
+        xmin, ymin = 0, 0
+        xmax, ymax = dsREF.RasterXSize - 1, dsREF.RasterYSize - 1
 
     # convert comma separated band list into a list
     select_bands = set([x for x in re.split(',',select_bands)])
@@ -220,8 +191,7 @@ def readS2(args, roi_lon_lat, data_file =None):
         sys.exit(0)
 
     if (xmax - xmin + 1 <= 10) or (ymax - ymin + 1 <= 10):
-        print(" [!] Roi outside of dataset")
-        sys.exit(0)
+        raise ValueError(" [!] Roi outside of dataset")
 
 
     data10 = data20 = None
@@ -238,12 +208,12 @@ def readS2(args, roi_lon_lat, data_file =None):
     #         print(' [!] Band {} is not avaliable'.format(band_id))
     #         sys.exit(1)
     for band_id in select_bands10:
-        filename = get_jp2(data_file, band_id, res=10)
+        filename = gp.get_jp2(data_file, band_id, res=10)
         dsBANDS[band_id] = gdal.Open(filename)
         if dsBANDS[band_id] is None:
             raise ValueError(' [!] Band {} is not avaliable'.format(band_id))
     for band_id in select_bands20:
-        filename = get_jp2(data_file, band_id, res=20)
+        filename = gp.get_jp2(data_file, band_id, res=20)
         dsBANDS[band_id] = gdal.Open(filename)
         if dsBANDS[band_id] is None:
             raise ValueError(' [!] Band {} is not avaliable'.format(band_id))
@@ -521,7 +491,7 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
         if 'USER' in args.LR_file:
             ds_file = gp.getrefDataset(args.LR_file, is_use_gtiff=False)
         else:
-            ds_file = get_jp2(os.path.dirname(args.LR_file), 'B03', res=10)
+            ds_file = gp.get_jp2(os.path.dirname(args.LR_file), 'B03', res=10)
             # ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
 
         scale_lims = 1
@@ -570,11 +540,12 @@ def read_labels_semseg(args, sem_file,dsm_file, is_HR, ref_scale=16):
 
     if is_HR: ref_scale = ref_scale //args.scale
 
-    labels = block_reduce(labels,(ref_scale,ref_scale),np.median)
+    get_median = lambda x,axis: np.percentile(x,50,axis=axis, interpolation='nearest')
+    labels = block_reduce(labels,(ref_scale,ref_scale),get_median)
 
-    labels = labels.astype(np.float32)
-    mask_out = labels == 255.0
-    labels[mask_out] = -1.
+    mask_out = labels == 255
+    labels = np.float32(labels)
+    labels[mask_out] = -1.0
 
     labels_reg = readHR(args, roi_lon_lat=None, data_file=dsm_file, as_float=False)
     labels_reg = labels_reg.astype(np.float32)

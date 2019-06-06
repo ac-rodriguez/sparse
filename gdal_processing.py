@@ -326,10 +326,16 @@ def getrefDataset(refds,is_use_gtiff =False):
         if '10m resolution' in dsdesc:
             tenMsets += [(dsname, dsdesc)]
     return  tenMsets[0][0]
+def get_jp2(path,band,res=10):
+    if band == 'CLD':
+        return glob.glob(path + '/GRANULE/*/QI_DATA/*_CLD_{}m.jp2'.format(res))[0]
+    else:
+        return glob.glob("{}/GRANULE/*/IMG_DATA/R{}m/*_{}_{}m.jp2".format(path, res,band, res))[0]
 
 
 def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte):
-
+    if type == 'float32':
+        type = gdal.GDT_Float32
     Image = gdal.Open(refDataset)
 
     if len(Input.shape) == 2:
@@ -413,7 +419,7 @@ def to_xy(lon, lat, ds, is_int = True):
 
 
 def split_roi_string(roi_lon_lat):
-    if isinstance(roi_lon_lat,basestring):
+    if isinstance(roi_lon_lat,str):
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
     else:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = roi_lon_lat
@@ -445,8 +451,8 @@ def to_xy_box(lims,dsREF, enlarge = 1):
     # ymin = int(ymin / enlarge) * enlarge
     # ymax = int((ymax + 1) / enlarge) * enlarge - 1
 
-
-    return map(int,(xmin,ymin,xmin+of_x-1,ymin+of_y-1))
+    bbox = (xmin, ymin, xmin+of_x-1, ymin+of_y-1)
+    return [int(x) for x in bbox]
 
 
 def getGeom(inputfile, shapely = False):

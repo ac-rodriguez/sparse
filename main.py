@@ -266,7 +266,7 @@ def main(unused_args):
             metric_ = metrics_scope+'/iou'
             comp_fn = lambda best, new: best < new
             best = 0.0
-        print best, metric_
+        print(best, metric_)
         # best_exporter = tools.BestCheckpointCopier(score_metric=metric_)
 
 
@@ -283,44 +283,53 @@ def main(unused_args):
             #     tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
         epoch_ = 0
         while epoch_ < args.epochs:
-            print '[*] EPOCH: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters)
+            print('[*] EPOCH: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters))
             model.train(input_fn, steps=train_iters*args.eval_every)
             if epoch_ == 0: # warm settings only at the first iteration
                 model._warm_start_settings = None
-            epoch_+=args.eval_every
+            epoch_ += args.eval_every
             metrics = model.evaluate(input_fn_val, steps=val_iters)
-            print metrics
+            print(metrics)
             if comp_fn(best, metrics[metric_]):
                 print ('New best at epoch {}, {}:{} from {}'.format(epoch_,metric_,metrics[metric_],best))
                 best = metrics[metric_]
-                input_fn_val = reader.get_input_val()
-                tools.predict_and_recompose(model,reader,input_fn_val, reader.patch_gen_val,is_hr_pred,args.batch_size_eval,'val',
+                input_fn_val1 = reader.get_input_val()
+                tools.predict_and_recompose(model,reader,input_fn_val1, reader.patch_gen_val1,is_hr_pred,args.batch_size_eval,'val',
                                             prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0), m=metrics)
 
             else:
-                print ('Keeping old best {}:{}'.format(metric_,best))
+                print('Keeping old best {}:{}'.format(metric_,best))
 
         f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
         plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
 
         try:
             plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/sample_train_LR')
-            plt_reg(reader.patch_gen.label_1, model_dir + '/sample_train_reg_label')
+            if 'vaihingen' in args.dataset:
+                plots.plot_labels(reader.patch_gen.label_1[...,0], model_dir + '/sample_train_sem_label')
+                plt_reg(reader.patch_gen.label_1[...,-1], model_dir + '/sample_train_reg_label')
+            else:
+                plt_reg(reader.patch_gen.label_1, model_dir + '/sample_train_reg_label')
+
+            # plt_reg(reader.patch_gen.label_1, model_dir + '/sample_train_reg_label')
         except AttributeError:
             pass
         try:
             plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/sample_val_LR')
-            plt_reg(reader.patch_gen_val.label_1, model_dir + '/sample_val_reg_label')
+            if 'vaihingen' in args.dataset:
+                plots.plot_labels(reader.patch_gen_val.label_1[...,0], model_dir + '/sample_val_sem_label')
+                plt_reg(reader.patch_gen_val.label_1[...,-1], model_dir + '/sample_val_reg_label')
+            else:
+                plt_reg(reader.patch_gen_val.label_1, model_dir + '/sample_val_reg_label')
         except AttributeError:
             pass
-
     else:
         assert os.path.isdir(args.model_dir)
         reader = DataReader(args, is_training=True) # TODO to avoid reading Train and Val sets check how to restore mean_train properly
 
     if args.is_train:
 
-        tools.predict_and_recompose(model, reader, reader.get_input_val(), reader.patch_gen_val, is_hr_pred, args.batch_size_eval,
+        tools.predict_and_recompose(model, reader, reader.get_input_val(), reader.patch_gen_val1, is_hr_pred, args.batch_size_eval,
                                     'val', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                     chkpt_path=tools.get_last_best_ckpt(model.model_dir,'best/*'))
         np.save('{}/train_label'.format(model_dir), reader.labels)

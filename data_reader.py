@@ -3,14 +3,14 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import ndimage
-from skimage.transform import resize
-from Queue import Queue
+from skimage.transform import resize, downscale_local_mean
+from queue import Queue
 from threading import Thread, Lock
 from functools import partial
 
 
-from plots import check_dims, plot_rgb, plot_heatmap
-
+# from plots import check_dims, plot_rgb, plot_heatmap
+import plots
 import read_geoTiff as geotif
 import gdal_processing as gp
 
@@ -18,7 +18,7 @@ IS_DEBUG=True
 ### ZRH 1 Sentinel-2 and Google-high res data
 
 def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
-    image_20lr = check_dims(image_20lr)
+    image_20lr = plots.check_dims(image_20lr)
     N, w, h, ch = image_20lr.shape
 
     if scale is not None:
@@ -48,7 +48,11 @@ def downscale(img, scale):
 
 
 def read_and_upsample_sen2(args, roi_lon_lat, LR_file=None):
-    if LR_file is None: LR_file = args.LR_file
+    if LR_file is None:
+        if 'LR_file' in args:
+            LR_file = args.LR_file
+        else:
+            LR_file = args.data_dir
     if 'USER' in LR_file:
         data10, data20 = geotif.readS2_old(args, roi_lon_lat, data_file=LR_file)
     else:
@@ -140,7 +144,10 @@ class DataReader(object):
         self.scale = self.args.scale
         self.gsd = str(10.0/self.scale)
 
-        self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
+        if "HR_file" in self.args:
+            self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
+        else:
+            self.args.HR_file = None
 
         self.patch_h = self.args.patch_size * self.scale
 
@@ -176,7 +183,7 @@ class DataReader(object):
             # self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
             #                                     patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
             #                                     scale=args.scale)
-            val_random = False
+            val_random = True if self.args.dataset == 'vaihingen' else False
             if val_random:
                 self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                     patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=True,border=4,
@@ -209,10 +216,11 @@ class DataReader(object):
         else:
             self.read_test_data()
             self.n_channels = self.test[0].shape[-1]
+            self.two_ds = False
             self.patch_gen_test = PatchExtractor(dataset_low=self.test, dataset_high=self.test_h, label=self.labels_test,
-                                                 patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-                                                 scale=self.args.scale, lims_with_labels=self.lims_labels,
-                                                 patches_with_labels=self.args.patches_with_labels, two_ds=True)
+                                                 patch_l=self.patch_l_eval, n_workers=1, is_random=False, border=4,
+                                                 scale=self.args.scale, lims_with_labels=self.lims_labels_test,
+                                                 patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
             #
             # self.patch_gen_test = PatchExtractor(dataset_low=self.data, dataset_high=None, label=self.labels,
             #                                      patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
@@ -232,29 +240,6 @@ class DataReader(object):
             #     im.show()
             #
             # print('done')
-            if False:
-                nr_patches = self.patch_gen.nr_patches
-                rgb_rec = np.empty(shape=[nr_patches, args.patch_size*args.scale, args.patch_size*args.scale,3])
-
-                for idx in xrange(0, nr_patches):
-                    # for idx in xrange(0,100):
-                    lr, hr = self.patch_gen.get_inputs()
-
-                    rgb_rec[idx] = hr[...,0:3]
-                    # pred_c_rec[start:stop] = pc_
-
-
-                    if idx % 1000 == 0:
-                        print(idx)
-                        # recompose
-                border = 4
-                ref_size = (self.train_h.shape[1],self.train_h.shape[0])
-                print ref_size
-                ## Recompose RGB
-                import patches
-                data_recomposed = patches.recompose_images(rgb_rec, size=ref_size, border=border*args.scale)
-                # plots.plot_heatmap(data_recomposed, file=model_dir + '/pred_reg_recomposed')  # ,min=-1,max=1)
-                plot_rgb(data_recomposed,file='data_recomposed')
 
     def prepare_test_data(self):
 
@@ -268,23 +253,66 @@ class DataReader(object):
                                             patches_with_labels=self.args.patches_with_labels,
                                             two_ds=self.two_ds)
 
-    def get_input_test(self):
-        self.patch_gen_test = PatchExtractor(dataset_low=self.test, dataset_high=self.test_h, label=self.labels_test,
-                                             patch_l=self.patch_l_eval, n_workers=4, is_random=False, border=4, max_queue_size=10,
-                                             scale=self.args.scale, lims_with_labels=self.lims_labels_test,
-                                             patches_with_labels=self.args.patches_with_labels, two_ds=True)
+    def get_input_test(self): #
+        # if resetPatchExtractor:
+        #     self.patch_gen_test = PatchExtractor(dataset_low=self.test, dataset_high=self.test_h, label=self.labels_test,
+        #                                          patch_l=self.patch_l_eval, n_workers=4, is_random=False, border=4, max_queue_size=10,
+        #                                          scale=self.args.scale, lims_with_labels=self.lims_labels_test,
+        #                                          patches_with_labels=self.args.patches_with_labels, two_ds=True)
 
-        return partial(self.input_fn, type='test')
+
+
+        gen_func = self.patch_gen_test.get_iter_test
+        patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
+        batch = self.batch_eval
+        multiplier = 2 if self.two_ds else 1
+        self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset else 1
+        n_lab = self.n_channels_lab
+        if self.labels_test:
+            if self.is_HR_labels:
+                n_low = self.n_channels *multiplier
+                n_high = (3+n_lab) *multiplier
+            else:
+                n_low = (self.n_channels + n_lab)*multiplier
+                n_high = 3 *multiplier
+
+            ds = tf.data.Dataset.from_generator(
+                gen_func, (tf.float32, tf.float32),
+                (
+                    tf.TensorShape([patch_l, patch_l,
+                                    n_low]),
+                    tf.TensorShape([patch_h, patch_h,
+                                    n_high])
+                ))
+
+
+            ds = ds.map(self.reorder_ds, num_parallel_calls=6)
+
+
+            ds = ds.batch(batch).map(self.normalize, num_parallel_calls=6)
+
+            ds = ds.prefetch(buffer_size=batch*2)
+        else:
+            ds = tf.data.Dataset.from_generator(
+                gen_func, tf.float32,
+                tf.TensorShape([patch_l, patch_l,self.n_channels]))
+            if batch is None:
+                batch = self.args.batch_size
+            ds = ds.batch(batch) #.map(self.normalize, num_parallel_calls=6)
+
+            ds = ds.prefetch(buffer_size=batch * 2)
+
+        return ds
 
 
     def get_input_val(self):
-        self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
+        self.patch_gen_val1 = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                             patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
                                             is_random=False, border=4,
                                             scale=self.args.scale, lims_with_labels=self.lims_labels_val,
                                             patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
 
-        return partial(self.input_fn, type='val')
+        return partial(self.input_fn, type='val1')
 
     def normalize(self, features, labels):
 
@@ -361,7 +389,6 @@ class DataReader(object):
             ref_scale = 16
             self.train = downscale(self.train_h.copy(),ref_scale)
             self.train_h = downscale(self.train_h,ref_scale//self.args.scale)
-            #  TODO check val label for vaihingen complete
             self.labels,self.lims_labels = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_train, dsm_file=self.args.dsm_train, is_HR=self.is_HR_labels, ref_scale=ref_scale)
         else:
             self.train_h = geotif.readHR(self.args,
@@ -388,8 +415,6 @@ class DataReader(object):
                 self.val_h = downscale(self.val_h, scale=ref_scale//self.args.scale)
 
             self.labels_val,self.lims_labels_val = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_val, dsm_file=self.args.dsm_val, is_HR=self.is_HR_labels, ref_scale=ref_scale)
-            if self.args.dataset == 'vaihingen':
-                self.labels_val[self.labels != -1.] = -1.
 
         else:
             self.val_h = geotif.readHR(self.args,
@@ -451,23 +476,33 @@ class DataReader(object):
             print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
                                                                self.val_h.shape[0], self.val_h.shape[1]))
 
+        # if self.args.dataset == 'vaihingen':
+        #     # Removing training labels from the val set
+        #     is_training = self.labels[...,0] != -1.
+        #     self.labels_val[is_training] = -1.
+        #     if self.val_h is not None:
+        #         self.val_h = self.val_h.copy()
+        #         self.val_h[is_training] = -1.
+        #     self.val = self.val.copy()
+        #     is_training = downscale_local_mean(is_training,(self.args.scale,self.args.scale)) > 0.5
+        #     self.val[is_training] = -1.
         if self.args.save_arrays:
             f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
-            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
+            plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
             # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
             # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
             # np.save(self.args.model_dir + '/train_HR',self.train_h)
             # np.save(self.args.model_dir + '/train_S2', self.train)
             if 'vaihingen' in self.args.dataset:
-                plot_heatmap(self.labels_val[...,1], file=self.args.model_dir + '/val_reg_label', min=0,percentiles=(0,100))
-                plot_rgb(self.labels_val[...,0], file=self.args.model_dir + '/val_sem_label', reorder=False, percentiles=(0, 100))
-                plot_rgb(self.val, file=self.args.model_dir + '/val_S2', reorder=False,normalize=False)
+                plots.plot_heatmap(self.labels_val[...,1], file=self.args.model_dir + '/val_reg_label', min=0,percentiles=(0,100))
+                plots.plot_labels(self.labels_val[...,0], file=self.args.model_dir + '/val_sem_label')
+                plots.plot_rgb(self.val, file=self.args.model_dir + '/val_S2', reorder=False,normalize=False)
 
             else:
                 plt_reg(self.labels_val, self.args.model_dir + '/val_reg_label')
-                plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
+                plots.plot_rgb(self.val, file=self.args.model_dir + '/val_S2')
 
-            plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, normalize=False)
+            plots.plot_rgb(self.val_h, file=self.args.model_dir + '/val_HR', reorder=False, normalize=False)
             np.save(self.args.model_dir + '/val_S2', self.val)
             np.save(self.args.model_dir + '/val_HR', self.val_h)
             np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
@@ -484,15 +519,28 @@ class DataReader(object):
             print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
     def read_test_data(self):
         self.is_HR_labels = self.args.is_hr_label
-
-        self.test_h = geotif.readHR(self.args,
-                             roi_lon_lat=self.args.roi_lon_lat_test) if self.args.HR_file is not None else None
-        if self.args.is_noS2:
-            self.test = downscale(self.test_h,scale=self.args.scale)
+        if 'vaihingen' in self.args.dataset:
+            # LR space reference is always 16 ds. from original HR image
+            self.test_h = geotif.readHR(self.args, roi_lon_lat=None, data_file=self.args.top_test)
+            ref_scale = 16
+            self.test = downscale(self.test_h.copy(),ref_scale)
+            self.test_h = downscale(self.test_h,ref_scale//self.args.scale)
+            self.labels_test,self.lims_labels_test = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_test, dsm_file=self.args.dsm_test, is_HR=self.is_HR_labels, ref_scale=ref_scale)
         else:
-            self.test = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_test)
-        self.labels_test, self.lims_labels_test = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_test,
-                                  roi_with_labels=self.args.roi_lon_lat_test, is_HR=self.is_HR_labels)
+
+            if not "roi_lon_lat_test" in self.args:
+                self.args.roi_lon_lat_test = None
+            self.test_h = geotif.readHR(self.args,
+                                 roi_lon_lat=self.args.roi_lon_lat_test) if self.args.HR_file is not None else None
+            if self.args.is_noS2:
+                self.test = downscale(self.test_h,scale=self.args.scale)
+            else:
+                self.test = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_test)
+            if "points" in self.args:
+                self.labels_test, self.lims_labels_test = geotif.read_labels(self.args, roi=self.args.roi_lon_lat_test,
+                                          roi_with_labels=self.args.roi_lon_lat_test, is_HR=self.is_HR_labels)
+            else:
+                self.labels_test, self.lims_labels_test = None, None
 
         scale = self.args.scale
         if self.test_h is not None:
@@ -504,10 +552,11 @@ class DataReader(object):
             self.test = self.test[0:int(x_shapes), 0:int(y_shapes), :]
             self.test_h = self.test_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
 
-            if self.is_HR_labels:
-                self.labels_test = self.labels_test[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
-            else:
-                self.labels_test = self.labels_test[0:x_shapes, 0:y_shapes]
+            if self.labels_test:
+                if self.is_HR_labels:
+                    self.labels_test = self.labels_test[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
+                else:
+                    self.labels_test = self.labels_test[0:x_shapes, 0:y_shapes]
 
             print('\tAfter:\tData:({}x{})\tLabels:({}x{})'.format(self.test.shape[0], self.test.shape[1],
                                                                   self.test_h.shape[0], self.test_h.shape[1]))
@@ -515,16 +564,16 @@ class DataReader(object):
 
         if self.args.save_arrays:
             f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
-            plt_reg = lambda x, file: plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
+            plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
             # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
             # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
             # np.save(self.args.model_dir + '/train_HR',self.train_h)
             # np.save(self.args.model_dir + '/train_S2', self.train)
-
-            plt_reg(self.labels_test, self.args.model_dir + '/test_reg_label')
+            if self.labels_test is not None:
+                plt_reg(self.labels_test, self.args.model_dir + '/test_reg_label')
             if self.test_h is not None:
-                plot_rgb(self.test_h, file=self.args.model_dir + '/test_HR', reorder=False, percentiles=(0, 100))
-            plot_rgb(self.test, file=self.args.model_dir + '/test_S2')
+                plots.plot_rgb(self.test_h, file=self.args.model_dir + '/test_HR', reorder=False, percentiles=(0, 100))
+            plots.plot_rgb(self.test, file=self.args.model_dir + '/test_S2')
             # np.save(self.args.model_dir + '/val_S2', self.val)
             # np.save(self.args.model_dir + '/val_HR', self.val_h)
             # np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
@@ -589,6 +638,10 @@ class DataReader(object):
             gen_func = self.patch_gen_val.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
+        elif type == 'val1':
+            gen_func = self.patch_gen_val1.get_iter
+            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
+            batch = self.batch_eval
         elif type == 'test':
             gen_func = self.patch_gen_test.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
@@ -647,8 +700,11 @@ class PatchExtractor:
         self.unlab = unlab
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
-            self.label_1 = np.zeros_like(self.label)
-        self.is_HR_label = not (self.d_l.shape[0:2] == self.label.shape[0:2])
+            self.label_1 = np.zeros_like(self.label) if self.label is not None else None
+        if self.label is not None:
+            self.is_HR_label = not (self.d_l.shape[0:2] == self.label.shape[0:2])
+        else:
+            self.is_HR_label = False
 
         self.is_random = is_random
         self.border = border
@@ -700,7 +756,7 @@ class PatchExtractor:
             # indices = range(n_x * self.n_y)
             # coords = np.array(map(lambda x: divmod(x,self.n_y),indices))
 
-            valid_coords = np.logical_and.reduce(~np.equal(self.label, -1), axis=2)
+            valid_coords = np.logical_and.reduce(~np.equal(self.label, -1), axis=2) if self.label is not None else True
             if self.is_HR_label:
                 valid_input = np.logical_and.reduce(~np.equal(self.d_h, 0), axis=2)
             else:
@@ -715,13 +771,13 @@ class PatchExtractor:
             valid_coords += (buffer_size)
 
             if self.is_HR_label:
-                valid_coords = np.array(map(lambda x: x // self.scale,valid_coords))
+                valid_coords = np.array([x // self.scale for x in valid_coords])
                 # ymin, xmin, ymax, xmax = map(lambda x: x // self.scale, self.lims_lab)
             # else:
             #     ymin, xmin, ymax, xmax = self.lims_lab
 
-            indices = np.random.choice(len(valid_coords),min(size_label_ind,len(valid_coords)),replace=False)
-            indices = valid_coords[indices]
+            rand_sample = np.random.choice(len(valid_coords),min(size_label_ind,len(valid_coords)),replace=False)
+            indices = valid_coords[rand_sample]
             # indices = np.random.choice(len(valid_coords),size=min(len(valid_coords),size_label_ind),replace=False)
 
             # dx, dy, n_y_lab = max(0,xmin -buffer_size//2), max(0,ymin -buffer_size//2), area_labels[1]
@@ -753,16 +809,18 @@ class PatchExtractor:
                 print(' labeled and unlabeled data are always fed within a batch')
 
             else:
-                assert False
-                # Corner is always computed in low_res data
-                indices1 = np.random.choice(n_x * self.n_y, size=int(max_patches)-len(indices), replace=False)
-
-                self.indices = np.concatenate((indices,indices1))
-                self.shuffled_indices = False
-                self.len_labels = len(indices)
-                self.len_labelsALL = len(self.indices)
-
-                print(' {}/{} are patches with GT'.format(len(indices),len(self.indices)))
+                self.indices1 = indices
+                self.indices2 = None
+                # assert False
+                # # Corner is always computed in low_res data
+                # indices1 = np.random.choice(n_x * self.n_y, size=int(max_patches)-len(indices), replace=False)
+                #
+                # self.indices = np.concatenate((indices,indices1))
+                # self.shuffled_indices = False
+                # self.len_labels = len(indices)
+                # self.len_labelsALL = len(self.indices)
+                #
+                # print(' {}/{} are patches with GT'.format(len(indices),len(self.indices)))
 
             self.rand_ind = 0
         self.lock = Lock()
@@ -796,7 +854,7 @@ class PatchExtractor:
                             else:
                                 self.inputs_queue.put(self.get_patches(xy_corner=(ii, jj)))  # + (i,)
                             i += 1
-                    print 'starting over Val set {}'.format(i)
+                    print('starting over Val set {}'.format(i))
 
     def get_patch_corner(self,data, x,y,size):
         if data is not None:
@@ -835,11 +893,14 @@ class PatchExtractor:
             data_h = np.dstack((patch_h, label)) if patch_h is not None else label
         else:
             data_h = patch_h
-            patch_l = np.dstack((patch_l, label))
+            if label is not None:
+                patch_l = np.dstack((patch_l, label))
         if self.return_corner:
             return patch_l, data_h, xy_corner
-        else:
+        elif data_h is not None:
             return patch_l, data_h
+        else:
+            return patch_l
     def get_patches_unlab(self, xy_corner):
 
         x_l, y_l = map(int, xy_corner)
@@ -857,21 +918,23 @@ class PatchExtractor:
 
         if not self.two_ds:
             with self.lock:
-                if self.rand_ind < self.d2_after:
-                    ind = self.indices[np.mod(self.rand_ind,self.len_labels)]
-                else:
-                    if not self.shuffled_indices:
-                        np.random.shuffle(self.indices)
-                        self.shuffled_indices = True
-                        print(' Shuffling and addind unlabeled data')
-                    ind = self.indices[np.mod(self.rand_ind,self.len_labelsALL)]
+                ind1 = self.indices1[np.mod(self.rand_ind, len(self.indices1))]
+
+                # if self.rand_ind < self.d2_after:
+                #     ind = self.indices[np.mod(self.rand_ind,self.len_labels)]
+                # else:
+                #     if not self.shuffled_indices:
+                #         np.random.shuffle(self.indices)
+                #         self.shuffled_indices = True
+                #         print(' Shuffling and addind unlabeled data')
+                #     ind = self.indices[np.mod(self.rand_ind,self.len_labelsALL)]
 
                 # print ' rand_index={}'.format(self.rand_ind)
                 self.rand_ind+=1
             # ind = 50
             # corner_ = divmod(ind, self.n_y)
 
-            return self.get_patches(ind)
+            return self.get_patches(ind1)
         else:
             with self.lock:
                 ind1 = self.indices1[np.mod(self.rand_ind, len(self.indices1))]
@@ -954,3 +1017,6 @@ class PatchExtractor:
     def get_iter(self):
         while True:
             yield self.get_inputs()[0:2]
+    def get_iter_test(self):
+        while True:
+            yield self.get_inputs()

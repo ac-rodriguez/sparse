@@ -183,7 +183,7 @@ def get_embeddings(hook, Model_fn, suffix=''):
 
     values = embeddings['values']
     labels = embeddings['labels']
-    print 'len embeddings', len(values)
+    print('len embeddings', len(values))
     g_1 = tf.Graph()
     with g_1.as_default():
 
@@ -408,15 +408,28 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
     # checkpoint_path=tools.get_lastckpt(model_dir))  # ,predict_keys=['hr_hat_rgb'])
 
     print('Predicting {} Patches...'.format(nr_patches))
-    for idx in tqdm(xrange(0, batch_idxs)):
-        p_ = preds_iter.next()
-        start, stop = idx * batch_size, (idx + 1) * batch_size
+    for idx in tqdm(range(0, batch_idxs)):
+        p_ = next(preds_iter)
+        start = idx * batch_size
+        # print(start,stop,stop-start)
+        # print(p_['sem'].shape)
         if is_reg:
-            pred_r_rec[start:stop] = p_['reg']
+            stop = start + p_['reg'].shape[0]
+            if stop > nr_patches:
+                last_batch = nr_patches - start
+                pred_r_rec[start:stop] = p_['reg'][0:last_batch]
+            else:
+                pred_r_rec[start:stop] = p_['reg']
         if is_sem:
-            pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
+            stop = start + p_['sem'].shape[0]
+            if stop > nr_patches:
+                last_batch = nr_patches - start
+                pred_c_rec[start:stop] = np.argmax(p_['sem'][0:last_batch], axis=-1)
+            else:
+                pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
 
-    print ref_size
+
+    print(ref_size)
     ## Recompose RGB
     if is_reg:
         data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
@@ -430,7 +443,7 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
         data_c_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
         if not return_array:
             np.save('{}/{}_sem_pred'.format(save_dir, type_), data_c_recomposed)
-            plt_reg(data_c_recomposed, '{}/{}_sem_pred'.format(save_dir, type_))
+            plots.plot_labels(data_c_recomposed, '{}/{}_sem_pred'.format(save_dir, type_))
     else:
         data_c_recomposed = None
 

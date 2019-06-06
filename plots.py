@@ -17,6 +17,7 @@ def check_dims(data):
         data = np.expand_dims(data, axis=3)
         data = np.expand_dims(data, axis=0)
     return data
+
 def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='viridis', file=None):
 
     data[np.isnan(data)] = -1
@@ -81,16 +82,18 @@ def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, per
 
 
 
-def plot_labels(preds, file, colors, return_img=False):
+def plot_labels(preds, file, colors=None, return_img=False):
 
     filename = file + '.png'
     preds  = np.squeeze(preds)
+    if colors is not None:
+        colors1 = [tuple([y / 255.0 for y in x]) for x in colors]
+        cm = LinearSegmentedColormap.from_list('my_cmap', colors1, N=len(colors))
+    else:
+        preds = (preds - preds.min()) / (preds.max() - preds.min())
+        cm = plt.get_cmap("tab20")
 
-    colors1 = [tuple([y / 255.0 for y in x]) for x in colors]
-
-    cm = LinearSegmentedColormap.from_list('my_cmap', colors1, N=len(colors))
-
-    img = Image.fromarray(cm(preds, bytes= True))
+    img = Image.fromarray(cm(preds, bytes=True))
     if return_img:
         return img
     else:

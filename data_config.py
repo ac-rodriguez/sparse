@@ -118,6 +118,7 @@ def get_dataset(DATASET, is_mounted = False):
             dset_config['roi_lon_lat_tr_lb'] = '-117.401,34.585,-117.39,34.594'
 
     elif "vaihingen" in DATASET:
+        #TODO add test dataset
         OBJECT = 'vaihingen'
         dset_config[
             'LR_file'] = None
@@ -137,13 +138,17 @@ def get_dataset(DATASET, is_mounted = False):
         else:
             path_ = PATH+'/sparse/data/vaihingen/'
 
-            dset_config['sem_train'] = path_ + 'sem_9cm.tif'
-            dset_config['dsm_train'] = path_ + 'dsm_9cm.tif'
-            dset_config['top_train'] = path_ + 'top_9cm.tif'
+            dset_config['sem_train'] = path_ + 'sem_train_9cm.tif'
+            dset_config['dsm_train'] = path_ + 'dsm_train_9cm.tif'
+            dset_config['top_train'] = path_ + 'top_train_9cm.tif'
 
-            dset_config['sem_val'] = path_ + 'sem_complete_9cm.tif'
-            dset_config['dsm_val'] = path_ + 'dsm_9cm.tif'
-            dset_config['top_val'] = path_ + 'top_9cm.tif'
+            dset_config['sem_val'] = path_ + 'sem_val_9cm.tif'
+            dset_config['dsm_val'] = path_ + 'dsm_val_9cm.tif'
+            dset_config['top_val'] = path_ + 'top_val_9cm.tif'
+
+            dset_config['sem_test'] = path_ + 'sem_complete_9cm.tif'
+            dset_config['dsm_test'] = path_ + 'dsm_9cm.tif'
+            dset_config['top_test'] = path_ + 'top_9cm.tif'
 
         dset_config['is_noS2'] = True
     else:
@@ -196,5 +201,5 @@ if __name__ == '__main__':
 
                 pol.description = 'Area: {:.5f} Km2'.format(geom_area.area/(1000.**2))
 
-                print '{} Area: {:.5f} Km2'.format(name_, geom_area.area/(1000.**2))
+                print('{} Area: {:.5f} Km2'.format(name_, geom_area.area/(1000.**2)))
     kml.save('roi_{}.kml'.format(args.dataset))
