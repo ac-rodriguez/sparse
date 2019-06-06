@@ -5,21 +5,16 @@ import sys
 import shutil
 import tensorflow as tf
 
-from tqdm import tqdm
 
 from data_reader import DataReader
-# from deeplab_resnet.data_reader import DataReader as DataReader1
+
 from utils import save_parameters, add_letter_path
 from model import Model
 import plots
-import patches
+
 from data_config import get_dataset
 import tools_tf as tools
 # colormax = {2: 0.93, 4: 0.155, 8: 0.04}
-# HRFILE='/home/pf/pfstaff/projects/andresro/sparse/data/coco'
-# LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
-# # POINTSFILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
-# POINTSFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_detections.kml'
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -255,8 +250,7 @@ def main(unused_args):
         input_fn, input_fn_val = reader.get_input_fn()
         val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size_eval))
         train_iters = np.ceil(np.sum(reader.patch_gen.nr_patches) / float(args.batch_size))
-        # print train_iters
-        # assert train_iters*args.eval_every > 200.0, 'eval every should be larger than {}'.format(np.ceil(200./train_iters))
+
         metrics_scope = 'metricsHR' if args.is_hr_pred else 'metrics'
         if int(args.lambda_reg) == 1:
             metric_ = metrics_scope+'/mae'
@@ -311,7 +305,6 @@ def main(unused_args):
             else:
                 plt_reg(reader.patch_gen.label_1, model_dir + '/sample_train_reg_label')
 
-            # plt_reg(reader.patch_gen.label_1, model_dir + '/sample_train_reg_label')
         except AttributeError:
             pass
         try:

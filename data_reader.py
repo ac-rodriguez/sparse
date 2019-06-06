@@ -9,13 +9,13 @@ from threading import Thread, Lock
 from functools import partial
 
 
-# from plots import check_dims, plot_rgb, plot_heatmap
+
 import plots
 import read_geoTiff as geotif
-import gdal_processing as gp
+
 
 IS_DEBUG=True
-### ZRH 1 Sentinel-2 and Google-high res data
+
 
 def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
     image_20lr = plots.check_dims(image_20lr)
@@ -43,7 +43,6 @@ def downscale(img, scale):
     for c in range(ch):
         imout[...,c] = resize(img[...,c], ref_shape[0:2], anti_aliasing=True, anti_aliasing_sigma=float(scale)/np.pi, mode='reflect')
 
-    # img = (img - img.min()) / (img.max()-img.min())
     return imout
 
 
@@ -67,56 +66,6 @@ def read_and_upsample_sen2(args, roi_lon_lat, LR_file=None):
     return data
 
 
-
-def read_and_upsample_test_file(path):
-    # TODO finish implementation for zrh 1
-    try:
-        print('reading {} ...'.format(path))
-        with np.load(path, mmap_mode='r') as data_:
-            # points_new = data_['points10']
-            data10 = data_['data10']
-            data20 = data_['data20']
-            cloud20 = data_['cld20']
-
-    except IOError:
-
-        print('{}.npz file could not be read/found'.format(path))
-        return None
-
-    if data20.shape[2] == 7:
-        data20 = data20[..., 0:6]
-        print('SCL removed from data20')
-
-    print("# Bands 10m:{} 20m:{}".format(data10.shape[-1], data20.shape[-1]))
-
-    if data10.shape != data20.shape:
-        print("Performing Bicubic interpolation of 20m data... ")
-        data20 = interpPatches(data20, ref_shape=data10.shape[0:2], squeeze=True)
-        cloud20 = interpPatches(cloud20, ref_shape=data10.shape[0:2], squeeze=True)
-
-    data10 = np.concatenate((data10, data20, cloud20), axis=2)
-    del data20, cloud20
-
-    N = data10.shape[0]
-    print("N = {}".format(N))
-    print('{:.2f} GB loaded in memory'.format(
-        (np.prod(data10.shape) * data10.itemsize) / 1e9))
-
-    return data10
-
-
-def sub_set(data, select_bands):
-    select_bands = ([x for x in re.split(',', select_bands)])
-
-    all_bands = 'B2,B3,B4,B5,B6,B7,B8,B8A,B11,B12,CLD'
-    all_bands = ([x for x in re.split(',', all_bands)])
-
-    assert len(all_bands) == data.shape[-1], 'Not all bands were included in create_3A, subsetting won\'t work'
-
-    band_id = [val in select_bands for val in all_bands]
-    print('Subset of bands {} will be selected from {}'.format(select_bands, all_bands))
-
-    return data[..., band_id]
 
 
 class DataReader(object):
@@ -221,16 +170,6 @@ class DataReader(object):
                                                  patch_l=self.patch_l_eval, n_workers=1, is_random=False, border=4,
                                                  scale=self.args.scale, lims_with_labels=self.lims_labels_test,
                                                  patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
-            #
-            # self.patch_gen_test = PatchExtractor(dataset_low=self.data, dataset_high=None, label=self.labels,
-            #                                      patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-            #                                      scale=args.scale, lims_with_labels=self.lims_labels, patches_with_labels=self.args.patches_with_labels, two_ds=True)
-            #
-            # self.n_channels = self.train[0].shape[-1]
-
-            # self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=None, label=self.labels_val,
-            #                                      patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-            #                                      scale=args.scale)
 
             # for _ in range(10):
             #     feat,_ = self.patch_gen_test.get_inputs()
@@ -254,13 +193,6 @@ class DataReader(object):
                                             two_ds=self.two_ds)
 
     def get_input_test(self): #
-        # if resetPatchExtractor:
-        #     self.patch_gen_test = PatchExtractor(dataset_low=self.test, dataset_high=self.test_h, label=self.labels_test,
-        #                                          patch_l=self.patch_l_eval, n_workers=4, is_random=False, border=4, max_queue_size=10,
-        #                                          scale=self.args.scale, lims_with_labels=self.lims_labels_test,
-        #                                          patches_with_labels=self.args.patches_with_labels, two_ds=True)
-
-
 
         gen_func = self.patch_gen_test.get_iter_test
         patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
@@ -476,23 +408,10 @@ class DataReader(object):
             print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.val.shape[0], self.val.shape[1],
                                                                self.val_h.shape[0], self.val_h.shape[1]))
 
-        # if self.args.dataset == 'vaihingen':
-        #     # Removing training labels from the val set
-        #     is_training = self.labels[...,0] != -1.
-        #     self.labels_val[is_training] = -1.
-        #     if self.val_h is not None:
-        #         self.val_h = self.val_h.copy()
-        #         self.val_h[is_training] = -1.
-        #     self.val = self.val.copy()
-        #     is_training = downscale_local_mean(is_training,(self.args.scale,self.args.scale)) > 0.5
-        #     self.val[is_training] = -1.
         if self.args.save_arrays:
             f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
             plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
-            # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
-            # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
-            # np.save(self.args.model_dir + '/train_HR',self.train_h)
-            # np.save(self.args.model_dir + '/train_S2', self.train)
+
             if 'vaihingen' in self.args.dataset:
                 plots.plot_heatmap(self.labels_val[...,1], file=self.args.model_dir + '/val_reg_label', min=0,percentiles=(0,100))
                 plots.plot_labels(self.labels_val[...,0], file=self.args.model_dir + '/val_sem_label')
@@ -565,45 +484,13 @@ class DataReader(object):
         if self.args.save_arrays:
             f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
             plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
-            # plt_reg(self.labels, self.args.model_dir + '/train_reg_label')
-            # plot_rgb(self.train_h, file=self.args.model_dir + '/train_HR', reorder=False, percentiles=(0, 100))
-            # np.save(self.args.model_dir + '/train_HR',self.train_h)
-            # np.save(self.args.model_dir + '/train_S2', self.train)
+
             if self.labels_test is not None:
                 plt_reg(self.labels_test, self.args.model_dir + '/test_reg_label')
             if self.test_h is not None:
                 plots.plot_rgb(self.test_h, file=self.args.model_dir + '/test_HR', reorder=False, percentiles=(0, 100))
             plots.plot_rgb(self.test, file=self.args.model_dir + '/test_S2')
-            # np.save(self.args.model_dir + '/val_S2', self.val)
-            # np.save(self.args.model_dir + '/val_HR', self.val_h)
-            # np.save(self.args.model_dir + '/val_reg_label', self.labels_val)
-            # sys.exit(0)
 
-        if False:
-            print(' [*] Loading data for Prediction ')
-            # self.train_h = readHR(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-            self.train = read_and_upsample_sen2(self.args, roi_lon_lat=self.args.roi_lon_lat_tr)
-
-            self.labels,_ = read_labels(self.args, roi=self.args.roi_lon_lat_tr,
-                                      roi_with_labels=self.args.roi_lon_lat_tr_lb) if self.args.points is not None else None
-            self.train_h = readHR(self.args,
-                                  roi_lon_lat=self.args.roi_lon_lat_tr) if self.args.HR_file is not None else None
-
-            self.nb_bands = self.train.shape[-1]
-
-            # TODO check why there is a difference in the shapes
-            scale = self.args.scale
-
-            print(
-                ' Predict shapes: \n\tBefore:\tLow:({}x{})'.format(self.train.shape[0], self.train.shape[1]))
-            # Reduce data to the enlarged 10m pixels
-            if self.labels is not None:
-                x_shapes, y_shapes = self.compute_shapes(dset_h=self.labels, dset_l=self.train, scale=scale)
-
-                self.train = self.train[0:int(x_shapes), 0:int(y_shapes), :]
-                self.labels = self.labels[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
-                print('\tAfter:\tLow:({}x{})\tHigh:({}x{})'.format(self.train.shape[0], self.train.shape[1],
-                                                                   self.labels.shape[0], self.labels.shape[1]))
     @staticmethod
     def compute_shapes(scale, dset_h, dset_l):
 
