@@ -127,19 +127,24 @@ class DataReader(object):
             # self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
             #                                     patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
             #                                     scale=args.scale)
-            val_random = True if self.args.dataset == 'vaihingen' else False
-            if val_random:
-                self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
+            # val_random = True if self.args.dataset == 'vaihingen' else False
+            # if val_random:
+            self.patch_gen_val_complete = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h,
+                                                label=self.labels_val,
+                                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                                is_random=False, border=4,
+                                                scale=self.args.scale, lims_with_labels=self.lims_labels_val,
+                                                patches_with_labels=self.args.patches_with_labels,
+                                                two_ds=self.two_ds)
+            if self.patch_gen_val_complete.nr_patches >= args.val_patches:
+                print(' Complete val dataset used as random sub-sample too...')
+
+                self.patch_gen_val_rand = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
                                                     patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10, is_random=True,border=4,
                                                     scale=args.scale, max_N=args.val_patches, lims_with_labels=self.lims_labels_val, patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
             else:
-                self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h,
-                                                    label=self.labels_val,
-                                                    patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                                                    is_random=False, border=4,
-                                                    scale=self.args.scale, lims_with_labels=self.lims_labels_val,
-                                                    patches_with_labels=self.args.patches_with_labels,
-                                                    two_ds=self.two_ds)
+                self.patch_gen_val_rand = self.patch_gen_val_complete
+
 
             # featl,data_h = self.patch_gen_val.get_inputs()
             # plt.imshow(data_h[...,0:3])
@@ -303,6 +308,9 @@ class DataReader(object):
 
             print('Padded datasets with low ={}, high={} with 0.0'.format(a,b))
     def read_test_data(self):
+
+        print('\n [*] Loading TEST data \n')
+
         self.is_HR_labels = self.args.is_hr_label
         if 'vaihingen' in self.args.dataset:
             # LR space reference is always 16 ds. from original HR image
@@ -337,7 +345,7 @@ class DataReader(object):
             self.test = self.test[0:int(x_shapes), 0:int(y_shapes), :]
             self.test_h = self.test_h[0:int(scale * x_shapes), 0:int(scale * y_shapes), :]
 
-            if self.labels_test:
+            if self.labels_test is not None:
                 if self.is_HR_labels:
                     self.labels_test = self.labels_test[0:int(scale * x_shapes), 0:int(scale * y_shapes)]
                 else:
@@ -386,7 +394,7 @@ class DataReader(object):
         multiplier = 2 if self.two_ds else 1
         self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset else 1
         n_lab = self.n_channels_lab
-        if self.labels_test:
+        if self.labels_test is not None:
             if self.is_HR_labels:
                 n_low = self.n_channels *multiplier
                 n_high = (3+n_lab) *multiplier
@@ -423,14 +431,11 @@ class DataReader(object):
         return ds
 
 
-    def get_input_val(self):
-        self.patch_gen_val1 = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
-                                            patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                                            is_random=False, border=4,
-                                            scale=self.args.scale, lims_with_labels=self.lims_labels_val,
-                                            patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
+    def get_input_val(self, is_restart =False):
+        if is_restart:
+            self.patch_gen_val_complete.define_queues()
 
-        return partial(self.input_fn, type='val1')
+        return partial(self.input_fn, type='val_complete')
 
     def normalize(self, features, labels):
 
@@ -517,11 +522,11 @@ class DataReader(object):
             patch_l, patch_h = self.patch_l, self.patch_h
             batch = self.batch_tr
         elif type == 'val':
-            gen_func = self.patch_gen_val.get_iter
+            gen_func = self.patch_gen_val_rand.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
-        elif type == 'val1':
-            gen_func = self.patch_gen_val1.get_iter
+        elif type == 'val_complete':
+            gen_func = self.patch_gen_val_complete.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
         elif type == 'test':
@@ -558,11 +563,12 @@ class DataReader(object):
 
         return ds
 
-    def get_input_fn(self):
+    def get_input_fn(self, is_val_random=False):
+        val_type = 'val' if is_val_random else 'val_complete'
         input_fn = None
         if self.is_training:
             input_fn = partial(self.input_fn, type='train')
-        input_fn_val = partial(self.input_fn, type='val')
+        input_fn_val = partial(self.input_fn, type=val_type)
 
         return input_fn, input_fn_val
 

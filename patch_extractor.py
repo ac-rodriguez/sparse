@@ -10,7 +10,8 @@ class PatchExtractor:
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
                  border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None, patches_with_labels= 0.1, d2_after=0, two_ds=True, unlab = None):
         self.two_ds = two_ds
-
+        self.max_queue_size = max_queue_size
+        self.n_workers = n_workers
         self.d_l = dataset_low
         self.d_h = dataset_high
         self.label = label
@@ -106,9 +107,12 @@ class PatchExtractor:
 
 
             self.rand_ind = 0
+        self.define_queues()
+
+    def define_queues(self):
         self.lock = Lock()
-        self.inputs_queue = Queue(maxsize=max_queue_size)
-        self._start_batch_makers(n_workers)
+        self.inputs_queue = Queue(maxsize=self.max_queue_size)
+        self._start_batch_makers(self.n_workers)
 
     def _start_batch_makers(self, number_of_workers):
         for w in range(number_of_workers):
@@ -123,8 +127,8 @@ class PatchExtractor:
         else:
 
             while True:
-                i = 0
                 with self.lock:
+                    i = 0
                     # for data_id in range(len(self.d_l)):
                     for ii in self.range_i:
                         for jj in self.range_j:

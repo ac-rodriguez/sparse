@@ -185,7 +185,7 @@ def main(unused_args):
     model_dir = os.path.join(args.save_dir, '{}/PATCH{}_{}_SCALE{}_{}{}'.format(
         args.model, args.patch_size, args.patch_size_eval, args.scale, lambdas, args.tag))
 
-    if args.is_overwrite and os.path.exists(model_dir):
+    if args.is_overwrite and os.path.exists(model_dir) and args.is_train:
         print(' [!] Removing exsiting model and starting training from iter 0...')
         shutil.rmtree(model_dir, ignore_errors=True)
     elif not args.is_restore and args.is_train:
@@ -248,7 +248,7 @@ def main(unused_args):
 
         reader = DataReader(args, is_training=True)
         input_fn, input_fn_val = reader.get_input_fn()
-        val_iters = np.ceil(np.sum(reader.patch_gen_val.nr_patches) / float(args.batch_size_eval))
+        val_iters = np.ceil(np.sum(reader.patch_gen_val_rand.nr_patches) / float(args.batch_size_eval))
         train_iters = np.ceil(np.sum(reader.patch_gen.nr_patches) / float(args.batch_size))
 
         metrics_scope = 'metricsHR' if args.is_hr_pred else 'metrics'
@@ -287,8 +287,8 @@ def main(unused_args):
             if comp_fn(best, metrics[metric_]):
                 print ('New best at epoch {}, {}:{} from {}'.format(epoch_,metric_,metrics[metric_],best))
                 best = metrics[metric_]
-                input_fn_val1 = reader.get_input_val()
-                tools.predict_and_recompose(model,reader,input_fn_val1, reader.patch_gen_val1,is_hr_pred,args.batch_size_eval,'val',
+                input_fn_val_comp = reader.get_input_val(is_restart=True)
+                tools.predict_and_recompose(model,reader,input_fn_val_comp, reader.patch_gen_val_complete,is_hr_pred,args.batch_size_eval,'val',
                                             prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0), m=metrics)
 
             else:
@@ -308,12 +308,12 @@ def main(unused_args):
         except AttributeError:
             pass
         try:
-            plots.plot_rgb(reader.patch_gen_val.d_l1, file=model_dir + '/sample_val_LR')
+            plots.plot_rgb(reader.patch_gen_val_rand.d_l1, file=model_dir + '/sample_val_LR')
             if 'vaihingen' in args.dataset:
-                plots.plot_labels(reader.patch_gen_val.label_1[...,0], model_dir + '/sample_val_sem_label')
-                plt_reg(reader.patch_gen_val.label_1[...,-1], model_dir + '/sample_val_reg_label')
+                plots.plot_labels(reader.patch_gen_val_rand.label_1[...,0], model_dir + '/sample_val_sem_label')
+                plt_reg(reader.patch_gen_val_rand.label_1[...,-1], model_dir + '/sample_val_reg_label')
             else:
-                plt_reg(reader.patch_gen_val.label_1, model_dir + '/sample_val_reg_label')
+                plt_reg(reader.patch_gen_val_rand.label_1, model_dir + '/sample_val_reg_label')
         except AttributeError:
             pass
     else:
@@ -322,15 +322,14 @@ def main(unused_args):
 
     if args.is_train:
 
-        tools.predict_and_recompose(model, reader, reader.get_input_val(), reader.patch_gen_val1, is_hr_pred, args.batch_size_eval,
+        tools.predict_and_recompose(model, reader, reader.get_input_val(is_restart=True), reader.patch_gen_val_complete, is_hr_pred, args.batch_size_eval,
                                     'val', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                     chkpt_path=tools.get_last_best_ckpt(model.model_dir,'best/*'))
         np.save('{}/train_label'.format(model_dir), reader.labels)
         np.save('{}/val_label'.format(model_dir), reader.labels_val)
 
     reader.prepare_test_data()
-    input_fn_test = reader.get_input_test()
-    tools.predict_and_recompose(model, reader, input_fn_test, reader.patch_gen_test, is_hr_pred, args.batch_size_eval,
+    tools.predict_and_recompose(model, reader, reader.get_input_test, reader.patch_gen_test, is_hr_pred, args.batch_size_eval,
                                 'test', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                 chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
 
