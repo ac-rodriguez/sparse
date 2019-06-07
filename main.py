@@ -217,6 +217,11 @@ def main(unused_args):
         run_config = tf.estimator.RunConfig(log_step_count_steps=log_steps)
     best_ckpt = True
 
+    if args.is_noS2:
+        vars_to_warm_start = ["encode.*", "countception.*"]
+    else:
+        vars_to_warm_start = ["countception.*"] # with a change of sensor, encoder has different channel dimensions
+
     if args.warm_start_from is not None:
         if args.warm_start_from == 'LOWER':
             assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
@@ -228,13 +233,13 @@ def main(unused_args):
             if best_ckpt:
                 warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
 
-        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=["encode.*","countception.*"]) #,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
+        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=vars_to_warm_start) #,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
     elif args.distill_from is not None:
         warm_dir = args.distill_from
         if best_ckpt:
             warm_dir = tools.get_last_best_ckpt(args.distill_from, 'best/*')
 
-        warm_dir = tf.estimator.WarmStartSettings(warm_dir, vars_to_warm_start=["encode.*", "countception.*"]) #,"teacher[^/]"])
+        warm_dir = tf.estimator.WarmStartSettings(warm_dir, vars_to_warm_start=vars_to_warm_start) #,"teacher[^/]"])
     else:
         warm_dir = None
     Model_fn = Model(params)

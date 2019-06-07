@@ -537,7 +537,7 @@ class Model:
                 Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             else:
                 Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True)
-            self.y_hath = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
+            self.y_hat_teacher = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
                                       config_volume=self.config)
 
     def add_semi_loss(self):
@@ -758,14 +758,14 @@ class Model:
     def add_distilled_loss(self):
         if self.args.lambda_reg == 1.0:
             y_hat_ = self.y_hat['reg']
-            y_hath_ = self.y_hath['reg']
+            y_hat_teacher = self.y_hat_teacher['reg']
         elif self.args.lambda_reg == 0.0:
             y_hat_ = self.y_hat['sem']
-            y_hath_ = self.y_hath['sem']
+            y_hat_teacher = self.y_hat_teacher['sem']
         else:
             y_hat_ = tf.concat((self.y_hat['reg'], self.y_hat['sem']), axis=-1)
-            y_hath_ = tf.concat((self.y_hath['reg'], self.y_hath['sem']), axis=-1)
-        loss_dst = tf.losses.mean_squared_error(y_hat_, y_hath_)
+            y_hat_teacher = tf.concat((self.y_hat_teacher['reg'], self.y_hat_teacher['sem']), axis=-1)
+        loss_dst = tf.losses.mean_squared_error(y_hat_, y_hat_teacher)
         lambda_dst = 1.0
         self.losses.append(loss_dst)
         self.scale_losses.append(lambda_dst)
