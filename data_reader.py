@@ -387,6 +387,7 @@ class DataReader(object):
                                             two_ds=self.two_ds)
 
     def get_input_test(self): #
+        self.init_constants_normalization()
 
         gen_func = self.patch_gen_test.get_iter_test
         patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
@@ -424,7 +425,8 @@ class DataReader(object):
                 tf.TensorShape([patch_l, patch_l,self.n_channels]))
             if batch is None:
                 batch = self.args.batch_size
-            ds = ds.batch(batch) #.map(self.normalize, num_parallel_calls=6)
+            normalize = lambda x: (x - self.mean_train) / self.std_train
+            ds = ds.batch(batch).map(normalize, num_parallel_calls=6)
 
             ds = ds.prefetch(buffer_size=batch * 2)
 
@@ -501,18 +503,29 @@ class DataReader(object):
                            tf.expand_dims(data_l[..., n], axis=-1)
 
     def init_constants_normalization(self):
-        tf.Variable(self.mean_train.astype(np.float32), name='mean_train', trainable=False, validate_shape=True,
-                    expected_shape=tf.shape([self.n_channels]))
 
-        tf.Variable(self.std_train.astype(np.float32), name='std_train', trainable=False,
-                    expected_shape=tf.shape([self.n_channels]))
-        tf.Variable(self.max_dens.astype(np.float32), name='max_dens', trainable=False,
-                    expected_shape=tf.shape([1]))
+        try:
+            tf.Variable(self.mean_train.astype(np.float32), name='mean_train', trainable=False, validate_shape=True,
+                        expected_shape=tf.shape([self.n_channels]))
 
-        tf.constant(self.mean_train.astype(np.float32), name='mean_train_k')
+            tf.Variable(self.std_train.astype(np.float32), name='std_train', trainable=False,
+                        expected_shape=tf.shape([self.n_channels]))
+            tf.Variable(self.max_dens.astype(np.float32), name='max_dens', trainable=False,
+                        expected_shape=tf.shape([1]))
 
-        tf.constant(self.std_train.astype(np.float32), name='std_train_k')
-        tf.constant(self.max_dens.astype(np.float32), name='max_dens_k')
+            tf.constant(self.mean_train.astype(np.float32), name='mean_train_k')
+
+            tf.constant(self.std_train.astype(np.float32), name='std_train_k')
+            tf.constant(self.max_dens.astype(np.float32), name='max_dens_k')
+        except AttributeError:
+
+            self.mean_train = tf.Variable(np.zeros(self.n_channels, dtype= np.float32), name='mean_train', trainable=False, validate_shape=True,
+                        expected_shape=tf.shape([self.n_channels]))
+
+            self.std_train= tf.Variable(np.ones(self.n_channels, dtype=np.float32), name='std_train', trainable=False,
+                        expected_shape=tf.shape([self.n_channels]))
+
+
     def input_fn(self, type='train'):
         # np.random.seed(99)
         self.init_constants_normalization()

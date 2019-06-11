@@ -321,19 +321,21 @@ def main(unused_args):
                 plt_reg(reader.patch_gen_val_rand.label_1, model_dir + '/sample_val_reg_label')
         except AttributeError:
             pass
-    else:
-        assert os.path.isdir(args.model_dir)
-        reader = DataReader(args, is_training=True) # TODO to avoid reading Train and Val sets check how to restore mean_train properly
 
-    if args.is_train:
-
-        tools.predict_and_recompose(model, reader, reader.get_input_val(is_restart=True), reader.patch_gen_val_complete, is_hr_pred, args.batch_size_eval,
+        tools.predict_and_recompose(model, reader, reader.get_input_val(is_restart=True), reader.patch_gen_val_complete,
+                                    is_hr_pred, args.batch_size_eval,
                                     'val', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-                                    chkpt_path=tools.get_last_best_ckpt(model.model_dir,'best/*'))
+                                    chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
         np.save('{}/train_label'.format(model_dir), reader.labels)
         np.save('{}/val_label'.format(model_dir), reader.labels_val)
+        del reader.train, reader.train_h
+        del reader.val, reader.val_h
+        reader.prepare_test_data()
 
-    reader.prepare_test_data()
+    else:
+        assert os.path.isdir(args.model_dir)
+        reader = DataReader(args, is_training=False)
+
     tools.predict_and_recompose(model, reader, reader.get_input_test, reader.patch_gen_test, is_hr_pred, args.batch_size_eval,
                                 'test', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                 chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
