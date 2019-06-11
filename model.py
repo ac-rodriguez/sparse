@@ -152,7 +152,13 @@ class Model:
             earlyl = self.feat_l
             if self.model == 'simpleA':
                 earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
-            self.y_hat = simple(earlyl, n_channels=1, is_training=self.is_training)
+            self.y_hat, mid, latel = simple(earlyl, n_channels=1, is_training=self.is_training, return_feat=True)
+            if self.is_semi:
+                earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+                self.y_hatU,midlU,latelU = simple(earlylU, n_channels=1, is_training=self.is_training, return_feat=True)
+                self.Zl = latel
+                self.ZlU =latelU
+
         elif self.model == 'count' or self.model == 'counth':
             self.y_hat = countception(self.feat_l,pad=self.pad, is_training=self.is_training, config_volume=self.config)
             # if self.two_ds:
