@@ -29,13 +29,13 @@ def block(x, is_training, is_bn = True):
     return x2
 
 
-def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True, return_feat=False):
+def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True,reuse=tf.AUTO_REUSE, return_feat=False):
 
     feature_size = 256
 
     global i
     i = 0
-    with tf.variable_scope(scope_name):
+    with tf.variable_scope(scope_name, reuse=reuse):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
         x1 = tf.layers.conv2d(input, feature_size, kernel_size=3, use_bias=False, activation=tf.nn.relu, padding='same')
         x1bn = bn_layer(x1, activation_fn=tf.nn.relu, is_training=is_training) if is_bn else x1
