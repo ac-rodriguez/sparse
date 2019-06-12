@@ -217,7 +217,7 @@ def main(unused_args):
         run_config = tf.estimator.RunConfig(log_step_count_steps=log_steps)
     best_ckpt = True
 
-    if args.is_noS2:
+    if args.is_noS2 or not 'B_' in args.model:
         vars_to_warm_start = ["encode.*", "countception.*"]
     else:
         vars_to_warm_start = ["countception.*"] # with a change of sensor, encoder has different channel dimensions
