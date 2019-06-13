@@ -236,7 +236,7 @@ class Model:
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
             self.HR_hatU = sr.SR_task(feat_l=self.feat_lU, size=size, is_batch_norm=True, is_training=self.is_training)
 
-            feat = semi.encode(self.HR_hat, is_training=self.is_training, is_bn=True)
+            feat = semi.encode(self.HR_hat, is_training=self.is_training, is_bn=True, scale=self.args.scale)
             feat = tf.concat([feat, self.feat_l], axis=3)
             self.y_hat = countception(feat,pad=self.pad, is_training=self.is_training)
         elif self.model == 'countHR_lb':
@@ -542,7 +542,7 @@ class Model:
             if 'h' in self.model:
                 Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             else:
-                Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True)
+                Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.args.scale)
             self.y_hat_teacher = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
                                       config_volume=self.config)
 
