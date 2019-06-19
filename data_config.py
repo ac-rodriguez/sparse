@@ -58,6 +58,21 @@ def get_dataset(DATASET, is_mounted = False):
         elif DATASET == "coco100": # 267k
             dset_config['roi_lon_lat_tr_lb'] = '117.86,8.82,117.92,8.9'
 
+    elif "palmsocb" in DATASET:
+        OBJECT='palm'
+        dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE'+ \
+                               ';'+PATH+'/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE'
+
+        dset_config['points']=PATH+'/barry_palm/data/labels/palm/kml_geoproposals'+ \
+                              ";"+PATH+'/barry_palm/data/labels/socb/palm_density.shp'
+
+        dset_config['roi_lon_lat_tr'] = '101.45,0.48,101.62,0.52' + \
+                                        ";-7.2,4.5,-7.1,4.6"
+        # ";-7.19,4.5870,-7.47,4.54"
+        dset_config['roi_lon_lat_val'] = '101.45,0.52,101.62,0.53'+ ""
+        dset_config['roi_lon_lat_test'] = '101.45,0.53,101.62,0.55'+ ""
+        dset_config['roi_lon_lat_tr_lb'] = '101.45,0.48,101.62,0.53'+ \
+                                        ";-7.2,4.5,-7.1,4.6"
     elif "palm" in DATASET:
         OBJECT='palm'
         dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml'

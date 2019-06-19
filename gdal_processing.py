@@ -326,7 +326,8 @@ def getrefDataset(refds,is_use_gtiff =False):
         if '10m resolution' in dsdesc:
             tenMsets += [(dsname, dsdesc)]
     return  tenMsets[0][0]
-def get_jp2(path,band,res=10):
+
+def get_jp2(path, band, res=10):
     if band == 'CLD':
         return glob.glob(path + '/GRANULE/*/QI_DATA/*_CLD_{}m.jp2'.format(res))[0]
     else:
@@ -359,7 +360,7 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
     print('{} saved!'.format(filename))
 
 
-def rasterize_polygons(InputVector, refDataset, lims=None, offset = None):
+def rasterize_polygons(InputVector, refDataset, lims=None, offset=None, attribute=None, NoDataValue=0):
     Image = gdal.Open(refDataset)
 
     burnVal = 1  # value for the output image pixels
@@ -370,15 +371,22 @@ def rasterize_polygons(InputVector, refDataset, lims=None, offset = None):
 
     ### Rasterise
     # Output = gdal.GetDriverByName(GTiff).Create('temp-palm.tif', Image.RasterXSize, Image.RasterYSize, 1, gdal.GDT_Byte)
-    Output = gdal.GetDriverByName('MEM').Create("", Image.RasterXSize, Image.RasterYSize, 1, gdal.GDT_Int32)
+    if attribute is None:
+        Output = gdal.GetDriverByName('MEM').Create("", Image.RasterXSize, Image.RasterYSize, 1, gdal.GDT_Int32)
+    else:
+        Output = gdal.GetDriverByName('MEM').Create("", Image.RasterXSize, Image.RasterYSize, 1, gdal.GDT_Float32)
 
     Output.SetGeoTransform(Image.GetGeoTransform())
     Output.SetProjection(Image.GetProjectionRef())
 
     # Write data to band 1
     Band = Output.GetRasterBand(1)
-    Band.SetNoDataValue(0)
-    gdal.RasterizeLayer(Output, [1], Shapefile_layer, burn_values=[burnVal])
+    Band.SetNoDataValue(NoDataValue)
+    if attribute is None:
+        gdal.RasterizeLayer(Output, [1], Shapefile_layer, burn_values=[burnVal])
+    else:
+        gdal.RasterizeLayer(Output, [1], Shapefile_layer, options=[f'ATTRIBUTE={attribute}'])
+
 
     if offset is not None:
         mask = Output.ReadAsArray(*offset)
@@ -392,7 +400,7 @@ def rasterize_polygons(InputVector, refDataset, lims=None, offset = None):
     if mask is None:
         return None
     if mask.max() == 0:
-        print(' [!] Empty mask in the ROI {}...'.format(InputVector))
+        print(f' [!] Empty mask in the ROI {InputVector}...')
 
     return mask
 

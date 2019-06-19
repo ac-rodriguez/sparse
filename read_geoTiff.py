@@ -479,24 +479,27 @@ def readS2_old(args, roi_lon_lat, data_file =None):
     return data10.astype(np.float32), data20.astype(np.float32)
 
 
-def read_labels(args, roi, roi_with_labels, is_HR=False):
+def read_labels(args, roi, roi_with_labels, d_setnum=0, is_HR=False):
     # if args.HR_file is not None:
     ref_scale = 16  # 10m -> 0.625m
     sigma = ref_scale  # /np.pi
+    shp_file = args.points.split(';')[d_setnum]
     if is_HR:
         ds_file = args.HR_file
         ref_scale = ref_scale // args.scale
         scale_lims = args.scale
     else:
-        if 'USER' in args.LR_file:
-            ds_file = gp.getrefDataset(args.LR_file, is_use_gtiff=False)
+        lr_file = args.LR_file.split(';')[d_setnum]
+        if 'USER' in args.LR_file.split(';')[d_setnum]:
+            ds_file = gp.getrefDataset(lr_file, is_use_gtiff=False)
         else:
-            ds_file = gp.get_jp2(os.path.dirname(args.LR_file), 'B03', res=10)
-            # ds_file = os.path.join(os.path.dirname(args.LR_file), 'geotif', 'Band_B3.tif')
+            if lr_file.endswith('.xml'):
+                lr_file = os.path.dirname(lr_file)
+            ds_file = gp.get_jp2(lr_file, 'B03', res=10)
 
         scale_lims = 1
 
-    print(' [*] Reading Labels {}'.format(os.path.basename(args.points)))
+    print(' [*] Reading Labels {}'.format(os.path.basename(shp_file)))
 
     ds = gdal.Open(ds_file)
     print(' [*] Reading complete Area')
@@ -505,10 +508,14 @@ def read_labels(args, roi, roi_with_labels, is_HR=False):
     print(' [*] Reading labeled Area')
 
     lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
-
-    labels = gp.rasterize_points_constrained(Input=args.points, refDataset=ds_file, lims=lims_H,
-                                             lims_with_labels=lims_with_labels, up_scale=ref_scale,
-                                             sigma=sigma, sq_kernel=args.sq_kernel)
+    if shp_file.endswith('.shp'):
+        labels = gp.rasterize_polygons(InputVector=shp_file,refDataset=ds_file,lims=lims_with_labels,attribute='TreeDens')
+    elif shp_file.endswith('.tif'):
+        labels = readHR(args,roi_lon_lat=roi_with_labels,data_file=shp_file)
+    else:
+        labels = gp.rasterize_points_constrained(Input=shp_file, refDataset=ds_file, lims=lims_H,
+                                                 lims_with_labels=lims_with_labels, up_scale=ref_scale,
+                                                 sigma=sigma, sq_kernel=args.sq_kernel)
     (xmin, ymin, xmax, ymax) = lims_with_labels
     xmin, xmax = xmin - lims_H[0], xmax - lims_H[0]
     ymin, ymax = ymin - lims_H[1], ymax - lims_H[1]

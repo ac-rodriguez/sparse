@@ -5,6 +5,49 @@ import numpy as np
 
 IS_DEBUG = True
 
+class PatchWraper:
+    def __init__(self, extractors,max_queue_size=4,n_workers=1):
+        self.extractors = extractors
+        self.max_queue_size=max_queue_size
+        self.n_workers = n_workers
+
+        self.nr_patches = [len(x.indices1) for x in self.extractors]
+        self.n_pixels = [(x.d_l.shape[0]*x.d_l.shape[1]) for x in self.extractors]
+        self.weights = self.n_pixels / np.sum(self.n_pixels)
+        print(f' Fetch Prob. {self.weights}')
+        self.indices1 = np.random.choice(len(extractors),size=100,p=self.weights)
+        self.rand_ind = 0
+        self.define_queues()
+    def define_queues(self):
+        self.lock = Lock()
+        self.inputs_queue = Queue(maxsize=self.max_queue_size)
+        self._start_batch_makers(self.n_workers)
+
+    def _start_batch_makers(self, number_of_workers):
+        for w in range(number_of_workers):
+            worker = Thread(target=self._inputs_producer)
+            worker.setDaemon(True)
+            worker.start()
+
+    def _inputs_producer(self):
+        while True:
+            with self.lock:
+                ind1 = self.indices1[np.mod(self.rand_ind, len(self.indices1))]
+                self.rand_ind+=1
+
+            patches = self.extractors[ind1].get_inputs()
+
+            # print(f' dataset {ind1} fetched')
+            self.inputs_queue.put(patches)
+
+    def get_inputs(self):
+        return self.inputs_queue.get()
+
+    def get_iter(self):
+        while True:
+            yield self.get_inputs()
+
+
 class PatchExtractor:
 
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
