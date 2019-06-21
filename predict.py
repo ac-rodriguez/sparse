@@ -221,6 +221,14 @@ def main(unused_args):
 
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
+    args.test = [{
+            'lr': args.data_dir,
+            'hr': None,
+            'gt': None,
+            'roi': args.roi_lon_lat_test,
+            'roi_lb': None}]
+    args.tr = []
+    args.val = []
     args.model_dir = model_dir
     filename = 'FLAGS_pred'
     args.is_train = False
