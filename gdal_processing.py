@@ -329,9 +329,9 @@ def getrefDataset(refds,is_use_gtiff =False):
 
 def get_jp2(path, band, res=10):
     if band == 'CLD':
-        return glob.glob(path + '/GRANULE/*/QI_DATA/*_CLD_{}m.jp2'.format(res))[0]
+        return glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2")[0]
     else:
-        return glob.glob("{}/GRANULE/*/IMG_DATA/R{}m/*_{}_{}m.jp2".format(path, res,band, res))[0]
+        return glob.glob(f"{path}/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")[0]
 
 
 def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte):

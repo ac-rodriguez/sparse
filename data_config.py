@@ -19,6 +19,9 @@ parser.add_argument("--dataset", default='palm')
 def get_dataset(DATASET, is_mounted = False):
 
     dset_config = {}
+    dset_config['tr'] = []
+    dset_config['val'] = []
+    dset_config['test'] = []
     if 'pf-pc' in socket.gethostname():
         PATH='/home/pf/pfstaff/projects/andresro'
         PATH_TRAIN=PATH
@@ -27,59 +30,132 @@ def get_dataset(DATASET, is_mounted = False):
         PATH_TRAIN='/cluster/scratch/andresro'
     if "coco" in DATASET:
         OBJECT='coco'
-        dset_config['LR_file']=PATH+'/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
-        dset_config['points']=PATH+'/barry_palm/data/labels/coco/points_detections.kml'
-        dset_config['roi_lon_lat_tr'] = '117.86,8.82,117.92,8.9'
-        dset_config['roi_lon_lat_val'] = '117.84,8.82,117.86,8.88'
-        dset_config['roi_lon_lat_test'] = '117.81,8.82,117.84,8.88'
+        dset_config['tr'].append({
+            'lr': PATH + '/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
+            'roi': '117.86,8.82,117.92,8.9'})
+
+        dset_config['val'].append({
+            'lr': PATH + '/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
+            'roi': '117.84,8.82,117.86,8.88',
+            'roi_lb': '117.84,8.82,117.86,8.88'})
+
+        dset_config['test'].append({
+            'lr': PATH + '/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
+            'roi': '117.81,8.82,117.84,8.88',
+            'roi_lb': '117.81,8.82,117.84,8.88'})
+        # dset_config['LR_file']=PATH+'/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
+        # dset_config['points']=PATH+'/barry_palm/data/labels/coco/points_detections.kml'
+        # dset_config['roi_lon_lat_tr'] = '117.86,8.82,117.92,8.9'
+        # dset_config['roi_lon_lat_val'] = '117.84,8.82,117.86,8.88'
+        # dset_config['roi_lon_lat_test'] = '117.81,8.82,117.84,8.88'
 
         # if DATASET == "coco0.3": # 2K
         #     dset_config['roi_lon_lat_tr_lb']='117.885,8.867,117.89,8.874'
 
         if DATASET == "coco2a": # 8.5k
-            dset_config['roi_lon_lat_tr_lb']='117.88,8.88,117.891,8.895'
+            dset_config['tr'][0]['roi_lb']='117.88,8.88,117.891,8.895'
         elif DATASET == "coco1a":  # 8.5k
-            dset_config['roi_lon_lat_tr_lb'] = '117.8821,8.8854,117.891,8.895'
+            dset_config['tr'][0]['roi_lb'] = '117.8821,8.8854,117.891,8.895'
 
         elif DATASET == "coco2b": # 8.5k
-            dset_config['roi_lon_lat_tr_lb']='117.88,8.83,117.891,8.845'
+            dset_config['tr'][0]['roi_lb'] = '117.88,8.83,117.891,8.845'
         elif DATASET == "coco1b":  # 4.8k
-            dset_config['roi_lon_lat_tr_lb'] = '117.8821,8.8354,117.891,8.845'
+            dset_config['tr'][0]['roi_lb'] = '117.8821,8.8354,117.891,8.845'
         elif DATASET == "coco2c": # 8.5k
-            dset_config['roi_lon_lat_tr_lb']='117.88,8.86,117.891,8.875'
+            dset_config['tr'][0]['roi_lb'] = '117.88,8.86,117.891,8.875'
         elif DATASET == "coco1c":  # 4.8k
-            dset_config['roi_lon_lat_tr_lb'] = '117.8821,8.8654,117.891,8.875'
+            dset_config['tr'][0]['roi_lb'] = '117.8821,8.8654,117.891,8.875'
         # elif DATASET == "coco7": # 24k
         #     dset_config['roi_lon_lat_tr_lb'] = '117.87,8.86,117.9,8.88'
         elif DATASET == "coco10": # 46k
-            dset_config['roi_lon_lat_tr_lb'] = '117.86,8.85,117.9,8.88'
+            dset_config['tr'][0]['roi_lb'] = '117.86,8.85,117.9,8.88'
         elif DATASET == "coco50": # 100k
-            dset_config['roi_lon_lat_tr_lb'] = '117.86,8.85,117.92,8.88'
+            dset_config['tr'][0]['roi_lb'] = '117.86,8.85,117.92,8.88'
         elif DATASET == "coco100": # 267k
-            dset_config['roi_lon_lat_tr_lb'] = '117.86,8.82,117.92,8.9'
+            dset_config['tr'][0]['roi_lb'] = '117.86,8.82,117.92,8.9'
 
     elif "palmsocb" in DATASET:
         OBJECT='palm'
-        dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE'+ \
-                               ';'+PATH+'/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE'
+        # dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE'+ \
+        #                        ';'+PATH+'/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE'
+        #
+        # dset_config['points']=PATH+'/barry_palm/data/labels/palm/kml_geoproposals'+ \
+        #                       ";"+PATH+'/barry_palm/data/labels/socb/palm_density.shp'
+        #
+        # dset_config['roi_lon_lat_tr'] = '101.45,0.48,101.62,0.52' + \
+        #                                 ';-7.2,4.5,-7.1,4.58'
+        # # ";-7.19,4.5870,-7.47,4.54"
+        # dset_config['roi_lon_lat_val'] = '101.45,0.52,101.62,0.53'+ ';-7.2,4.58,-7.1,4.65'
+        # dset_config['roi_lon_lat_test'] = '101.45,0.53,101.62,0.55'+ ""
+        # dset_config['roi_lon_lat_tr_lb'] = '101.45,0.48,101.62,0.53'+ \
+        #                                 ";-7.2,4.5,-7.1,4.58"
 
-        dset_config['points']=PATH+'/barry_palm/data/labels/palm/kml_geoproposals'+ \
-                              ";"+PATH+'/barry_palm/data/labels/socb/palm_density.shp'
+        dset_config['tr'].append({
+            'lr': PATH + '/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
+            'roi': '101.45,0.48,101.62,0.52',
+            'roi_lb': '101.45,0.48,101.62,0.53'})
 
-        dset_config['roi_lon_lat_tr'] = '101.45,0.48,101.62,0.52' + \
-                                        ";-7.2,4.5,-7.1,4.6"
-        # ";-7.19,4.5870,-7.47,4.54"
-        dset_config['roi_lon_lat_val'] = '101.45,0.52,101.62,0.53'+ ""
-        dset_config['roi_lon_lat_test'] = '101.45,0.53,101.62,0.55'+ ""
-        dset_config['roi_lon_lat_tr_lb'] = '101.45,0.48,101.62,0.53'+ \
-                                        ";-7.2,4.5,-7.1,4.6"
+        dset_config['val'].append({
+            'lr': PATH + '/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
+            'roi': '101.45,0.52,101.62,0.53',
+            'roi_lb': '101.45,0.52,101.62,0.53'})
+
+        dset_config['tr'].append({
+            'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+            'hr': None,
+            'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
+            'roi': '-7.2,4.5,-7.1,4.58',
+            'roi_lb': '-7.2,4.5,-7.1,4.58'})
+
+        dset_config['val'].append({
+            'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+            'hr': None,
+            'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
+            'roi': '-7.2,4.58,-7.1,4.65',
+            'roi_lb': '-7.2,4.58,-7.1,4.65'})
+        dset_config['test'].append({
+            'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+            'hr': None,
+            'gt': None,
+            'roi': '-7.2,4.5,-7.1,4.58',
+            'roi_lb': '-7.2,4.5,-7.1,4.58'})
+
+
     elif "palm" in DATASET:
         OBJECT='palm'
-        dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml'
-        dset_config['points']=PATH+'/barry_palm/data/labels/palm/kml_geoproposals'
-        dset_config['roi_lon_lat_tr'] = '101.45,0.48,101.62,0.52'
-        dset_config['roi_lon_lat_val'] = '101.45,0.52,101.62,0.53'
-        dset_config['roi_lon_lat_test'] = '101.45,0.53,101.62,0.55'
+        dset_config['tr'].append({
+            'lr': PATH + '/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
+            'roi': '101.45,0.48,101.62,0.52'})
+
+        dset_config['val'].append({
+            'lr': PATH + '/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
+            'roi': '101.45,0.52,101.62,0.53',
+            'roi_lb': '101.45,0.52,101.62,0.53'})
+        dset_config['test'].append({
+            'lr': PATH + '/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
+            'roi': '101.45,0.53,101.62,0.55',
+            'roi_lb': '101.45,0.53,101.62,0.55'})
+        # dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE/MTD_MSIL2A.xml'
+        # dset_config['points']=PATH+'/barry_palm/data/labels/palm/kml_geoproposals'
+        # dset_config['roi_lon_lat_tr'] = '101.45,0.48,101.62,0.52'
+        # dset_config['roi_lon_lat_val'] = '101.45,0.52,101.62,0.53'
+        # dset_config['roi_lon_lat_test'] = '101.45,0.53,101.62,0.55'
 
         # if DATASET == "palm0.3": # 2k
         #     dset_config['roi_lon_lat_tr_lb']='101.545,0.512,101.553,0.516'
@@ -88,38 +164,48 @@ def get_dataset(DATASET, is_mounted = False):
         # elif DATASET == "palm1.3": # 4k
         #     dset_config['roi_lon_lat_tr_lb']='101.52,0.515,101.555,0.518'
         if DATASET == "palm2a": # 9K
-            dset_config['roi_lon_lat_tr_lb']='101.54,0.515,101.556,0.505'
+            dset_config['tr'][0]['roi_lb'] = '101.54,0.515,101.556,0.505'
         elif DATASET == "palm1a":  # 9K
-            dset_config['roi_lon_lat_tr_lb'] = '101.54,0.515,101.556,0.51'
+            dset_config['tr'][0]['roi_lb'] = '101.54,0.515,101.556,0.51'
         elif DATASET == "palm2b": # 9K
-            dset_config['roi_lon_lat_tr_lb']='101.54,0.505,101.556,0.495'
+            dset_config['tr'][0]['roi_lb'] = '101.54,0.505,101.556,0.495'
         elif DATASET == "palm1b":  # 9K
-            dset_config['roi_lon_lat_tr_lb'] = '101.54,0.505,101.556,0.5'
+            dset_config['tr'][0]['roi_lb'] = '101.54,0.505,101.556,0.5'
         elif DATASET == "palm2c":  # 9K
-            dset_config['roi_lon_lat_tr_lb']='101.556,0.515,101.572,0.505'
+            dset_config['tr'][0]['roi_lb'] ='101.556,0.515,101.572,0.505'
         elif DATASET == "palm1c":  # 9K
-            dset_config['roi_lon_lat_tr_lb'] = '101.556,0.515,101.572,0.51'
+            dset_config['tr'][0]['roi_lb'] = '101.556,0.515,101.572,0.51'
 
         # elif DATASET == "palm2b": # 9K
         #     dset_config['roi_lon_lat_tr_lb']='101.52,0.512,101.555,0.518'
         # elif DATASET == "palm7": # 23K
         #     dset_config['roi_lon_lat_tr_lb']='101.50,0.51,101.56,0.52'
         elif DATASET == "palm10": # 44K
-            dset_config['roi_lon_lat_tr_lb']='101.48,0.51,101.58,0.52'
+            dset_config['tr'][0]['roi_lb'] = '101.48,0.51,101.58,0.52'
         elif DATASET == "palm50": # 184K
-            dset_config['roi_lon_lat_tr_lb']='101.45,0.5,101.62,0.525'
+            dset_config['tr'][0]['roi_lb'] = '101.45,0.5,101.62,0.525'
         elif DATASET == "palm100": # 400K
-            dset_config['roi_lon_lat_tr_lb']='101.45,0.48,101.62,0.53'
+            dset_config['tr'][0]['roi_lb'] = '101.45,0.48,101.62,0.53'
     elif "olives" in DATASET:
         OBJECT = 'olives'
-        dset_config[
-            'LR_file'] = PATH + '/barry_palm/data/2A/olives_2016/S2A_USER_PRD_MSIL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.SAFE/S2A_USER_MTD_SAFL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.xml'
-        dset_config['points'] = PATH + '/barry_palm/data/labels/olives/kml_geoproposals'
-        dset_config['roi_lon_lat_tr'] = '-3.9,37.78,-3.79,37.9'
-        dset_config['roi_lon_lat_val'] = '-3.79,37.78,-3.77,37.9'
 
+        dset_config['tr'].append({
+            'lr': PATH + '/barry_palm/data/2A/olives_2016/S2A_USER_PRD_MSIL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.SAFE/S2A_USER_MTD_SAFL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/olives/kml_geoproposals',
+            'roi': '-3.9,37.78,-3.79,37.9'})
+        dset_config['val'].append({
+            'lr': PATH + '/barry_palm/data/2A/olives_2016/S2A_USER_PRD_MSIL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.SAFE/S2A_USER_MTD_SAFL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.xml',
+            'hr': os.path.join(PATH, 'sparse/data', OBJECT),
+            'gt': PATH + '/barry_palm/data/labels/olives/kml_geoproposals',
+            'roi': '-3.79,37.78,-3.77,37.9'})
+        # dset_config[
+        #     'LR_file'] = PATH + '/barry_palm/data/2A/olives_2016/S2A_USER_PRD_MSIL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.SAFE/S2A_USER_MTD_SAFL2A_PDMC_20160614T005258_R094_V20160613T110559_20160613T110559.xml'
+        # dset_config['points'] = PATH + '/barry_palm/data/labels/olives/kml_geoproposals'
+        # dset_config['roi_lon_lat_tr'] = '-3.9,37.78,-3.79,37.9'
+        # dset_config['roi_lon_lat_val'] = '-3.79,37.78,-3.77,37.9'
         if DATASET == "olives100":  # 400K
-            dset_config['roi_lon_lat_tr_lb'] = '-3.9,37.78,-3.79,37.9'
+            dset_config['tr'][0]['roi_lb'] = '-3.9,37.78,-3.79,37.9'
 
     elif "cars" in DATASET:
         OBJECT = 'cars'
@@ -169,9 +255,9 @@ def get_dataset(DATASET, is_mounted = False):
     else:
         print('DATASET {} Not defined'.format(DATASET))
         sys.exit(1)
-    dset_config['roi_lon_lat_val_lb'] = dset_config['roi_lon_lat_val']
+    # dset_config['roi_lon_lat_val_lb'] = dset_config['roi_lon_lat_val']
 
-    dset_config['HR_file']=os.path.join(PATH,'sparse/data',OBJECT)
+    # dset_config['HR_file']=os.path.join(PATH,'sparse/data',OBJECT)
 
     if is_mounted and 'pf-pc' in socket.gethostname():
         PATH_TRAIN = '/scratch/andresro/leon_work'

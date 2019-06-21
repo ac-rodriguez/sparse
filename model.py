@@ -1007,8 +1007,9 @@ class Model:
     def compute_train_op(self):
 
         optimizer = self.get_optimiter()
-        # slim.model_analyzer.analyze_vars(
-        #     tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
+        if self.is_first_train:
+            tools.analyze_model()
+            self.is_first_train = False
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         vars_train = [x for x in tf.trainable_variables() if not 'teacher' in x.name]
         with tf.control_dependencies(update_ops):

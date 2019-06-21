@@ -152,6 +152,7 @@ def main(unused_args):
         args.tag = '_hrlab' + args.tag
     else:
         args.is_hr_label = False
+        assert not args.is_hr_pred
     if args.is_fake_hr_label: args.tag = '_fakehrlab' + args.tag
     if args.is_hr_pred: args.tag = '_hrpred' + args.tag
     if args.is_noS2: args.tag = '_noS2' + args.tag
@@ -163,17 +164,17 @@ def main(unused_args):
     if args.degraded_hr: args.tag = '_degHR' + args.tag
     if args.distill_from is not None: args.tag = '_distilled' + args.tag
 
-    if args.is_lower_bound:
-        print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,
-                                                                                     args.roi_lon_lat_tr_lb))
-        args.roi_lon_lat_tr = args.roi_lon_lat_tr_lb
-        args.tag = 'LOWER' + args.tag
+    # if args.is_lower_bound:
+    #     print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,
+    #                                                                                  args.roi_lon_lat_tr_lb))
+    #     args.roi_lon_lat_tr = args.roi_lon_lat_tr_lb
+    #     args.tag = 'LOWER' + args.tag
 
-    if args.roi_lon_lat_tr_lb == 'all':
-        args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
-        args.tag = 'allGT' + args.tag
+    # if args.roi_lon_lat_tr_lb == 'all':
+    #     args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
+    #     args.tag = 'allGT' + args.tag
 
-    if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
+    # if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
     if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
     if args.batch_size_eval is None: args.batch_size_eval = args.batch_size
     if args.lambda_reg == 0.0:

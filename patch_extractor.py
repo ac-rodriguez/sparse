@@ -346,7 +346,7 @@ class PatchExtractor:
 
     def get_iter(self):
         while True:
-            yield self.get_inputs()[0:2]
+            yield self.get_inputs() #[0:2]
     def get_iter_test(self):
         while True:
             yield self.get_inputs()

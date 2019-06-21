@@ -4,6 +4,8 @@ from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.eager import context
 from tensorflow.contrib.tensorboard.plugins import projector
+import tensorflow.contrib.slim as slim
+
 import numpy as np
 from tqdm import tqdm
 
@@ -11,6 +13,9 @@ import plots
 
 import patches
 
+def analyze_model():
+    slim.model_analyzer.analyze_vars(
+        tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
@@ -321,9 +326,9 @@ def gaussian_kernel(size, mean, std, ):
     return gauss_kernel / tf.reduce_sum(gauss_kernel)
 
 
-def gaussian_noise_layer(input_layer, std):
-    noise = tf.random_normal(shape=tf.shape(input_layer), mean=0.0, stddev=std, dtype=tf.float32)
-    return input_layer + noise
+# def gaussian_noise_layer(input_layer, std):
+#     noise = tf.random_normal(shape=tf.shape(input_layer), mean=0.0, stddev=std, dtype=tf.float32)
+#     return input_layer + noise
 
 
 def low_pass_filter(img, args, blur_probability=0.0, progressive=True):
@@ -398,6 +403,8 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
         pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, 1]))
     if is_sem:
         pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
+    if isinstance(ref_data,list):
+        ref_data = ref_data[-1] # TODO fix choose data id
     ref_size = (ref_data.shape[1], ref_data.shape[0])
 
     # if args.domain is not None:

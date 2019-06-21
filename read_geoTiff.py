@@ -12,15 +12,12 @@ from skimage.measure import block_reduce
 import glob
 
 import gdal_processing as gp
-# from utils import patches
-# import patches
+
 run_60 = False
 
-def readHR(args, roi_lon_lat, data_file=None, as_float=True):
-    # args = parseargs()
-    # roi_lon_lat = args.roi_lon_lat
+def readHR(roi_lon_lat, data_file, scale, as_float=True):
     if data_file is None:
-        data_file = args.HR_file
+        return None
     print(' [*] Reading HR Data {}'.format(os.path.basename(data_file)))
 
     dsREF = gdal.Open(data_file)
@@ -34,39 +31,15 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
             sys.exit(0)
 
         xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF=dsREF,
-                                              enlarge=args.scale)  # we enlarge from 5m to 20m Bands in S2
+                                              enlarge=scale)  # we enlarge from 5m to 20m Bands in S2
 
     else:
         xmin,ymin = 0,0
         xmax,ymax = dsREF.RasterXSize -1, dsREF.RasterYSize-1
 
 
-
-    # elif not roi_lon_lat:
-    #     tmxmin = 0
-    #     tmxmax = dsREF.RasterXSize - 1
-    #     tmymin = 0
-    #     tmymax = dsREF.RasterYSize - 1
-    # else:
-    #
-    #     x1, y1 = gp.to_xy(roi_lon1, roi_lat1, dsREF)
-    #     x2, y2 = gp.to_xy(roi_lon2, roi_lat2, dsREF)
-    #     tmxmin = max(min(x1, x2, dsREF.RasterXSize - 1), 0)
-    #     tmxmax = min(max(x1, x2, 0), dsREF.RasterXSize - 1)
-    #     tmymin = max(min(y1, y2, dsREF.RasterYSize - 1), 0)
-    #     tmymax = min(max(y1, y2, 0), dsREF.RasterYSize - 1)
-    #     # enlarge to the nearest 60 pixel boundary for the super-resolution
-    #     if False:
-    #         tmxmin, tmxmax = gp.enlarge_pixel(tmxmin, tmxmax, ref = 1)
-    #         tmymin, tmymax = gp.enlarge_pixel(tmymin, tmymax, ref = 1)
-    #
-    # xmin, ymin, xmax, ymax = tmxmin, tmymin, tmxmax, tmymax
-    utm = 'NaN'
-
-
-    print("Selected UTM Zone: {}".format(utm))
     print("Selected pixel region: xmin=%d, ymin=%d, xmax=%d, ymax=%d:" % (xmin, ymin, xmax, ymax))
-    # print("Selected pixel region: tmxmin=%d, tmymin=%d, tmxmax=%d, tmymax=%d:" % (tmxmin, tmymin, tmxmax, tmymax))
+
     print("Image size: width=%d x height=%d" % (xmax - xmin + 1, ymax - ymin + 1))
 
     if xmax < xmin or ymax < ymin:
@@ -78,27 +51,6 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
     for band_id in range(dsREF.RasterCount):
         dsBANDS[band_id] = dsREF.GetRasterBand(band_id+1)
 
-    # x1_0, y1_0 = gp.to_xy(roi_lon1, roi_lat1, dsREF)
-    # x2_0, y2_0 = gp.to_xy(roi_lon2, roi_lat2, dsREF)
-
-    # min_coord = np.min([x1_0,y1_0,x2_0,y2_0])
-    # xmin_0, xmax_0 = gp.enlarge_pixel(min(x1_0, x2_0), max(x1_0, x2_0), ref = 1)
-    # ymin_0, ymax_0 = gp.enlarge_pixel(min(y1_0, y2_0), max(y1_0, y2_0), ref = 1)
-    # length_x_0 = xmax_0 - xmin_0 + 1
-    # length_y_0 = ymax_0 - ymin_0 + 1
-
-    # complete_image = (length_x_0 == xmax - xmin + 1) & (length_y_0 == ymax - ymin + 1)
-    #
-    # if min_coord < 0:
-    #     view = '-incomplete'
-    # elif complete_image:
-    #     view = '-complete'
-    # else:
-    #     view = ''
-
-    # if only_complete_image and (min_coord < 0) and not complete_image:
-    #     print(" [!] Roi is not complete")
-    #     sys.exit(0)
     if (xmax - xmin + 1 <= 10) or (ymax - ymin + 1 <= 10):
         print(" [!] Roi outside of dataset")
         sys.exit(0)
@@ -133,11 +85,6 @@ def readHR(args, roi_lon_lat, data_file=None, as_float=True):
         return data10.astype(np.float32) / 255.0
     else:
         return  data10
-    # patches.save_numpy(data = data10, args=args,folder=str(pixel_size), view=view, filename='data_complete')
-
-
-    # print(" [*] Success.")
-
 
 
 def readS2(args, roi_lon_lat, data_file =None):
@@ -479,18 +426,18 @@ def readS2_old(args, roi_lon_lat, data_file =None):
     return data10.astype(np.float32), data20.astype(np.float32)
 
 
-def read_labels(args, roi, roi_with_labels, d_setnum=0, is_HR=False):
-    # if args.HR_file is not None:
+def read_labels(args,shp_file, roi, roi_with_labels, ref_hr=None, ref_lr=None, is_HR=False,):
+    if shp_file is None:
+        return None,None
     ref_scale = 16  # 10m -> 0.625m
     sigma = ref_scale  # /np.pi
-    shp_file = args.points.split(';')[d_setnum]
     if is_HR:
-        ds_file = args.HR_file
+        ds_file = ref_hr
         ref_scale = ref_scale // args.scale
         scale_lims = args.scale
     else:
-        lr_file = args.LR_file.split(';')[d_setnum]
-        if 'USER' in args.LR_file.split(';')[d_setnum]:
+        lr_file = ref_lr
+        if 'USER' in lr_file:
             ds_file = gp.getrefDataset(lr_file, is_use_gtiff=False)
         else:
             if lr_file.endswith('.xml'):
@@ -511,7 +458,7 @@ def read_labels(args, roi, roi_with_labels, d_setnum=0, is_HR=False):
     if shp_file.endswith('.shp'):
         labels = gp.rasterize_polygons(InputVector=shp_file,refDataset=ds_file,lims=lims_with_labels,attribute='TreeDens')
     elif shp_file.endswith('.tif'):
-        labels = readHR(args,roi_lon_lat=roi_with_labels,data_file=shp_file)
+        labels = readHR(data_file=shp_file, roi_lon_lat=roi_with_labels, scale=args.scale)
     else:
         labels = gp.rasterize_points_constrained(Input=shp_file, refDataset=ds_file, lims=lims_H,
                                                  lims_with_labels=lims_with_labels, up_scale=ref_scale,
@@ -537,7 +484,7 @@ def read_labels_semseg(args, sem_file,dsm_file, is_HR, ref_scale=16):
 
     # lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
 
-    labels = readHR(args, roi_lon_lat=None, data_file=sem_file, as_float=False)
+    labels = readHR(data_file=sem_file, roi_lon_lat=None, scale=args.scale, as_float=False)
     lut = np.ones(256, dtype=np.uint8) * 255
     lut[[255, 29, 179, 150, 226, 76]] = np.arange(6, dtype=np.uint8)
     labels = cv2.LUT(cv2.cvtColor(labels, cv2.COLOR_BGR2GRAY), lut)
@@ -554,7 +501,7 @@ def read_labels_semseg(args, sem_file,dsm_file, is_HR, ref_scale=16):
     labels = np.float32(labels)
     labels[mask_out] = -1.0
 
-    labels_reg = readHR(args, roi_lon_lat=None, data_file=dsm_file, as_float=False)
+    labels_reg = readHR(data_file=dsm_file, roi_lon_lat=None, scale=args.scale, as_float=False)
     labels_reg = labels_reg.astype(np.float32)
 
     labels_reg = block_reduce(labels_reg,(ref_scale,ref_scale),np.mean)
