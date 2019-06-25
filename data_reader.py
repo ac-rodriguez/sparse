@@ -97,7 +97,7 @@ class DataReader(object):
         else:
             self.args.HR_file = None
         for i in self.args.tr+self.args.val+self.args.test:
-            if i['hr'] is not None:
+            if i['hr'] is not None and not i['hr'].endswith('.tif'):
                 i['hr'] = os.path.join(i['hr'], '3000_gsd{}.tif'.format(self.gsd))
         self.patch_h = self.args.patch_size * self.scale
 
@@ -139,7 +139,7 @@ class DataReader(object):
             #                                     scale=args.scale)
             # val_random = True if self.args.dataset == 'vaihingen' else False
             # if val_random:
-            val_dset_ = -1
+            val_dset_ = -1 # TODO implement several datasets for val dset
             self.patch_gen_val_complete = PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
                                                          label=self.labels_val[val_dset_],
                                                          patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
@@ -196,22 +196,34 @@ class DataReader(object):
             #
             # print('done')
 
-    def read_data_pairs(self, path_dict, upsample_lr=True):
+    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1):
 
-        train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=path_dict['roi'],
-                                scale=self.scale)
-        if self.args.is_noS2:
-            assert train_h is not None
-            train = downscale(train_h.copy(), scale=self.scale)
+        if is_vaihingen:
+            train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=None, scale=self.scale)
+
+            train = downscale(train_h.copy(), ref_scale)
+            train_h = downscale(train_h, ref_scale // self.scale)
+
+            labels, lim_labels = geotif.read_labels_semseg(self.args, sem_file=path_dict['sem'],
+                                                           dsm_file=path_dict['dsm'],
+                                                           is_HR=self.is_HR_labels, ref_scale=ref_scale)
         else:
-            train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'])
 
-        if train_h is None and upsample_lr:
-            train_h = interpPatches(train, scale=self.scale)
-            train_h = np.clip(train_h[..., (2, 3, 1)] / 4000, 0, 1).squeeze()
+            train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=path_dict['roi'],
+                                    scale=self.scale)
+            if self.args.is_noS2:
+                assert train_h is not None
+                train = downscale(train_h.copy(), scale=self.scale)
+            else:
+                train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'])
 
-        labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
-                                       is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
+            if train_h is None and upsample_lr:
+                train_h = interpPatches(train, scale=self.scale)
+                train_h = np.clip(train_h[..., (2, 3, 1)] / 4000, 0, 1).squeeze()
+
+            labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
+                                           is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
+
         return train, train_h, labels, lim_labels
 
     def read_train_data(self):
@@ -219,65 +231,40 @@ class DataReader(object):
         self.unlab = None
 
         print('\n [*] Loading TRAIN data \n')
+        is_vaihingen = 'vaihingen' in self.args.dataset
 
-        if 'vaihingen' in self.args.dataset: # TODO change vaihingen to read individual datasets
-            # LR space reference is always 16 ds. from original HR image
-            self.train_h = geotif.readHR(data_file=self.args.top_train, roi_lon_lat=None, scale=self.scale)
-            ref_scale = 16
-            self.train = [downscale(self.train_h.copy(), ref_scale)]
-            self.train_h = [downscale(self.train_h, ref_scale // self.scale)]
-            self.labels, self.lims_labels = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_train,
-                                                                      dsm_file=self.args.dsm_train,
-                                                                      is_HR=self.is_HR_labels, ref_scale=ref_scale)
-            self.labels = [self.labels]
-            self.lims_labels = [self.lims_labels]
-        else:
-            self.train_h = []
-            self.train = []
-            self.labels = []
-            self.lims_labels = []
-            for tr_ in self.args.tr:
-                train, train_h, labels, lim_labels = self.read_data_pairs(tr_)
+        ref_scale = self.scale if is_vaihingen else 16
 
-                self.train.append(train)
-                self.train_h.append(train_h)
-                self.labels.append(labels)
-                self.lims_labels.append(lim_labels)
+        self.train_h = []
+        self.train = []
+        self.labels = []
+        self.lims_labels = []
+        for tr_ in self.args.tr:
+            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
 
-            if self.args.unlabeled_data is not None:
-                self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
-                                                    roi_lon_lat=self.args.roi_lon_lat_unlab)
+            self.train.append(train)
+            self.train_h.append(train_h)
+            self.labels.append(labels)
+            self.lims_labels.append(lim_labels)
+
+        if self.args.unlabeled_data is not None:
+            self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
+                                                roi_lon_lat=self.args.roi_lon_lat_unlab)
 
         print('\n [*] Loading VALIDATION data \n')
-        if 'vaihingen' in self.args.dataset:
-            ref_scale = 16
-            if self.args.top_train == self.args.top_val:
-                self.val_h = self.train_h
-                self.val = self.train
-            else:
-                self.val_h = geotif.readHR(data_file=self.args.top_val, roi_lon_lat=None, scale=self.scale)
-                self.val = [downscale(self.val_h.copy(), scale=ref_scale)]
-                self.val_h = [downscale(self.val_h, scale=ref_scale // self.scale)]
 
-            self.labels_val, self.lims_labels_val = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_val,
-                                                                              dsm_file=self.args.dsm_val,
-                                                                              is_HR=self.is_HR_labels,
-                                                                              ref_scale=ref_scale)
-            self.labels_val = [self.labels_val]
-            self.lims_labels_val = [self.lims_labels_val]
+        self.val_h = []
+        self.val = []
+        self.labels_val = []
+        self.lims_labels_val = []
+        for val_ in self.args.val:
 
-        else:
-            self.val_h = []
-            self.val = []
-            self.labels_val = []
-            self.lims_labels_val = []
-            for val_ in self.args.val:
-                val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_)
+            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
 
-                self.val.append(val)
-                self.val_h.append(val_h)
-                self.labels_val.append(labels_val)
-                self.lims_labels_val.append(lim_labels_val)
+            self.val.append(val)
+            self.val_h.append(val_h)
+            self.labels_val.append(labels_val)
+            self.lims_labels_val.append(lim_labels_val)
 
         # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
         # self.N_pixels = self.train.shape[0] * self.train.shape[1]
@@ -311,19 +298,19 @@ class DataReader(object):
                     plots.plot_heatmap(self.labels_val[i_][..., 1], file=self.args.model_dir + f'/val_reg_label{i_}', min=0,
                                        percentiles=(0, 100))
                     plots.plot_labels(self.labels_val[i_][..., 0], file=self.args.model_dir + f'/val_sem_label{i_}')
-                    plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_S2{i_}', reorder=False, normalize=False)
+                    plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}', reorder=False, normalize=False)
 
                     plots.plot_rgb(self.val_h[i_], file=self.args.model_dir + f'/val_HR{i_}', reorder=False, normalize=False)
-                    np.save(self.args.model_dir + f'/val_S2{i_}', self.val[i_])
+                    np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
                     np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
                     np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
                 else:
 
                     plt_reg(self.labels_val[i_], self.args.model_dir + f'/val_reg_label{i_}')
-                    plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_S2{i_}')
+                    plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}')
 
                     plots.plot_rgb(self.val_h[i_], file=self.args.model_dir+f'/val_HR{i_}', reorder=False, normalize=False)
-                    np.save(self.args.model_dir + f'/val_S2{i_}', self.val[i_])
+                    np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
                     np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
                     np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
             # sys.exit(0)
@@ -344,30 +331,21 @@ class DataReader(object):
         print('\n [*] Loading TEST data \n')
 
         self.is_HR_labels = self.args.is_hr_label
-        if 'vaihingen' in self.args.dataset:
-            # LR space reference is always 16 ds. from original HR image
-            self.test_h = geotif.readHR(data_file=self.args.top_test, roi_lon_lat=None, scale=self.scale)
-            ref_scale = 16
-            self.test = [downscale(self.test_h.copy(), ref_scale)]
-            self.test_h = [downscale(self.test_h, ref_scale // self.scale)]
-            self.labels_test, self.lims_labels_test = geotif.read_labels_semseg(self.args, sem_file=self.args.sem_test,
-                                                                                dsm_file=self.args.dsm_test,
-                                                                                is_HR=self.is_HR_labels,
-                                                                                ref_scale=ref_scale)
-            self.labels_test = [self.labels_test]
-            self.lims_labels_test = [self.lims_labels_test]
-        else:
-            self.test_h = []
-            self.test = []
-            self.labels_test = []
-            self.lims_labels_test = []
-            for test_ in self.args.test:
-                test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, upsample_lr=False)
+        is_vaihingen = 'vaihingen' in self.args.dataset
 
-                self.test.append(test)
-                self.test_h.append(test_h)
-                self.labels_test.append(labels_test)
-                self.lims_labels_test.append(lim_labels_test)
+        ref_scale = self.scale if is_vaihingen else 16
+
+        self.test_h = []
+        self.test = []
+        self.labels_test = []
+        self.lims_labels_test = []
+        for test_ in self.args.test:
+            test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, upsample_lr=False, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
+
+            self.test.append(test)
+            self.test_h.append(test_h)
+            self.labels_test.append(labels_test)
+            self.lims_labels_test.append(lim_labels_test)
 
         scale = self.scale
 

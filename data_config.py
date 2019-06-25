@@ -5,6 +5,7 @@ import simplekml
 import shapely
 from functools import partial
 import pyproj
+import glob
 
 import gdal_processing as gp
 parser = argparse.ArgumentParser(description="Partial Supervision",
@@ -229,14 +230,16 @@ def get_dataset(DATASET, is_mounted = False):
         if DATASET == 'vaihingen1':
             path_ = PATH+'/sparse/data/vaihingen/small/'
 
-            dset_config['sem_train'] = path_ + 'sem_9cm_area1.tif'
-            dset_config['dsm_train'] = path_ + 'dsm_9cm_area1.tif'
-            dset_config['top_train'] = path_ + 'top_9cm_area1.tif'
+            dset_config['tr'].append({
+                'hr': path_ + 'top_9cm_area1.tif',
+                'dsm': path_ + 'dsm_9cm_area1.tif',
+                'sem':path_ + 'sem_9cm_area1.tif'})
+            dset_config['val'].append({
+                'hr': path_ + 'top_9cm_area4.tif',
+                'dsm': path_ + 'dsm_9cm_area4.tif',
+                'sem': path_ + 'sem_9cm_area4.tif'})
 
-            dset_config['sem_val'] = path_ + 'sem_9cm_area4.tif'
-            dset_config['dsm_val'] = path_ + 'dsm_9cm_area4.tif'
-            dset_config['top_val'] = path_ + 'top_9cm_area4.tif'
-        else:
+        elif DATASET == 'vaihingenComplete':
             path_ = PATH+'/sparse/data/vaihingen/'
 
             dset_config['sem_train'] = path_ + 'sem_train_9cm.tif'
@@ -250,11 +253,39 @@ def get_dataset(DATASET, is_mounted = False):
             dset_config['sem_test'] = path_ + 'sem_9cm.tif'
             dset_config['dsm_test'] = path_ + 'dsm_9cm.tif'
             dset_config['top_test'] = path_ + 'top_9cm.tif'
+        else:
+            path_ = PATH + '/sparse/data/ftp.ipi.uni-hannover.de/ISPRS_BENCHMARK_DATASETS/Vaihingen/semantic_segmentation_labeling_Vaihingen/'
+
+
+            for file in glob.glob(path_+"dsm_train/*.tif"):
+                file_number = file.split('area')[-1]
+                dset_config['tr'].append({
+                    'hr': glob.glob(f"{path_}top_train/*{file_number}")[0],
+                    'dsm': glob.glob(f"{path_}dsm_train/*{file_number}")[0],
+                    'sem': glob.glob(f"{path_}gt_train/*{file_number}")[0]})
+
+            # for file in glob.glob(path_+"dsm_val/*.tif"):
+            #     file_number = file.split('area')[-1]
+            #     dset_config['val'].append({
+            #         'hr': glob.glob(f"{path_}top_val/*{file_number}")[0],
+            #         'dsm': glob.glob(f"{path_}dsm_val/*{file_number}")[0],
+            #         'sem': glob.glob(f"{path_}gt_val/*{file_number}")[0]})
+            # dset_config['val'] = [dset_config['val'][0]]
+            path_ = PATH+'/sparse/data/vaihingen/'
+
+            dset_config['val'].append({
+                'sem': path_ + 'sem_val_9cm.tif',
+                'dsm': path_ + 'dsm_val_9cm.tif',
+                'hr': path_ + 'top_val_9cm.tif'})
+            dset_config['test'].append({
+                'sem': path_ + 'sem_9cm.tif',
+                'dsm': path_ + 'dsm_9cm.tif',
+                'hr': path_ + 'top_9cm.tif'})
+
 
         dset_config['is_noS2'] = True
     else:
-        print('DATASET {} Not defined'.format(DATASET))
-        sys.exit(1)
+        raise ValueError('DATASET {} Not defined'.format(DATASET))
     # dset_config['roi_lon_lat_val_lb'] = dset_config['roi_lon_lat_val']
 
     # dset_config['HR_file']=os.path.join(PATH,'sparse/data',OBJECT)

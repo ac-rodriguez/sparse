@@ -33,14 +33,13 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True):
         xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF=dsREF,
                                               enlarge=scale)  # we enlarge from 5m to 20m Bands in S2
 
+        print("Selected pixel region: xmin=%d, ymin=%d, xmax=%d, ymax=%d:" % (xmin, ymin, xmax, ymax))
+        print("Image size: width=%d x height=%d" % (xmax - xmin + 1, ymax - ymin + 1))
+
     else:
         xmin,ymin = 0,0
         xmax,ymax = dsREF.RasterXSize -1, dsREF.RasterYSize-1
 
-
-    print("Selected pixel region: xmin=%d, ymin=%d, xmax=%d, ymax=%d:" % (xmin, ymin, xmax, ymax))
-
-    print("Image size: width=%d x height=%d" % (xmax - xmin + 1, ymax - ymin + 1))
 
     if xmax < xmin or ymax < ymin:
         print(" [!] Invalid region of interest / UTM Zone combination")
@@ -52,8 +51,7 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True):
         dsBANDS[band_id] = dsREF.GetRasterBand(band_id+1)
 
     if (xmax - xmin + 1 <= 10) or (ymax - ymin + 1 <= 10):
-        print(" [!] Roi outside of dataset")
-        sys.exit(0)
+        raise Exception(" [!] Roi outside of dataset")
 
 
     data10 = None
@@ -470,19 +468,9 @@ def read_labels(args,shp_file, roi, roi_with_labels, ref_hr=None, ref_lr=None, i
 
 
 def read_labels_semseg(args, sem_file,dsm_file, is_HR, ref_scale=16):
-    # if args.HR_file is not None:
-    # ref_scale = 16  # 10m -> 0.625m
-    # ref_scale = ref_scale // args.scale
+
 
     print(' [*] Reading Labels {}'.format(os.path.basename(sem_file)))
-
-    # ds = gdal.Open(ds_file)
-    print(' [*] Reading complete Area')
-
-    # lims_H = gp.to_xy_box(roi, ds, enlarge=scale_lims)
-    print(' [*] Reading labeled Area')
-
-    # lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
 
     labels = readHR(data_file=sem_file, roi_lon_lat=None, scale=args.scale, as_float=False)
     lut = np.ones(256, dtype=np.uint8) * 255
