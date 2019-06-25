@@ -7,7 +7,7 @@ cross_entropy = tf.losses.sparse_softmax_cross_entropy
 from AdaBound import AdaBoundOptimizer
 
 from colorize import colorize, inv_preprocess_tf
-from models_reg import simple, countception
+from models_reg import simple, countception, dl3
 import models_sr as sr
 
 import tools_tf as tools
@@ -158,6 +158,11 @@ class Model:
                 self.y_hatU,midlU,latelU = simple(earlylU, n_channels=1, is_training=self.is_training, return_feat=True)
                 self.Zl = latel
                 self.ZlU =latelU
+        elif 'simpleA' in self.model:
+
+            depth = int(self.model.replace('simpleA',''))
+            earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+            self.y_hat, mid, latel = simple(earlyl, n_channels=1, is_training=self.is_training, return_feat=True, deeper=depth)
 
         elif self.model == 'count' or self.model == 'counth':
             self.y_hat = countception(self.feat_l,pad=self.pad, is_training=self.is_training, config_volume=self.config)
@@ -184,6 +189,9 @@ class Model:
                 self.y_hatU,midlU,latelU = countception(earlylU, pad=self.pad, is_training=self.is_training, config_volume=self.config,is_return_feat=True)
                 self.Zl = latel
                 self.ZlU =latelU
+
+        elif self.model == 'dl3':
+            self.y_hat = dl3(inputs=self.feat_l, n_channels=2, is_training=self.is_training)
 
         elif self.model == 'countSR' or self.model == 'countSRu' or self.model =='countSRonly':
             self.is_sr = True
