@@ -113,11 +113,17 @@ class DataReader(object):
 
             d2_after = self.args.unlabeled_after * self.batch_tr
             self.single_gen = []
+            pixels_ = [x.shape[0]*x.shape[1] for x in self.train]
+            train_patches = [args.train_patches*x // np.sum(pixels_) for x in pixels_]
+
+            # Adding rounding down patches left out in the first dataset
+            train_patches[0] = train_patches[0] + args.train_patches - np.sum(train_patches)
+
             for id_ in range(len(self.train)):
                 self.single_gen.append(
                     PatchExtractor(dataset_low=self.train[id_], dataset_high=self.train_h[id_], label=self.labels[id_],
                                    patch_l=self.patch_l, n_workers=4, max_queue_size=10, is_random=is_random_patches,
-                                   scale=args.scale, max_N=args.train_patches, lims_with_labels=self.lims_labels[id_],
+                                   scale=args.scale, max_N=train_patches[id_], lims_with_labels=self.lims_labels[id_],
                                    patches_with_labels=self.args.patches_with_labels, d2_after=d2_after,
                                    two_ds=self.two_ds,
                                    unlab=self.unlab))

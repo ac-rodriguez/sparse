@@ -254,8 +254,8 @@ def main(unused_args):
 
         reader = DataReader(args, is_training=True)
         input_fn, input_fn_val = reader.get_input_fn()
-        val_iters = np.ceil(np.sum(reader.patch_gen_val_rand.nr_patches) / float(args.batch_size_eval))
-        train_iters = np.ceil(np.sum(reader.patch_gen.nr_patches) / float(args.batch_size))
+        val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
+        train_iters = np.sum(reader.patch_gen.nr_patches) // args.batch_size
 
         metrics_scope = 'metricsHR' if args.is_hr_pred else 'metrics'
         if int(args.lambda_reg) == 1:

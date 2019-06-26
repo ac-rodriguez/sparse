@@ -128,8 +128,8 @@ class Model:
         self.compute_loss()
         self.compute_summaries()
 
-        iters_epoch = (self.args.train_patches / self.args.batch_size)
-        epochs = tf.train.get_global_step() / int(iters_epoch)
+        iters_epoch = self.args.train_patches // self.args.batch_size
+        epochs = tf.train.get_global_step() / iters_epoch
         if mode == tf.estimator.ModeKeys.TRAIN:
             logging_hook = tf.train.LoggingTensorHook({"EPOCH": epochs}, every_n_iter=iters_epoch)
             self.compute_train_op()
