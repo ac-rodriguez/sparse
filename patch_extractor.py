@@ -100,21 +100,23 @@ class PatchExtractor:
             print('Extracted random patches = {}'.format(max_patches))
 
 
-
             size_label_ind = max_patches
 
-
-            valid_coords = np.logical_and.reduce(~np.equal(self.label, -1), axis=2) if self.label is not None else True
+            cloud_threshold = 90
+            valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1), axis=2) if self.label is not None else True
             if self.is_HR_label:
                 valid_input = np.logical_and.reduce(~np.equal(self.d_h, 0), axis=2)
             else:
-                valid_input = np.logical_and.reduce(~np.equal(self.d_l, 0), axis=2)
+                if self.d_l.shape[-1] > 3:
+                    valid_input = np.logical_and.reduce(~np.equal(self.d_l[...,:-1], 0), axis=2)
+                    valid_input = valid_input & np.logical_and.reduce(np.less(self.d_l[...,-1], cloud_threshold))
+                else:
+                    valid_input = np.logical_and.reduce(~np.equal(self.d_l, 0), axis=2)
 
-
-            valid_coords = valid_coords & valid_input
+            valid_pixels = valid_pixels & valid_input
             buffer_size = self.patch_lab
 
-            valid_coords = np.argwhere(valid_coords[buffer_size:-buffer_size, buffer_size:-buffer_size])
+            valid_coords = np.argwhere(valid_pixels[buffer_size:-buffer_size, buffer_size:-buffer_size])
             # add patch//2 to y and x coordinates to correct the cropping
             valid_coords += (buffer_size)
 

@@ -454,7 +454,7 @@ def read_labels(args,shp_file, roi, roi_with_labels, ref_hr=None, ref_lr=None, i
 
     lims_with_labels = gp.to_xy_box(roi_with_labels, ds, enlarge=scale_lims)
     if shp_file.endswith('.shp'):
-        labels = gp.rasterize_polygons(InputVector=shp_file,refDataset=ds_file,lims=lims_with_labels,attribute='TreeDens')
+        labels = gp.rasterize_polygons(InputVector=shp_file,refDataset=ds_file,lims=lims_with_labels,attribute=args.attr)
     elif shp_file.endswith('.tif'):
         labels = readHR(data_file=shp_file, roi_lon_lat=roi_with_labels, scale=args.scale)
     else:

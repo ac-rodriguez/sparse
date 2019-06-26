@@ -375,7 +375,7 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
         copy_last_ckpt(model_dir, prefix)
 
     f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
-    plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
+    plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, cmap='viridis', percentiles=(0,100))  #min=-1, max=2.0,
     nr_patches = patch_generator.nr_patches
 
     batch_idxs = int(np.ceil(nr_patches / batch_size))

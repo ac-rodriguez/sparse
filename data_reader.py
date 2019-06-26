@@ -153,8 +153,7 @@ class DataReader(object):
                                                          scale=self.scale, lims_with_labels=self.lims_labels_val[val_dset_],
                                                          patches_with_labels=self.args.patches_with_labels,
                                                          two_ds=self.two_ds)
-            if self.patch_gen_val_complete.nr_patches >= args.val_patches:
-                print(' Complete val dataset used as random sub-sample too...')
+            if self.patch_gen_val_complete.nr_patches*10 >= args.val_patches:
 
                 self.patch_gen_val_rand = PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
                                                          label=self.labels_val[val_dset_],
@@ -165,6 +164,8 @@ class DataReader(object):
                                                          patches_with_labels=self.args.patches_with_labels,
                                                          two_ds=self.two_ds)
             else:
+                print(f' Complete val dataset has {self.patch_gen_val_complete.nr_patches} and it is used as random sub-sample too...')
+
                 self.patch_gen_val_rand = self.patch_gen_val_complete
 
             # featl,data_h = self.patch_gen_val.get_inputs()
@@ -297,8 +298,9 @@ class DataReader(object):
                     self.val_h[i_], self.val[i_], self.labels_val[i_], scale, type='Val', is_hr_lab=self.is_HR_labels)
 
         if self.args.save_arrays:
-            f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
-            plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
+            max_ = 20.0 if 'palmage' in self.args.dataset else 2.0
+            f1 = lambda x: (np.where(x == -1, x, x * (max_ / self.max_dens)) if self.is_HR_labels else x)
+            plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=max_, cmap='viridis')
             for i_ in range(len(self.val)):
                 if 'vaihingen' in self.args.dataset:
                     plots.plot_heatmap(self.labels_val[i_][..., 1], file=self.args.model_dir + f'/val_reg_label{i_}', min=0,

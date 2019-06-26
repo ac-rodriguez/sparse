@@ -183,8 +183,7 @@ def main(unused_args):
         args.save_dir = args.save_dir + '_reg'
 
     lambdas = 'Lr{:.1f}_Lw{:.4f}'.format(args.lambda_reg, args.lambda_weights)
-    model_dir = os.path.join(args.save_dir, '{}/PATCH{}_{}_SCALE{}_{}{}'.format(
-        args.model, args.patch_size, args.patch_size_eval, args.scale, lambdas, args.tag))
+    model_dir = os.path.join(args.save_dir, f'{args.model}/PATCH{args.patch_size}_{args.patch_size_eval}_SCALE{args.scale}_{lambdas}{args,args.tag}')
 
     if args.is_overwrite and os.path.exists(model_dir) and args.is_train:
         print(' [!] Removing exsiting model and starting training from iter 0...')
@@ -283,7 +282,7 @@ def main(unused_args):
             #     tools.get_embeddings(hook[0], Model_fn, suffix=suffix)
         epoch_ = 0
         while epoch_ < args.epochs:
-            print('[*] EPOCH: {}/{} [0/{}]'.format(epoch_,args.epochs,train_iters))
+            print(f'[*] EPOCH: {epoch_}/{args.epochs} [0/{train_iters}]')
             model.train(input_fn, steps=train_iters*args.eval_every)
             if epoch_ == 0: # warm settings only at the first iteration
                 model._warm_start_settings = None
@@ -291,28 +290,29 @@ def main(unused_args):
             metrics = model.evaluate(input_fn_val, steps=val_iters)
             print(metrics)
             if comp_fn(best, metrics[metric_]):
-                print ('New best at epoch {}, {}:{} from {}'.format(epoch_,metric_,metrics[metric_],best))
+                print (f'New best at epoch {epoch_}, {metric_}:{metrics[metric_]} from {best}')
                 best = metrics[metric_]
                 input_fn_val_comp = reader.get_input_val(is_restart=True)
                 tools.predict_and_recompose(model,reader,input_fn_val_comp, reader.patch_gen_val_complete,is_hr_pred,args.batch_size_eval,'val',
                                             prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0), m=metrics)
 
             else:
-                print('Keeping old best {}:{}'.format(metric_,best))
+                print(f'Keeping old best {metric_}:{best}')
 
         f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
         plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
 
-        try:
-            plots.plot_rgb(reader.patch_gen.d_l1, file=model_dir + '/sample_train_LR')
-            if 'vaihingen' in args.dataset:
-                plots.plot_labels(reader.patch_gen.label_1[...,0], model_dir + '/sample_train_sem_label')
-                plt_reg(reader.patch_gen.label_1[...,-1], model_dir + '/sample_train_reg_label')
-            else:
-                plt_reg(reader.patch_gen.label_1, model_dir + '/sample_train_reg_label')
+        for i_, gen_ in enumerate(reader.single_gen):
+            try:
+                plots.plot_rgb(gen_.d_l1, file=model_dir + f'/sample_train_LR{i_}')
+                if 'vaihingen' in args.dataset:
+                    plots.plot_labels(gen_.label_1[...,0], model_dir + f'/sample_train_sem_label{i_}')
+                    plt_reg(gen_.label_1[...,-1], model_dir + f'/sample_train_reg_label{i_}')
+                else:
+                    plt_reg(gen_.label_1, model_dir + f'/sample_train_reg_label{i_}')
 
-        except AttributeError:
-            pass
+            except AttributeError:
+                pass
         try:
             plots.plot_rgb(reader.patch_gen_val_rand.d_l1, file=model_dir + '/sample_val_LR')
             if 'vaihingen' in args.dataset:

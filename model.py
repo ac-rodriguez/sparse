@@ -809,10 +809,10 @@ class Model:
 
         uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
         inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale, s2=not self.not_s2)
-
+        max_ = 20. if self.args.dataset == 'palmage' else 2.0
         f1 = lambda x: tf.where(x == -1, x, x * (2.0 / max_dens))
-        inv_regh_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=2.0, cmap='viridis'))
-        inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=2.0, cmap='viridis'))
+        inv_regh_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=max_, cmap='viridis'))
+        inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=max_, cmap='viridis'))
         inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
         inv_difreg_ = lambda x: uint8_(colorize(x,vmin=-2,vmax=2, cmap='coolwarm'))
 
