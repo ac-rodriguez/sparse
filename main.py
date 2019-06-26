@@ -183,7 +183,7 @@ def main(unused_args):
         args.save_dir = args.save_dir + '_reg'
 
     lambdas = 'Lr{:.1f}_Lw{:.4f}'.format(args.lambda_reg, args.lambda_weights)
-    model_dir = os.path.join(args.save_dir, f'{args.model}/PATCH{args.patch_size}_{args.patch_size_eval}_SCALE{args.scale}_{lambdas}{args,args.tag}')
+    model_dir = os.path.join(args.save_dir, f'{args.model}/PATCH{args.patch_size}_{args.patch_size_eval}_SCALE{args.scale}_{lambdas}{args.tag}')
 
     if args.is_overwrite and os.path.exists(model_dir) and args.is_train:
         print(' [!] Removing exsiting model and starting training from iter 0...')
@@ -252,7 +252,7 @@ def main(unused_args):
     if args.is_train:
 
         reader = DataReader(args, is_training=True)
-        input_fn, input_fn_val = reader.get_input_fn()
+        input_fn, input_fn_val = reader.get_input_fn(is_val_random=True)
         val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
         train_iters = np.sum(reader.patch_gen.nr_patches) // args.batch_size
 

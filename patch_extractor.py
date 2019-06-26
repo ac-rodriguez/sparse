@@ -64,7 +64,7 @@ class PatchExtractor:
         self.unlab = unlab
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
-            self.label_1 = np.zeros_like(self.label) if self.label is not None else None
+            self.label_1 = np.ones_like(self.label)*-1.0 if self.label is not None else None
         if self.label is not None:
             self.is_HR_label = not (self.d_l.shape[0:2] == self.label.shape[0:2])
         else:
@@ -342,7 +342,7 @@ class PatchExtractor:
 
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
-            self.label_1 = np.zeros_like(self.label)
+            self.label_1 = np.ones_like(self.label)*-1.0
     def get_inputs(self):
         return self.inputs_queue.get()
 
