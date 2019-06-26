@@ -130,6 +130,31 @@ def get_dataset(DATASET, is_mounted = False):
             'gt': None,
             'roi': '-7.2,4.5,-7.1,4.58',
             'roi_lb': '-7.2,4.5,-7.1,4.58'})
+        dset_config['attr'] = 'TreeDens'
+
+    elif "palmage" in DATASET:
+        OBJECT='palm'
+
+        dset_config['tr'].append({
+            'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+            'hr': None,
+            'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
+            'roi': '-7.2,4.5,-7.1,4.58',
+            'roi_lb': '-7.2,4.5,-7.1,4.58'})
+
+        dset_config['val'].append({
+            'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+            'hr': None,
+            'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
+            'roi': '-7.2,4.58,-7.1,4.65',
+            'roi_lb': '-7.2,4.58,-7.1,4.65'})
+        dset_config['test'].append({
+            'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+            'hr': None,
+            'gt': None,
+            'roi': '-7.2,4.5,-7.1,4.58',
+            'roi_lb': '-7.2,4.5,-7.1,4.58'})
+        dset_config['attr'] = 'TreeAge'
 
 
     elif "palm" in DATASET:
