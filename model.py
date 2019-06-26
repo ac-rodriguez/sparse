@@ -193,6 +193,14 @@ class Model:
         elif self.model == 'dl3':
             self.y_hat = dl3(inputs=self.feat_l, n_channels=2, is_training=self.is_training)
 
+        elif self.model == 'dl3B_h':
+            feat_l_up = self.up_(self.feat_l, 8)
+
+            self.y_hat = dl3(inputs=feat_l_up, n_channels=2, is_training=self.is_training)
+
+        elif self.model == 'dl3HR_h':
+            self.y_hat = dl3(inputs=self.feat_h, n_channels=2, is_training=self.is_training)
+
         elif self.model == 'countSR' or self.model == 'countSRu' or self.model =='countSRonly':
             self.is_sr = True
             self.HR_hat = sr.SR_task(feat_l=self.feat_l, size=size, is_batch_norm=True, is_training=self.is_training)
