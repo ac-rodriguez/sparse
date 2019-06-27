@@ -114,7 +114,7 @@ class Model:
         if self.is_hr_label:
             if self.args.is_fake_hr_label:
                 self.labels = labels
-                self.labelsh = tf.image.resize(self.labels, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR, size=(
+                self.labelsh = tf.image.resize_nearest_neighbor(self.labels, size=(
                 self.patch_size * self.scale, self.patch_size * self.scale)) / (self.scale ** 2)
             else:
                 self.labels = self.compute_labels_ls(labels, self.scale)

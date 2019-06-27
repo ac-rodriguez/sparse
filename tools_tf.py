@@ -74,7 +74,7 @@ def median_pool(X, scale, name=None):
 
 
 def bilinear(X, size, name=None):
-    return tf.image.resize(X, size=[int(size), int(size)], name=name, method=tf.image.ResizeMethod.BILINEAR)
+    return tf.image.resize_nearest_neighbor(X, size=[int(size), int(size)], name=name)
 
 
 log10 = lambda x: tf.math.log(x) / tf.math.log(10.0)
