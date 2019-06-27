@@ -5,36 +5,36 @@ import numpy as np
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
 
-    return activation_fn(tf.layers.batch_normalization(X, training=is_training))
+    return activation_fn(tf.compat.v1.layers.batch_normalization(X, training=is_training))
 
 
 def block(x, is_training, is_bn=True):
-    x2 = tf.layers.conv2d(x, 64, kernel_size=1, use_bias=False, padding='same')
+    x2 = tf.compat.v1.layers.conv2d(x, 64, kernel_size=1, use_bias=False, padding='same')
     x2 = bn_layer(x2, activation_fn=tf.nn.relu, is_training=is_training) if is_bn else x2
-    x2 = tf.layers.conv2d(x2, 64, kernel_size=3, use_bias=False, padding='same')
+    x2 = tf.compat.v1.layers.conv2d(x2, 64, kernel_size=3, use_bias=False, padding='same')
     x2 = bn_layer(x2, activation_fn=tf.nn.relu, is_training=is_training) if is_bn else x2
-    x2 = tf.layers.conv2d(x2, 256, kernel_size=1, use_bias=False, padding='same')
+    x2 = tf.compat.v1.layers.conv2d(x2, 256, kernel_size=1, use_bias=False, padding='same')
     x2 = bn_layer(x2, activation_fn=None, is_training=is_training) if is_bn else x2
 
     return x2
 
 
-def discriminator(input, scope_name='discriminator', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False):
-    with tf.variable_scope(scope_name, reuse=reuse):
+def discriminator(input, scope_name='discriminator', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, return_feat = False):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
-        x = tf.layers.conv2d(input, 64, kernel_size=4, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(input, 64, kernel_size=4, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 128, kernel_size=4, strides=2, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 128, kernel_size=4, strides=2, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 256, kernel_size=4, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 256, kernel_size=4, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         x1 = x
-        x = tf.layers.conv2d(x, 512, kernel_size=4, strides=2, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 512, kernel_size=4, strides=2, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 2, kernel_size=4, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 2, kernel_size=4, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
         x = tools.bilinear(x, input.shape[1])
@@ -44,24 +44,24 @@ def discriminator(input, scope_name='discriminator', is_training=True, is_bn=Tru
             return x
 
 from flip_gradient import flip_gradient
-def domain_discriminator(input, scope_name='domain_discriminator', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False):
-    with tf.variable_scope(scope_name, reuse=reuse):
+def domain_discriminator(input, scope_name='domain_discriminator', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, return_feat = False):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
 
         x = flip_gradient(input)
 
-        x = tf.layers.conv2d(x, 64, kernel_size=3, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 64, kernel_size=3, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 128, kernel_size=3, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 128, kernel_size=3, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         x1 = x
-        x = tf.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 256, kernel_size=3, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 2, kernel_size=4, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(x, 2, kernel_size=4, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
         if return_feat:
@@ -69,22 +69,22 @@ def domain_discriminator(input, scope_name='domain_discriminator', is_training=T
         else:
             return x
 
-def domain_discriminator_small(input, scope_name='domain_discriminator_single', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, return_feat = False, is_flip=True):
-    with tf.variable_scope(scope_name, reuse=reuse):
+def domain_discriminator_small(input, scope_name='domain_discriminator_single', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, return_feat = False, is_flip=True):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
 
         x = flip_gradient(input) if is_flip else input
 
-        x = tf.layers.conv2d(x, 64, kernel_size=3, strides=2, padding='valid')
+        x = tf.compat.v1.layers.conv2d(x, 64, kernel_size=3, strides=2, padding='valid')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 32, kernel_size=3, strides=2, padding='valid')
+        x = tf.compat.v1.layers.conv2d(x, 32, kernel_size=3, strides=2, padding='valid')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-        x = tf.layers.conv2d(x, 3, kernel_size=3, strides=2, padding='valid')
+        x = tf.compat.v1.layers.conv2d(x, 3, kernel_size=3, strides=2, padding='valid')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         x1 = x
-        x = tf.layers.flatten(x)
-        x = tf.layers.dense(x,2)
+        x = tf.compat.v1.layers.flatten(x)
+        x = tf.compat.v1.layers.dense(x,2)
         # x = tf.layers.conv2d(x, 2, kernel_size=4, strides=1, padding='same')
         # x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
@@ -93,44 +93,44 @@ def domain_discriminator_small(input, scope_name='domain_discriminator_single', 
         else:
             return x
 
-def decode(input, scope_name='decode', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, scale=8, n_feat_last = None):
-    with tf.variable_scope(scope_name, reuse=reuse):
+def decode(input, scope_name='decode', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, scale=8, n_feat_last = None):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
         n_feat = 128
-        x = tf.layers.conv2d_transpose(input, 64, kernel_size=3, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d_transpose(input, 64, kernel_size=3, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
         for i in range(int(np.log2(scale))):
-            x = tf.layers.conv2d_transpose(x, 128, kernel_size=3, strides=2, padding='same')
+            x = tf.compat.v1.layers.conv2d_transpose(x, 128, kernel_size=3, strides=2, padding='same')
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
             if n_feat_last is not None and i == int(np.log2(scale))-1:
                 n_feat = n_feat_last
-            x = tf.layers.conv2d_transpose(x, n_feat, kernel_size=3, strides=1, padding='same')
+            x = tf.compat.v1.layers.conv2d_transpose(x, n_feat, kernel_size=3, strides=1, padding='same')
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
-def encode(input, scope_name='encode', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, scale=8):
-    with tf.variable_scope(scope_name, reuse=reuse):
+def encode(input, scope_name='encode', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, scale=8):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
 
-        x = tf.layers.conv2d(input, 64, kernel_size=3, strides=1, padding='same')
+        x = tf.compat.v1.layers.conv2d(input, 64, kernel_size=3, strides=1, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
         for _ in range(int(np.log2(scale))):
-            x = tf.layers.conv2d(x, 128, kernel_size=3, strides=2, padding='same')
+            x = tf.compat.v1.layers.conv2d(x, 128, kernel_size=3, strides=2, padding='same')
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
 
-            x = tf.layers.conv2d(x, 128, kernel_size=3, strides=1, padding='same')
+            x = tf.compat.v1.layers.conv2d(x, 128, kernel_size=3, strides=1, padding='same')
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
-def encode_same(input, scope_name='encode_same', is_training=True, is_bn=True, reuse=tf.AUTO_REUSE, is_small = True):
-    with tf.variable_scope(scope_name, reuse=reuse):
+def encode_same(input, scope_name='encode_same', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, is_small = True):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
 
-        x = tf.layers.conv2d(input, 64, 3, activation=tf.nn.relu, padding='same')
+        x = tf.compat.v1.layers.conv2d(input, 64, 3, activation=tf.nn.relu, padding='same')
         x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         iters = 1 if is_small else 3
 
         for _ in range(iters):
-            x = tf.layers.conv2d(x, 128, 3, activation=tf.nn.relu, padding='same')
+            x = tf.compat.v1.layers.conv2d(x, 128, 3, activation=tf.nn.relu, padding='same')
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
@@ -156,7 +156,7 @@ class SemisupModel(object):
         # self.step = tf.train.get_or_create_global_step()
         # self.ema = tf.train.ExponentialMovingAverage(0.99, self.step)
         self.ema = tf.train.ExponentialMovingAverage(0.99)
-        tf.moving_average_variables()
+        tf.compat.v1.moving_average_variables()
         self.loss = 0.0
 
 
@@ -178,21 +178,21 @@ class SemisupModel(object):
         equality_matrix = tf.equal(tf.reshape(labels, [-1, 1]), labels)
         equality_matrix = tf.cast(equality_matrix, tf.float32)
         p_target = (equality_matrix / tf.reduce_sum(
-            equality_matrix, [1], keepdims=True))
+            input_tensor=equality_matrix, axis=[1], keepdims=True))
 
         match_ab = tf.matmul(a, b, transpose_b=True, name='match_ab')
         p_ab = tf.nn.softmax(match_ab, name='p_ab')
-        p_ba = tf.nn.softmax(tf.transpose(match_ab), name='p_ba')
+        p_ba = tf.nn.softmax(tf.transpose(a=match_ab), name='p_ba')
         self.p_aba = tf.matmul(p_ab, p_ba, name='p_aba')
 
         self.create_walk_statistics(self.p_aba, equality_matrix)
 
-        loss_aba = tf.losses.softmax_cross_entropy(
+        loss_aba = tf.compat.v1.losses.softmax_cross_entropy(
             p_target,
-            tf.log(1e-8 + self.p_aba),
+            tf.math.log(1e-8 + self.p_aba),
             weights=walker_weight,
             scope='loss_aba')
-        tf.summary.scalar('loss/aba', loss_aba)
+        tf.compat.v1.summary.scalar('loss/aba', loss_aba)
         self.loss += loss_aba
         visit_loss = self.get_visit_loss(p_ab, visit_weight)
         self.loss += visit_loss
@@ -208,14 +208,14 @@ class SemisupModel(object):
           weight: Loss weight.
         """
         visit_probability = tf.reduce_mean(
-            p, [0], keepdims=True, name='visit_prob')
-        t_nb = tf.shape(p)[1]
-        visit_loss = tf.losses.softmax_cross_entropy(
+            input_tensor=p, axis=[0], keepdims=True, name='visit_prob')
+        t_nb = tf.shape(input=p)[1]
+        visit_loss = tf.compat.v1.losses.softmax_cross_entropy(
             tf.fill([1, t_nb], 1.0 / tf.cast(t_nb, tf.float32)),
-            tf.log(1e-8 + visit_probability),
+            tf.math.log(1e-8 + visit_probability),
             weights=weight,
             scope='loss_visit')
-        tf.summary.scalar('loss/visit', visit_loss)
+        tf.compat.v1.summary.scalar('loss/visit', visit_loss)
         return visit_loss
 
 
@@ -231,12 +231,12 @@ class SemisupModel(object):
         """
         # Using the square root of the correct round trip probalilty as an estimate
         # of the current classifier accuracy.
-        per_row_accuracy = 1.0 - tf.reduce_sum((equality_matrix * p_aba), 1) ** 0.5
+        per_row_accuracy = 1.0 - tf.reduce_sum(input_tensor=(equality_matrix * p_aba), axis=1) ** 0.5
         self.estimate_error = tf.reduce_mean(
-            1.0 - per_row_accuracy, name=p_aba.name[:-2] + '_esterr')
+            input_tensor=1.0 - per_row_accuracy, name=p_aba.name[:-2] + '_esterr')
 
         # self.add_vars()
-        tf.summary.scalar('Stats_EstError', self.estimate_error)
+        tf.compat.v1.summary.scalar('Stats_EstError', self.estimate_error)
 
     def add_average(self, variable):
         """Add moving average variable to the model."""

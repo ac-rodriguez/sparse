@@ -8,38 +8,38 @@ def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
     global i
 
-    with tf.variable_scope('batch_norm'+str(i), reuse=False):
-        out =  activation_fn(tf.layers.batch_normalization(X, training=is_training))
+    with tf.compat.v1.variable_scope('batch_norm'+str(i), reuse=False):
+        out =  activation_fn(tf.compat.v1.layers.batch_normalization(X, training=is_training))
 
-        gamma = tf.trainable_variables(tf.get_variable_scope().name)[0]
-        beta = tf.trainable_variables(tf.get_variable_scope().name)[1]
-        tf.summary.histogram('bn/gamma',gamma)
-        tf.summary.histogram('bn/beta',beta)
+        gamma = tf.compat.v1.trainable_variables(tf.compat.v1.get_variable_scope().name)[0]
+        beta = tf.compat.v1.trainable_variables(tf.compat.v1.get_variable_scope().name)[1]
+        tf.compat.v1.summary.histogram('bn/gamma',gamma)
+        tf.compat.v1.summary.histogram('bn/beta',beta)
         i+=1
         return out
 
 def block(x, is_training, is_bn = True):
-    x2 = tf.layers.conv2d(x, 64, kernel_size=1, use_bias=False, padding='same')
+    x2 = tf.compat.v1.layers.conv2d(x, 64, kernel_size=1, use_bias=False, padding='same')
     x2 = bn_layer(x2, activation_fn=tf.nn.relu, is_training=is_training) if is_bn else x2
-    x2 = tf.layers.conv2d(x2, 64, kernel_size=3, use_bias=False, padding='same')
+    x2 = tf.compat.v1.layers.conv2d(x2, 64, kernel_size=3, use_bias=False, padding='same')
     x2 = bn_layer(x2, activation_fn=tf.nn.relu, is_training=is_training) if is_bn else x2
-    x2 = tf.layers.conv2d(x2, 256, kernel_size=1, use_bias=False, padding='same')
+    x2 = tf.compat.v1.layers.conv2d(x2, 256, kernel_size=1, use_bias=False, padding='same')
     x2 = bn_layer(x2, activation_fn=None, is_training=is_training) if is_bn else x2
 
     return x2
 
 
-def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True,reuse=tf.AUTO_REUSE, return_feat=False, deeper=None):
+def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True,reuse=tf.compat.v1.AUTO_REUSE, return_feat=False, deeper=None):
 
     feature_size = 256
 
     global i
     i = 0
-    with tf.variable_scope(scope_name, reuse=reuse):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
         # features_nn = resid_block(A_cube, filters=[128, 128], only_resid=True)
-        x1 = tf.layers.conv2d(input, feature_size, kernel_size=3, use_bias=False, activation=tf.nn.relu, padding='same')
+        x1 = tf.compat.v1.layers.conv2d(input, feature_size, kernel_size=3, use_bias=False, activation=tf.nn.relu, padding='same')
         x1bn = bn_layer(x1, activation_fn=tf.nn.relu, is_training=is_training) if is_bn else x1
-        x1bn1 = tf.layers.conv2d(x1bn, feature_size, kernel_size=1, use_bias=False, padding='same')
+        x1bn1 = tf.compat.v1.layers.conv2d(x1bn, feature_size, kernel_size=1, use_bias=False, padding='same')
         x1bn1 = bn_layer(x1bn1, is_training=is_training) if is_bn else x1bn1
 
         x2 = block(x1bn, is_training, is_bn)
@@ -67,11 +67,11 @@ def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True,
         # Regression
         last = tf.nn.relu(x7_ + x7)
         # last = x8a_
-        x8a = tf.layers.conv2d(last, n_channels, kernel_size=3, use_bias=False, padding='same')
+        x8a = tf.compat.v1.layers.conv2d(last, n_channels, kernel_size=3, use_bias=False, padding='same')
 
         # Semantic
         # x8b_ = tf.nn.relu(x7_ + x7)
-        x8b = tf.layers.conv2d(last, 2, kernel_size=3, use_bias=False, padding='same')
+        x8b = tf.compat.v1.layers.conv2d(last, 2, kernel_size=3, use_bias=False, padding='same')
 
     if return_feat:
         return {'reg': x8a, 'sem': x8b}, mid, last
@@ -107,17 +107,17 @@ def dl3(inputs, n_channels, is_training, base_architecture='resnet_v2_50', retur
     last = atrous_spatial_pyramid_pooling(mid_feat, output_stride, is_training)
 
 
-    with tf.variable_scope("upsampling_logits"):
+    with tf.compat.v1.variable_scope("upsampling_logits"):
         x_log = layers_lib.conv2d(last, n_channels, [1, 1], activation_fn=None, normalizer_fn=None,
                                 scope='conv_1x1')
-        logits = tf.image.resize_bilinear(x_log, inputs_size, name='upsample')
+        logits = tf.image.resize(x_log, inputs_size, name='upsample', method=tf.image.ResizeMethod.BILINEAR)
 
     # net = end_points[base_architecture + '/block4']
     # mid_feat2 = atrous_spatial_pyramid_pooling(mid_feat, output_stride, batch_norm_decay, is_training, scope='aspp_reg')
-    with tf.variable_scope("upsampling_reg"):
+    with tf.compat.v1.variable_scope("upsampling_reg"):
         x_reg = layers_lib.conv2d(last, 1, [1, 1], activation_fn=None, normalizer_fn=None,
                                 scope='conv_1x1')
-        pred_reg = tf.image.resize_bilinear(x_reg, inputs_size, name='upsample')
+        pred_reg = tf.image.resize(x_reg, inputs_size, name='upsample', method=tf.image.ResizeMethod.BILINEAR)
 
     if return_feat:
         return {'reg': pred_reg, 'sem': logits},  mid_feat, last
@@ -140,7 +140,7 @@ def atrous_spatial_pyramid_pooling(inputs, output_stride, is_training, depth=256
   Returns:
     The atrous spatial pyramid pooling output.
   """
-  with tf.variable_scope(scope):
+  with tf.compat.v1.variable_scope(scope):
     if output_stride not in [8, 16]:
       raise ValueError('output_stride must be either 8 or 16.')
 
@@ -150,7 +150,7 @@ def atrous_spatial_pyramid_pooling(inputs, output_stride, is_training, depth=256
 
     with tf.contrib.slim.arg_scope(resnet_v2.resnet_arg_scope()):
       with arg_scope([layers.batch_norm], is_training=is_training):
-        inputs_size = tf.shape(inputs)[1:3]
+        inputs_size = tf.shape(input=inputs)[1:3]
         # (a) one 1x1 convolution and three 3x3 convolutions with rates = (6, 12, 18) when output stride = 16.
         # the rates are doubled when output stride = 8.
         conv_1x1 = layers_lib.conv2d(inputs, depth, [1, 1], stride=1, scope="conv_1x1")
@@ -159,13 +159,13 @@ def atrous_spatial_pyramid_pooling(inputs, output_stride, is_training, depth=256
         conv_3x3_3 = resnet_utils.conv2d_same(inputs, depth, 3, stride=1, rate=atrous_rates[2], scope='conv_3x3_3')
 
         # (b) the image-level features
-        with tf.variable_scope("image_level_features"):
+        with tf.compat.v1.variable_scope("image_level_features"):
           # global average pooling
-          image_level_features = tf.reduce_mean(inputs, [1, 2], name='global_average_pooling', keepdims=True)
+          image_level_features = tf.reduce_mean(input_tensor=inputs, axis=[1, 2], name='global_average_pooling', keepdims=True)
           # 1x1 convolution with 256 filters( and batch normalization)
           image_level_features = layers_lib.conv2d(image_level_features, depth, [1, 1], stride=1, scope='conv_1x1')
           # bilinearly upsample features
-          image_level_features = tf.image.resize_bilinear(image_level_features, inputs_size, name='upsample')
+          image_level_features = tf.image.resize(image_level_features, inputs_size, name='upsample', method=tf.image.ResizeMethod.BILINEAR)
 
         net = tf.concat([conv_1x1, conv_3x3_1, conv_3x3_2, conv_3x3_3, image_level_features], axis=3, name='concat')
         net = layers_lib.conv2d(net, depth, [1, 1], stride=1, scope='conv_1x1_concat')
@@ -175,33 +175,33 @@ def atrous_spatial_pyramid_pooling(inputs, output_stride, is_training, depth=256
 
 
 
-def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.AUTO_REUSE, config_volume=None):
+def countception(input,pad, scope_name='countception', is_training=True, is_return_feat=False, reuse=tf.compat.v1.AUTO_REUSE, config_volume=None):
 
     def selu(x):
-        with tf.name_scope('elu') as scope:
+        with tf.compat.v1.name_scope('elu') as scope:
             alpha = 1.6732632423543772848170429916717
             scale = 1.0507009873554804934193349852946
-            return scale * tf.where(x >= 0., x, alpha * tf.nn.elu(x))
+            return scale * tf.compat.v1.where(x >= 0., x, alpha * tf.nn.elu(x))
 
 
     def ConvLayer(x, num_filters, kernel_size, name, pad='SAME', is_last=False):
-        with tf.variable_scope(name):
-            w = tf.get_variable('weights', shape=[kernel_size[0], kernel_size[1],
+        with tf.compat.v1.variable_scope(name):
+            w = tf.compat.v1.get_variable('weights', shape=[kernel_size[0], kernel_size[1],
                                                   x.get_shape()[3], num_filters],
-                                initializer=tf.contrib.layers.xavier_initializer())
-            conv = tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding=pad)
+                                initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform"))
+            conv = tf.nn.conv2d(input=x, filters=w, strides=[1, 1, 1, 1], padding=pad)
             if is_last:
-                b = tf.get_variable('biases', [num_filters], initializer=tf.zeros_initializer())
+                b = tf.compat.v1.get_variable('biases', [num_filters], initializer=tf.compat.v1.zeros_initializer())
                 return conv + b
             else:
                 # b = tf.get_variable('biases', [num_filters], initializer=tf.zeros_initializer())
-                bn = tf.layers.batch_normalization(conv, training=(is_training))
+                bn = tf.compat.v1.layers.batch_normalization(conv, training=(is_training))
                 return tf.nn.relu(bn)
                 # return selu(conv + b)
 
 
     def ConcatBlock(x, num_filters1, num_filters2, name):
-        with tf.variable_scope(name):
+        with tf.compat.v1.variable_scope(name):
             conv1x1 = ConvLayer(x, num_filters1, [1, 1], 'conv1x1', pad='VALID')
             conv3x3 = ConvLayer(x, num_filters2, [3, 3], 'conv3x3', pad='SAME')
             return tf.concat([conv1x1, conv3x3], axis=-1)
@@ -227,9 +227,9 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
                     print('not implemented error')
                     sys.exit(1)
 
-    with tf.variable_scope(scope_name, reuse=reuse):
+    with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
         # pad = 32
-        net = tf.pad(input, [[0, 0], [pad, pad], [pad, pad], [0, 0]], 'CONSTANT')
+        net = tf.pad(tensor=input, paddings=[[0, 0], [pad, pad], [pad, pad], [0, 0]], mode='CONSTANT')
         # net = input
         net = ConvLayer(net, 64, [3, 3], name='conv1', pad='VALID')
         net = ConcatBlock(net, 16, 16, name='concat_block1')

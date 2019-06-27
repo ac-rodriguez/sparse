@@ -247,7 +247,7 @@ def main(unused_args):
                                    model_dir=model_dir, config=run_config, warm_start_from=warm_dir)
     is_hr_pred = Model_fn.hr_emb
 
-    tf.logging.set_verbosity(tf.logging.INFO)  # Show training logs.
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)  # Show training logs.
 
     if args.is_train:
 
@@ -344,6 +344,6 @@ def main(unused_args):
     np.save('{}/test_label'.format(model_dir), reader.labels_test)
 
 if __name__ == '__main__':
-    tf.app.run()
+    tf.compat.v1.app.run()
 
 print('Done!')

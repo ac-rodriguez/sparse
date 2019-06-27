@@ -2,7 +2,7 @@ import tensorflow as tf
 # from tensorflow.contrib.tensorboard.plugins import projector
 # import sys
 import numpy as np
-cross_entropy = tf.losses.sparse_softmax_cross_entropy
+cross_entropy = tf.compat.v1.losses.sparse_softmax_cross_entropy
 
 from AdaBound import AdaBoundOptimizer
 
@@ -29,8 +29,8 @@ class Model:
             self.down_ = lambda x, _: tools.bilinear(x, self.patch_size, name='HR_hat_down')
             self.up_ = lambda x, _: tools.bilinear(x, self.patch_size * self.scale, name='HR_hat_down')
         else:
-            self.down_ = lambda x, ch: tf.layers.conv2d(x, ch, 3, strides=self.scale, padding='same')
-            self.up_ = lambda x, ch: tf.layers.conv2d_transpose(x, ch, 3, strides=self.scale, padding='same')
+            self.down_ = lambda x, ch: tf.compat.v1.layers.conv2d(x, ch, 3, strides=self.scale, padding='same')
+            self.up_ = lambda x, ch: tf.compat.v1.layers.conv2d_transpose(x, ch, 3, strides=self.scale, padding='same')
 
         self.float_ = lambda x: tf.cast(x, dtype=tf.float32)
 
@@ -57,7 +57,7 @@ class Model:
     def get_w(self, lab):
         if self.not_s2:
             lab = tf.expand_dims(lab[...,0],-1)
-        w = self.float_(tf.where(tf.greater_equal(lab, 0.0),
+        w = self.float_(tf.compat.v1.where(tf.greater_equal(lab, 0.0),
                                       tf.ones_like(lab),  ## for wherever i have labels
                                       tf.zeros_like(lab)))
         return w
@@ -69,7 +69,7 @@ class Model:
             label_sem = int_(tf.equal(lab[...,0], 5.0))
         else:
             label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
-            label_sem = tf.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
+            label_sem = tf.compat.v1.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
                                  tf.ones_like(label_sem, dtype=tf.int32) * -1)
         if return_w:
             return label_sem,w
@@ -114,7 +114,7 @@ class Model:
         if self.is_hr_label:
             if self.args.is_fake_hr_label:
                 self.labels = labels
-                self.labelsh = tf.image.resize_nearest_neighbor(self.labels, size=(
+                self.labelsh = tf.image.resize(self.labels, method=tf.image.ResizeMethod.NEAREST_NEIGHBOR, size=(
                 self.patch_size * self.scale, self.patch_size * self.scale)) / (self.scale ** 2)
             else:
                 self.labels = self.compute_labels_ls(labels, self.scale)
@@ -129,17 +129,17 @@ class Model:
         self.compute_summaries()
 
         iters_epoch = self.args.train_patches // self.args.batch_size
-        epochs = tf.train.get_global_step() / iters_epoch
+        epochs = tf.compat.v1.train.get_global_step() / iters_epoch
         if mode == tf.estimator.ModeKeys.TRAIN:
-            logging_hook = tf.train.LoggingTensorHook({"EPOCH": epochs}, every_n_iter=iters_epoch)
+            logging_hook = tf.estimator.LoggingTensorHook({"EPOCH": epochs}, every_n_iter=iters_epoch)
             self.compute_train_op()
             return tf.estimator.EstimatorSpec(mode, loss=self.loss, train_op=self.train_op, training_hooks=[logging_hook])
-        tf.summary.scalar('global_step/epoch',epochs)
+        tf.compat.v1.summary.scalar('global_step/epoch',epochs)
         # Add summary hook for image summary
-        eval_summary_hook = tf.train.SummarySaverHook(
+        eval_summary_hook = tf.estimator.SummarySaverHook(
             save_steps=200,
             output_dir=self.model_dir + '/eval',
-            summary_op=tf.summary.merge_all())
+            summary_op=tf.compat.v1.summary.merge_all())
 
         return tf.estimator.EstimatorSpec(
             mode, loss=self.loss, eval_metric_ops=self.eval_metric_ops, evaluation_hooks=[eval_summary_hook])
@@ -172,7 +172,7 @@ class Model:
             if self.model == 'counth':  # using down-sampled HR images too
                 self.add_yhath = True
                 feat_h_down = self.down_(self.feat_h,3)
-                feat_h_down = tf.layers.conv2d(feat_h_down,self.feat_l.shape[-1],kernel_size=1,strides=1)
+                feat_h_down = tf.compat.v1.layers.conv2d(feat_h_down,self.feat_l.shape[-1],kernel_size=1,strides=1)
                 self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
         elif self.model == 'countA' or self.model == 'countAh':
 
@@ -182,7 +182,7 @@ class Model:
             if self.model == 'countAh':  # using down-sampled HR images too
                 self.add_yhath = True
                 feat_h_down = self.down_(self.feat_h,3)
-                feat_h_down = tf.layers.conv2d(feat_h_down,earlyl.shape[-1],kernel_size=1,strides=1)
+                feat_h_down = tf.compat.v1.layers.conv2d(feat_h_down,earlyl.shape[-1],kernel_size=1,strides=1)
                 self.y_hath = countception(feat_h_down, pad=self.pad, is_training=self.is_training)
             if self.is_semi:
                 earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
@@ -324,7 +324,7 @@ class Model:
             self.y_hat['reg'] = tf.nn.relu(self.y_hat['reg'])
         if self.is_domain_transfer and not self.is_slim:
             Emb = tf.concat((self.Zh, self.Zl), axis=0, name='Embeddings')
-            Label = tf.concat((tf.ones(tf.shape(self.Zh)[:-1]), tf.zeros(tf.shape(self.Zh)[:-1])), axis=0,
+            Label = tf.concat((tf.ones(tf.shape(input=self.Zh)[:-1]), tf.zeros(tf.shape(input=self.Zh)[:-1])), axis=0,
                               name='EmbeddingsLabel')
 
     def compute_label_sem(self):
@@ -341,47 +341,47 @@ class Model:
             # lam_evol = 1.0
             lam_evol = tools.evolving_lambda(self.args, height=self.args.low_task_evol) if self.args.low_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
-                loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
+                loss_reg = tf.compat.v1.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
                 self.losses.append(loss_reg)
                 self.scale_losses.append(self.args.lambda_reg * loss_reg * lam_evol)
                 # self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
-                tf.summary.scalar('loss/reg', loss_reg)
+                tf.compat.v1.summary.scalar('loss/reg', loss_reg)
             if self.args.lambda_reg < 1.0:
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hat['sem'], weights=w)
                 self.losses.append(loss_sem)
                 self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
                 # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
-                tf.summary.scalar('loss/sem', loss_sem)
+                tf.compat.v1.summary.scalar('loss/sem', loss_sem)
 
         if self.add_yhath and (self.is_training or not self.is_slim):
 
             lam_evol = tools.evolving_lambda(self.args, height=self.args.high_task_evol) if self.args.high_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
-                loss_reg = tf.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
+                loss_reg = tf.compat.v1.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
                 self.losses.append(loss_reg)
                 self.scale_losses.append(self.args.lambda_reg * lam_evol)
                 # self.lossTasks += self.args.lambda_reg * loss_reg * lam_evol
-                tf.summary.scalar('loss/regH', loss_reg)
+                tf.compat.v1.summary.scalar('loss/regH', loss_reg)
             if self.args.lambda_reg < 1.0:
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w)
                 self.losses.append(loss_sem)
                 self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
                 # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
-                tf.summary.scalar('loss/semH', loss_sem)
+                tf.compat.v1.summary.scalar('loss/semH', loss_sem)
         # SR loss
         if self.is_sr and self.args.lambda_sr > 0:
             if self.args.sr_after is not None:
                 if self.args.sr_after > 0:
-                    w1 = tf.where(tf.greater(self.args.sr_after, tf.train.get_global_step()), 0., 1.)
+                    w1 = tf.compat.v1.where(tf.greater(self.args.sr_after, tf.compat.v1.train.get_global_step()), 0., 1.)
                 else:
-                    w1 = tf.where(tf.greater(self.args.sr_after, tf.train.get_global_step()), 1., 0.)
+                    w1 = tf.compat.v1.where(tf.greater(self.args.sr_after, tf.compat.v1.train.get_global_step()), 1., 0.)
             else:
                 w1 = 1.
             if self.sr_on_labeled:
                 loss_sr = tf.nn.l2_loss(self.HR_hat - self.feat_h)
             else:
                 loss_sr = tf.nn.l2_loss(self.HR_hatU - self.feat_hU)
-            tf.summary.scalar('loss/SR', loss_sr)
+            tf.compat.v1.summary.scalar('loss/SR', loss_sr)
             self.losses.append(tf.identity(w1*loss_sr,'sr_loss'))
             self.scale_losses.append(self.args.lambda_sr)
             # self.lossTasks += self.args.lambda_sr * w1 * loss_sr
@@ -426,7 +426,7 @@ class Model:
                 #
                 #     self.is_first_train = False
                 self.DIS_models()
-                tf.train.init_from_checkpoint(distill_from,{'/': 'teacher/'})
+                tf.compat.v1.train.init_from_checkpoint(distill_from,{'/': 'teacher/'})
                 print('init teacher variables from checkpoint')
 
                 self.add_distilled_loss()
@@ -436,10 +436,10 @@ class Model:
                 self.add_domain_loss()
 
         # L2 weight Regularizer
-        W = [v for v in tf.trainable_variables() if not 'teacher' in v.name] # if ('weights' in v.name or 'kernel' in v.name)
+        W = [v for v in tf.compat.v1.trainable_variables() if not 'teacher' in v.name] # if ('weights' in v.name or 'kernel' in v.name)
         # Lambda_weights is always rescaled with 0.0005
         l2_weights = tf.add_n([tf.nn.l2_loss(v) for v in W], name='w_loss')
-        tf.summary.scalar('loss/L2Weigths', l2_weights)
+        tf.compat.v1.summary.scalar('loss/L2Weigths', l2_weights)
         # self.loss_w = self.args.lambda_weights * l2_weights
         self.losses.append(l2_weights)
         self.scale_losses.append(self.args.lambda_weights)
@@ -447,12 +447,12 @@ class Model:
 
 
         loss_with_scales = [a * b for a, b in zip(self.losses, self.scale_losses)]
-        self.loss = tf.reduce_sum(loss_with_scales)
+        self.loss = tf.reduce_sum(input_tensor=loss_with_scales)
         # self.loss = self.lossTasks + self.loss_w
-        grads = tf.gradients(self.loss, W, name='gradients')
-        norm = tf.add_n([tf.norm(g, name='norm') for g in grads])
+        grads = tf.gradients(ys=self.loss, xs=W, name='gradients')
+        norm = tf.add_n([tf.norm(tensor=g, name='norm') for g in grads])
 
-        tf.summary.scalar('loss/L2Grad', norm)
+        tf.compat.v1.summary.scalar('loss/L2Grad', norm)
 
 
     def daH_models(self):
@@ -554,7 +554,7 @@ class Model:
             raise ValueError('Model {} not defined'.format(self.model))
     def DIS_models(self):
 
-        with tf.variable_scope('teacher'):
+        with tf.compat.v1.variable_scope('teacher'):
             if 'h' in self.model:
                 Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             else:
@@ -577,7 +577,7 @@ class Model:
             loss_domain = cross_entropy(labels=tf.zeros_like(self.score[..., 0], dtype=tf.int32), logits=self.score) + \
                           cross_entropy(labels=tf.ones_like(self.score[..., 0], dtype=tf.int32), logits=self.scoreU)
 
-            tf.summary.scalar('loss/domain_semi', loss_domain)
+            tf.compat.v1.summary.scalar('loss/domain_semi', loss_domain)
             self.losses.append(loss_domain)
             self.scale_losses.append(1.0)
             # self.loss += loss_domain
@@ -596,7 +596,7 @@ class Model:
                 # Fake predictions towards 0, real preds towards 1
                 self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32),logits=self.fake_) + \
                             cross_entropy(labels=tf.ones_like(self.labels,dtype=tf.int32), logits=self.real_,weights=self.w)
-                self.loss_gen = tf.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
+                self.loss_gen = tf.compat.v1.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
 
             elif self.args.semi == 'semi1':
                 self.fake_ = semi.discriminator(tf.concat((self.y_hat['reg'],self.y_hat['sem']),axis=-1))
@@ -614,22 +614,22 @@ class Model:
                 self.loss_disc = cross_entropy(labels=tf.zeros_like(self.labels, dtype=tf.int32), logits=self.fake_) + \
                                  cross_entropy(labels=tf.ones_like(self.labels, dtype=tf.int32), logits=self.real_,
                                                weights=self.w)
-                self.loss_gen = tf.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
+                self.loss_gen = tf.compat.v1.losses.mean_squared_error(labels=feat_r, predictions=feat_f)
 
             else:
                 raise ValueError('{} model semi-supervised not defined'.format(self.args.semi))
-            tf.summary.scalar('loss/gen', self.loss_gen)
-            tf.summary.scalar('loss/disc', self.loss_disc)
+            tf.compat.v1.summary.scalar('loss/gen', self.loss_gen)
+            tf.compat.v1.summary.scalar('loss/disc', self.loss_disc)
 
             # self.loss+= self.loss_gen
             self.losses.append(self.loss_gen)
             lambda_semi = tools.evolving_lambda(self.args, height=1.0)
-            tf.summary.scalar('loss/lambda_semi', lambda_semi)
+            tf.compat.v1.summary.scalar('loss/lambda_semi', lambda_semi)
             self.scale_losses.append(lambda_semi)
     def add_domain_loss(self):
         assert self.is_domain_transfer, ' domain-loss not defined for model:{} '.format(self.model)
         lambda_domain = tools.evolving_lambda(self.args, height=1.0)
-        tf.summary.scalar('loss/lambda_domain', lambda_domain)
+        tf.compat.v1.summary.scalar('loss/lambda_domain', lambda_domain)
 
         if self.args.domain == 'DANNlarge' or self.args.domain == 'DANNlargeL':
 
@@ -640,9 +640,9 @@ class Model:
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
                              cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
             if 'L' in self.args.domain:
-                loss_domain+= tf.losses.absolute_difference(self.Zh, self.Zl)
+                loss_domain+= tf.compat.v1.losses.absolute_difference(self.Zh, self.Zl)
 
-            tf.summary.scalar('loss/domain', loss_domain)
+            tf.compat.v1.summary.scalar('loss/domain', loss_domain)
         elif self.args.domain == 'DANN':
 
             self.scoreh = semi.domain_discriminator_small(self.Zh)
@@ -653,12 +653,12 @@ class Model:
             # loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
             #                  cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
             loss_domain = cross_entropy(labels,logits)
-            tf.summary.scalar('loss/domain', loss_domain)
+            tf.compat.v1.summary.scalar('loss/domain', loss_domain)
 
-            tf.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
-            tf.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
-            tf.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
-            tf.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
+            tf.compat.v1.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
+            tf.compat.v1.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
+            tf.compat.v1.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
+            tf.compat.v1.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
 
         elif self.args.domain == 'DANNadv':
 
@@ -670,18 +670,18 @@ class Model:
                 axis=0)
             logits = tf.concat((self.scoreh, self.scorel), axis=0)
             self.loss_disc = lambda_domain*cross_entropy(labels, logits)
-            self.vars_d = [v for v in tf.trainable_variables() if 'domain_discriminator' in v.name and not 'teacher' in v.name]
-            self.vars_g = [v for v in tf.trainable_variables() if not 'domain_discriminator' in v.name and not 'teacher' in v.name]
+            self.vars_d = [v for v in tf.compat.v1.trainable_variables() if 'domain_discriminator' in v.name and not 'teacher' in v.name]
+            self.vars_g = [v for v in tf.compat.v1.trainable_variables() if not 'domain_discriminator' in v.name and not 'teacher' in v.name]
             loss_gen = cross_entropy(tf.ones_like(self.scorel[..., 0], dtype=tf.int32),self.scorel)
             loss_domain = loss_gen
             self.is_adversarial = True
-            tf.summary.scalar('loss/domain', loss_domain)
-            tf.summary.scalar('loss/disc', self.loss_disc)
+            tf.compat.v1.summary.scalar('loss/domain', loss_domain)
+            tf.compat.v1.summary.scalar('loss/disc', self.loss_disc)
 
-            tf.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
-            tf.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
-            tf.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
-            tf.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
+            tf.compat.v1.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
+            tf.compat.v1.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
+            tf.compat.v1.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
+            tf.compat.v1.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
 
         elif self.args.domain == 'DANNc':
             assert 'late' in self.model, 'only late embedding implemented for now'
@@ -705,18 +705,18 @@ class Model:
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[...,0], dtype=tf.int32), logits=self.scoreh) + \
                              cross_entropy(labels=tf.ones_like(self.scorel[...,0], dtype=tf.int32), logits=self.scorel)
 
-            tf.summary.scalar('loss/domain', loss_domain)
-            tf.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
-            tf.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
-            tf.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
-            tf.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
+            tf.compat.v1.summary.scalar('loss/domain', loss_domain)
+            tf.compat.v1.summary.histogram('loss/domain_logitsh_0',self.scoreh[...,0])
+            tf.compat.v1.summary.histogram('loss/domain_logitsh_1',self.scoreh[...,1])
+            tf.compat.v1.summary.histogram('loss/domain_logitsl_0', self.scorel[..., 0])
+            tf.compat.v1.summary.histogram('loss/domain_logitsl_1', self.scorel[..., 1])
         elif self.args.domain == 'L1':
             self.scoreh = semi.domain_discriminator(self.Zh)
             self.scorel = semi.domain_discriminator(self.Zl)
 
-            loss_domain = tf.losses.absolute_difference(self.Zh,self.Zl)
+            loss_domain = tf.compat.v1.losses.absolute_difference(self.Zh,self.Zl)
             # loss_domain=0.0
-            tf.summary.scalar('loss/domain', loss_domain)
+            tf.compat.v1.summary.scalar('loss/domain', loss_domain)
         elif self.args.domain == 'Asso':
             self.ModelSemi = semi.SemisupModel()
             label_sem = self.get_sem(self.labelsh) if self.hr_emb else self.get_sem(self.labels)
@@ -742,34 +742,34 @@ class Model:
             loss_domain = cross_entropy(labels=tf.zeros_like(self.scoreh[..., 0], dtype=tf.int32), logits=self.scoreh) + \
                           cross_entropy(labels=tf.ones_like(self.scorel[..., 0], dtype=tf.int32), logits=self.scorel)
 
-            tf.summary.scalar('loss/domain', loss_domain)
+            tf.compat.v1.summary.scalar('loss/domain', loss_domain)
         elif self.args.domain == 'Contrast':
             if self.args.lambda_reg == 1.0:
                 raise ValueError('not implemented for regresssion')
 
             # same class different domains
-            loss_domain = tf.losses.mean_squared_error(self.Zl,self.Zh)
+            loss_domain = tf.compat.v1.losses.mean_squared_error(self.Zl,self.Zh)
 
             # different class, different domain
             label_sem = self.get_sem(self.labelsh) if self.hr_emb else self.get_sem(self.labels)
             weights = [tf.expand_dims(tf.equal(label_sem, 0), -1),
                        tf.expand_dims(tf.equal(label_sem, 1), -1)]
             # zl[class == 1] and zh[class == 0]
-            weights = [tf.broadcast_to(x, tf.shape(self.Zl)) for x in weights]
+            weights = [tf.broadcast_to(x, tf.shape(input=self.Zl)) for x in weights]
             #TODO check the effect 0.0 has
-            zl1 = tf.where(weights[0], self.Zl,tf.zeros_like(self.Zl))
-            zh0 = tf.where(weights[0], self.Zh,tf.zeros_like(self.Zh))
+            zl1 = tf.compat.v1.where(weights[0], self.Zl,tf.zeros_like(self.Zl))
+            zh0 = tf.compat.v1.where(weights[0], self.Zh,tf.zeros_like(self.Zh))
 
             d_sqrt = tools.pair_distance(zl1,zh0, randomized=False)
-            loss_domain+= 0.5*tf.reduce_sum(tf.square(tf.maximum(0., 1.0 - d_sqrt)))
+            loss_domain+= 0.5*tf.reduce_sum(input_tensor=tf.square(tf.maximum(0., 1.0 - d_sqrt)))
 
             # zl[class == 0] and zh[class == 1]
-            zl0 = tf.where(weights[0], self.Zl, tf.zeros_like(self.Zl))
-            zh1 = tf.where(weights[1], self.Zh, tf.zeros_like(self.Zl))
+            zl0 = tf.compat.v1.where(weights[0], self.Zl, tf.zeros_like(self.Zl))
+            zh1 = tf.compat.v1.where(weights[1], self.Zh, tf.zeros_like(self.Zl))
 
             d_sqrt = tools.pair_distance(zl0, zh1, randomized=False)
-            loss_domain += 0.5 * tf.reduce_sum(tf.square(tf.maximum(0., 1.0 - d_sqrt)))
-            tf.summary.scalar('loss/domain', loss_domain)
+            loss_domain += 0.5 * tf.reduce_sum(input_tensor=tf.square(tf.maximum(0., 1.0 - d_sqrt)))
+            tf.compat.v1.summary.scalar('loss/domain', loss_domain)
 
         else:
             raise ValueError('{} loss domain-transfer not defined'.format(self.args.domain))
@@ -787,14 +787,14 @@ class Model:
         else:
             y_hat_ = tf.concat((self.y_hat['reg'], self.y_hat['sem']), axis=-1)
             y_hat_teacher = tf.concat((self.y_hat_teacher['reg'], self.y_hat_teacher['sem']), axis=-1)
-        loss_dst = tf.losses.mean_squared_error(y_hat_, y_hat_teacher)
+        loss_dst = tf.compat.v1.losses.mean_squared_error(y_hat_, y_hat_teacher)
         lambda_dst = 1.0
         self.losses.append(loss_dst)
         self.scale_losses.append(lambda_dst)
-        tf.summary.scalar('loss/distilled', loss_dst)
+        tf.compat.v1.summary.scalar('loss/distilled', loss_dst)
 
     def compute_summaries(self):
-        graph = tf.get_default_graph()
+        graph = tf.compat.v1.get_default_graph()
         self.eval_metric_ops = {}
         try:
             mean_train = graph.get_tensor_by_name("mean_train_k:0")
@@ -810,7 +810,7 @@ class Model:
         uint8_ = lambda x: tf.cast(x * 255.0, dtype=tf.uint8)
         inv_ = lambda x: inv_preprocess_tf(x, mean_train, scale_luminosity=scale, s2=not self.not_s2)
         max_ = 20. if self.args.dataset == 'palmage' else 2.0
-        f1 = lambda x: tf.where(x == -1, x, x * (2.0 / max_dens))
+        f1 = lambda x: tf.compat.v1.where(x == -1, x, x * (2.0 / max_dens))
         inv_regh_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=max_, cmap='viridis'))
         inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=max_, cmap='viridis'))
         inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
@@ -818,7 +818,7 @@ class Model:
 
 
         y_hat_reg = self.y_hat['reg']
-        pred_class = tf.argmax(self.y_hat['sem'], axis=3)
+        pred_class = tf.argmax(input=self.y_hat['sem'], axis=3)
 
         if self.hr_emb:
             y_hat_reg_down = tools.sum_pool(y_hat_reg, self.scale, name='y_reg_down')
@@ -849,19 +849,19 @@ class Model:
             else:
                 image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
-            tf.summary.image('HR_Loss/HR', image_array, max_outputs=self.max_output_img)
+            tf.compat.v1.summary.image('HR_Loss/HR', image_array, max_outputs=self.max_output_img)
             if self.is_hr_pred:
                 metrics_reg = {
-                    'metricsHR/mae': tf.metrics.mean_absolute_error(labels=self.get_reg(self.labelsh), predictions=y_hat_reg, weights=w),
-                    'metricsHR/mse': tf.metrics.mean_squared_error(labels=self.get_reg(self.labelsh), predictions=y_hat_reg, weights=w),
+                    'metricsHR/mae': tf.compat.v1.metrics.mean_absolute_error(labels=self.get_reg(self.labelsh), predictions=y_hat_reg, weights=w),
+                    'metricsHR/mse': tf.compat.v1.metrics.mean_squared_error(labels=self.get_reg(self.labelsh), predictions=y_hat_reg, weights=w),
                 }
 
                 metrics_sem = {
-                    'metricsHR/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class, num_classes=2,
+                    'metricsHR/iou': tf.compat.v1.metrics.mean_iou(labels=label_sem, predictions=pred_class, num_classes=2,
                                                        weights=w),
-                    'metricsHR/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class, weights=w),
-                    'metricsHR/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class, weights=w),
-                    'metricsHR/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class, weights=w)}
+                    'metricsHR/prec': tf.compat.v1.metrics.precision(labels=label_sem, predictions=pred_class, weights=w),
+                    'metricsHR/acc': tf.compat.v1.metrics.accuracy(labels=label_sem, predictions=pred_class, weights=w),
+                    'metricsHR/recall': tf.compat.v1.metrics.recall(labels=label_sem, predictions=pred_class, weights=w)}
 
                 if self.args.lambda_reg > 0.0:
                     self.eval_metric_ops.update(metrics_reg)
@@ -884,19 +884,19 @@ class Model:
         else:
             image_array = tf.concat(axis=1, values=[image_array_top, image_array_mid, image_array_bottom])
 
-        tf.summary.image('LR', image_array, max_outputs=self.max_output_img)
+        tf.compat.v1.summary.image('LR', image_array, max_outputs=self.max_output_img)
 
         if self.is_sr:
             image_array = tf.concat(axis=2, values=[feat_l_up, uint8_(self.HR_hat), uint8_(self.feat_h)])
 
-            tf.summary.image('HR_hat-HR', image_array, max_outputs=self.max_output_img)
+            tf.compat.v1.summary.image('HR_hat-HR', image_array, max_outputs=self.max_output_img)
 
-        args_tensor = tf.make_tensor_proto([([k, str(v)]) for k, v in sorted(self.args.__dict__.items())])
-        meta = tf.SummaryMetadata()
+        args_tensor = tf.compat.v1.make_tensor_proto([([k, str(v)]) for k, v in sorted(self.args.__dict__.items())])
+        meta = tf.compat.v1.SummaryMetadata()
         meta.plugin_data.plugin_name = "text"
-        summary = tf.Summary()
+        summary = tf.compat.v1.Summary()
         summary.value.add(tag="FLAGS", metadata=meta, tensor=args_tensor)
-        summary_writer = tf.summary.FileWriter(self.args.model_dir)
+        summary_writer = tf.compat.v1.summary.FileWriter(self.args.model_dir)
         summary_writer.add_summary(summary)
 
         if not self.is_training:
@@ -904,15 +904,15 @@ class Model:
             labels = tf.expand_dims(self.labels[...,0],-1) if "vaihingen" in self.args.dataset else self.labels
 
             metrics_reg = {
-                'metrics/mae': tf.metrics.mean_absolute_error(labels=labels, predictions=y_hat_reg_down, weights=w),
-                'metrics/mse': tf.metrics.mean_squared_error(labels=labels, predictions=y_hat_reg_down, weights=w),
+                'metrics/mae': tf.compat.v1.metrics.mean_absolute_error(labels=labels, predictions=y_hat_reg_down, weights=w),
+                'metrics/mse': tf.compat.v1.metrics.mean_squared_error(labels=labels, predictions=y_hat_reg_down, weights=w),
                 }
 
             metrics_sem = {
-                'metrics/iou': tf.metrics.mean_iou(labels=label_sem, predictions=pred_class_down, num_classes=2, weights=w),
-                'metrics/prec': tf.metrics.precision(labels=label_sem, predictions=pred_class_down, weights=w),
-                'metrics/acc': tf.metrics.accuracy(labels=label_sem, predictions=pred_class_down, weights=w),
-                'metrics/recall': tf.metrics.recall(labels=label_sem, predictions=pred_class_down, weights=w)}
+                'metrics/iou': tf.compat.v1.metrics.mean_iou(labels=label_sem, predictions=pred_class_down, num_classes=2, weights=w),
+                'metrics/prec': tf.compat.v1.metrics.precision(labels=label_sem, predictions=pred_class_down, weights=w),
+                'metrics/acc': tf.compat.v1.metrics.accuracy(labels=label_sem, predictions=pred_class_down, weights=w),
+                'metrics/recall': tf.compat.v1.metrics.recall(labels=label_sem, predictions=pred_class_down, weights=w)}
 
             if self.args.lambda_reg > 0.0:
                 self.eval_metric_ops.update(metrics_reg)
@@ -920,7 +920,7 @@ class Model:
                 self.eval_metric_ops.update(metrics_sem)
 
             if self.is_sr:
-                self.eval_metric_ops['metrics/semi_loss'] = tf.metrics.mean_squared_error(self.HR_hat, self.feat_h)
+                self.eval_metric_ops['metrics/semi_loss'] = tf.compat.v1.metrics.mean_squared_error(self.HR_hat, self.feat_h)
                 self.eval_metric_ops['metrics/s2nr'] = tools.snr_metric(self.HR_hat, self.feat_h)
         else:
             self.eval_metric_ops = None
@@ -953,7 +953,7 @@ class Model:
             x = tools.avg_pool(x, scale)
             xm = tools.max_pool(labels[...,1,tf.newaxis], scale)
 
-            lb_reg = tf.where(tf.equal(xm,-1),xm,x, name='lb_reg_down')
+            lb_reg = tf.compat.v1.where(tf.equal(xm,-1),xm,x, name='lb_reg_down')
             lb_sem = tools.median_pool(labels[...,0], scale, name='lb_sem_down')
             return tf.concat((lb_sem,lb_reg),axis=3)
 
@@ -962,14 +962,14 @@ class Model:
             x = tools.sum_pool(x, scale)
 
             xm = tools.max_pool(labels, scale)
-            x = tf.where(tf.equal(xm,-1),xm,x, name='Label_down')
+            x = tf.compat.v1.where(tf.equal(xm,-1),xm,x, name='Label_down')
             return x
 
     def get_optimiter(self):
         if self.args.optimizer == 'adagrad':
-            optimizer = tf.train.AdagradOptimizer(learning_rate=self.args.lr)
+            optimizer = tf.compat.v1.train.AdagradOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'adam':
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.args.lr)
+            optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'adabound':
             optimizer = AdaBoundOptimizer(learning_rate=self.args.lr, final_lr=10*self.args.lr)
         elif self.args.optimizer == 'adaboundA':
@@ -977,46 +977,46 @@ class Model:
         elif self.args.optimizer == 'adaboundB':
             optimizer = AdaBoundOptimizer(learning_rate=self.args.lr, final_lr=0.1*self.args.lr)
         elif self.args.optimizer == 'SGD':
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr)
+            optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate=self.args.lr)
         elif self.args.optimizer == 'SGDa':
             progress = tools.get_progress(self.args)
-            lr = tf.where(tf.less(progress,0.8), 1.0, 0.1)
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
+            lr = tf.compat.v1.where(tf.less(progress,0.8), 1.0, 0.1)
+            optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
         elif self.args.optimizer == 'SGDb':
             progress = tools.get_progress(self.args)
-            lr = tf.where(tf.less(progress,0.7), 1.0, 0.1)
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
+            lr = tf.compat.v1.where(tf.less(progress,0.7), 1.0, 0.1)
+            optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
         elif self.args.optimizer == 'SGDc':
             progress = tools.get_progress(self.args)
-            lr = tf.where(tf.less(progress,0.6), 1.0, 0.1)
-            optimizer = tf.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
+            lr = tf.compat.v1.where(tf.less(progress,0.6), 1.0, 0.1)
+            optimizer = tf.compat.v1.train.GradientDescentOptimizer(learning_rate=self.args.lr*lr)
         elif self.args.optimizer == 'momentum':
-            optimizer = tf.train.MomentumOptimizer(learning_rate=self.args.lr, momentum=0.9, use_nesterov=True)
+            optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=self.args.lr, momentum=0.9, use_nesterov=True)
         elif self.args.optimizer == 'annealing':
-            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.001, power=0.75)
-            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
-            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.compat.v1.train.get_global_step(), gamma=0.001, power=0.75)
+            tf.compat.v1.summary.scalar('loss/annealing_lr', tf.math.log(learning_rate))
+            optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         elif self.args.optimizer == 'annealing10':
-            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.01, power=0.75)
-            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
-            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.compat.v1.train.get_global_step(), gamma=0.01, power=0.75)
+            tf.compat.v1.summary.scalar('loss/annealing_lr', tf.math.log(learning_rate))
+            optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         elif self.args.optimizer == 'annealing100':
-            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.1, power=0.75)
-            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
-            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.compat.v1.train.get_global_step(), gamma=0.1, power=0.75)
+            tf.compat.v1.summary.scalar('loss/annealing_lr', tf.math.log(learning_rate))
+            optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         elif self.args.optimizer == 'annealing0':
-            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.0001, power=0.75)
-            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
-            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.compat.v1.train.get_global_step(), gamma=0.0001, power=0.75)
+            tf.compat.v1.summary.scalar('loss/annealing_lr', tf.math.log(learning_rate))
+            optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         elif self.args.optimizer == 'annealing00':
-            learning_rate = tools.inv_lr_decay(self.args.lr, tf.train.get_global_step(), gamma=0.00001, power=0.75)
-            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
-            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+            learning_rate = tools.inv_lr_decay(self.args.lr, tf.compat.v1.train.get_global_step(), gamma=0.00001, power=0.75)
+            tf.compat.v1.summary.scalar('loss/annealing_lr', tf.math.log(learning_rate))
+            optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         elif self.args.optimizer == 'annealingA':
             progress = tools.get_progress(self.args)
             learning_rate = tools.inv_lr_decay(self.args.lr, progress, gamma=10.0, power=0.75)
-            tf.summary.scalar('loss/annealing_lr', tf.log(learning_rate))
-            optimizer = tf.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
+            tf.compat.v1.summary.scalar('loss/annealing_lr', tf.math.log(learning_rate))
+            optimizer = tf.compat.v1.train.MomentumOptimizer(learning_rate=learning_rate, momentum=0.9)
         else:
             raise ValueError('optimizer {} not defined'.format(self.args.optimizer))
         return optimizer
@@ -1026,27 +1026,27 @@ class Model:
         if self.is_first_train:
             tools.analyze_model()
             self.is_first_train = False
-        update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
-        vars_train = [x for x in tf.trainable_variables() if not 'teacher' in x.name]
+        update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
+        vars_train = [x for x in tf.compat.v1.trainable_variables() if not 'teacher' in x.name]
         with tf.control_dependencies(update_ops):
-            step = tf.train.get_global_step()
+            step = tf.compat.v1.train.get_global_step()
             if self.args.l2_weights_every is None:
                 # if self.args.semi is not None and not 'Rev' in self.args.semi:
                 if self.is_adversarial:
                     train_d = optimizer.minimize(self.loss_disc, global_step=step, var_list=self.vars_d)
                     train_g = optimizer.minimize(self.loss, global_step=step, var_list=self.vars_g)
-                    self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, self.args.gen_loss_every))),
+                    self.train_op = tf.cond(pred=tf.equal(0, tf.cast(tf.math.mod(step, self.args.gen_loss_every), dtype=tf.int32)),
                                             true_fn=lambda: train_g,
                                             false_fn=lambda: train_d)
                 else:
                     self.train_op = optimizer.minimize(self.loss, global_step=step, var_list=vars_train)
                 if self.args.optimizer == 'adam':
                     lr_adam = tools.get_lr_ADAM(optimizer, learning_rate=self.args.lr)
-                    tf.summary.scalar('loss/adam_lr', tf.log(lr_adam))
+                    tf.compat.v1.summary.scalar('loss/adam_lr', tf.math.log(lr_adam))
             else:
                 train_op1 = optimizer.minimize(self.lossTasks, global_step=step,var_list=vars_train)
                 train_op2 = optimizer.minimize(self.loss_w, global_step=step, var_list=vars_train)
-                self.train_op = tf.cond(tf.equal(0, tf.to_int32(tf.mod(step, self.args.l2_weights_every))),
+                self.train_op = tf.cond(pred=tf.equal(0, tf.cast(tf.math.mod(step, self.args.l2_weights_every), dtype=tf.int32)),
                                         true_fn=lambda: train_op1,
                                         false_fn=lambda: train_op2)
             # if 'Asso' in self.args.domain:

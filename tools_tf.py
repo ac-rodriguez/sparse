@@ -15,18 +15,18 @@ import patches
 
 def analyze_model():
     slim.model_analyzer.analyze_vars(
-        tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
+        tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES), print_info=True)
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x
-    return activation_fn(tf.layers.batch_normalization(X, training=is_training))
+    return activation_fn(tf.compat.v1.layers.batch_normalization(X, training=is_training))
 
 
 def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_batch_norm=True):
-    Xr = tf.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
+    Xr = tf.compat.v1.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
     if is_batch_norm:
         Xr = bn_layer(Xr, tf.nn.relu, is_training=is_training)
-    Xr = tf.layers.conv2d(Xr, filters=filters[1], kernel_size=1, activation=tf.nn.relu, padding='same')
+    Xr = tf.compat.v1.layers.conv2d(Xr, filters=filters[1], kernel_size=1, activation=tf.nn.relu, padding='same')
     if is_batch_norm:
         Xr = bn_layer(Xr, tf.nn.relu, is_training=is_training)
     if is_residual:
@@ -35,9 +35,9 @@ def resid_block(X, filters=[64, 128], is_residual=True, is_training=True, is_bat
 
 
 def resid_block1(X, filters=[64, 128], is_residual=False, scale=0.1):
-    Xr = tf.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
+    Xr = tf.compat.v1.layers.conv2d(X, filters=filters[0], kernel_size=3, activation=tf.nn.relu, padding='same')
     # Xr = bn_layer(Xr, tf.nn.relu)
-    Xr = tf.layers.conv2d(Xr, filters=filters[1], kernel_size=1, activation=tf.nn.relu, padding='same')
+    Xr = tf.compat.v1.layers.conv2d(Xr, filters=filters[1], kernel_size=1, activation=tf.nn.relu, padding='same')
 
     Xr = Xr * scale
 
@@ -49,46 +49,46 @@ def resid_block1(X, filters=[64, 128], is_residual=False, scale=0.1):
 
 def sum_pool(X, scale, name=None):
     return tf.multiply(float(scale ** 2),
-                       tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
+                       tf.nn.avg_pool2d(input=X, ksize=(1, scale, scale, 1),
                                       strides=(1, scale, scale, 1), padding='VALID'),
                        name=name)
 
 
 def max_pool(X, scale, name=None):
-    return tf.nn.max_pool(X, ksize=(1, scale, scale, 1),
+    return tf.nn.max_pool2d(input=X, ksize=(1, scale, scale, 1),
                           strides=(1, scale, scale, 1), padding='VALID', name=name)
 
 
 def avg_pool(X, scale, name=None):
     if len(X.shape) == 3: X = tf.expand_dims(X, -1)
-    return tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
+    return tf.nn.avg_pool2d(input=X, ksize=(1, scale, scale, 1),
                           strides=(1, scale, scale, 1), padding='VALID', name=name)
 
 
 def median_pool(X, scale, name=None):
     if len(X.shape) == 3: X = tf.expand_dims(X, -1)
 
-    patches = tf.extract_image_patches(X, [1, scale, scale, 1], [1, scale, scale, 1], 4 * [1], padding='VALID')
+    patches = tf.image.extract_patches(X, [1, scale, scale, 1], [1, scale, scale, 1], 4 * [1], padding='VALID')
     median = tf.contrib.distributions.percentile(patches, 50, axis=-1)
     return tf.identity(tf.expand_dims(median, -1), name=name)
 
 
 def bilinear(X, size, name=None):
-    return tf.image.resize_bilinear(X, size=[int(size), int(size)], name=name)
+    return tf.image.resize(X, size=[int(size), int(size)], name=name, method=tf.image.ResizeMethod.BILINEAR)
 
 
-log10 = lambda x: tf.log(x) / tf.log(10.0)
+log10 = lambda x: tf.math.log(x) / tf.math.log(10.0)
 
 
 def s2n(a, b):
-    sn = tf.reduce_mean(tf.squared_difference(a, b))
+    sn = tf.reduce_mean(input_tensor=tf.math.squared_difference(a, b))
     sn = 10 * log10(255.0 / sn)
 
     return sn
 
 
 def snr_metric(a, b):
-    sd, sd_op = tf.metrics.mean_squared_error(a, b)
+    sd, sd_op = tf.compat.v1.metrics.mean_squared_error(a, b)
 
     s2n = 10 * log10(255.0 / sd)
 
@@ -124,7 +124,7 @@ def inv_lr_decay(learning_rate, global_step, gamma, power, name=None):
         return decayed_lr
 
 
-class SessionHook(tf.train.SessionRunHook):
+class SessionHook(tf.estimator.SessionRunHook):
 
     def __init__(self, values, labels, num_batches=1):
         super(SessionHook, self).__init__()
@@ -142,7 +142,7 @@ class SessionHook(tf.train.SessionRunHook):
         self.iter = 0
 
     def begin(self):
-        self._tensors = [tf.get_default_graph().get_tensor_by_name(x) for x in self._tensor_names]
+        self._tensors = [tf.compat.v1.get_default_graph().get_tensor_by_name(x) for x in self._tensor_names]
 
     def after_create_session(self, session, coord):
         self._embeddings = [[], []]
@@ -153,7 +153,7 @@ class SessionHook(tf.train.SessionRunHook):
     #     self.iterator_initializer_func(session)
 
     def before_run(self, run_context):
-        return tf.train.SessionRunArgs(self._tensors)
+        return tf.estimator.SessionRunArgs(self._tensors)
 
     def after_run(self, run_context, run_values):
         if self.iter == 0:
@@ -204,7 +204,7 @@ def get_embeddings(hook, Model_fn, suffix=''):
             for idx in range(len(labels)):
                 f.write('{}\n'.format(labels[idx]))
             f.close()
-        with tf.Session() as sess:
+        with tf.compat.v1.Session() as sess:
             sess.run(embedding_var.initializer)
 
             config = projector.ProjectorConfig()
@@ -215,10 +215,10 @@ def get_embeddings(hook, Model_fn, suffix=''):
             # Add metadata to the log
             embedding.metadata_path = metadata
 
-            writer = tf.summary.FileWriter(path)
+            writer = tf.compat.v1.summary.FileWriter(path)
             projector.visualize_embeddings(writer, config)
 
-            saver = tf.train.Saver([embedding_var])
+            saver = tf.compat.v1.train.Saver([embedding_var])
             saver.save(sess, path + "/model_emb.ckpt")
 
 
@@ -255,8 +255,8 @@ class Checkpoint(object):
 
 
 def batch_outerproduct(X, Y, n_feat=500, randomized=False, seeds=(100, 101)):
-    X = tf.layers.flatten(X)
-    Y = tf.layers.flatten(Y)
+    X = tf.compat.v1.layers.flatten(X)
+    Y = tf.compat.v1.layers.flatten(Y)
 
     if randomized:
         m1 = tf.random.normal(tf.TensorShape([X.shape[-1], n_feat]), seed=seeds[0])
@@ -272,8 +272,8 @@ def batch_outerproduct(X, Y, n_feat=500, randomized=False, seeds=(100, 101)):
 
 
 def pair_distance(A, B, n_feat=500, randomized=False, seeds=(100, 101)):
-    A = tf.layers.flatten(A)
-    B = tf.layers.flatten(B)
+    A = tf.compat.v1.layers.flatten(A)
+    B = tf.compat.v1.layers.flatten(B)
     if randomized:
         m1 = tf.random.normal(tf.TensorShape([A.shape[-1], n_feat]), seed=seeds[0])
         m2 = tf.random.normal(tf.TensorShape([A.shape[-1], n_feat]), seed=seeds[1])
@@ -284,10 +284,10 @@ def pair_distance(A, B, n_feat=500, randomized=False, seeds=(100, 101)):
     else:
         denominator = 1.0
 
-    A2 = tf.reduce_sum(A * A, 1)
+    A2 = tf.reduce_sum(input_tensor=A * A, axis=1)
     A2 = tf.reshape(A2, [-1, 1, 1])
 
-    B2 = tf.reduce_sum(B * B, 1)
+    B2 = tf.reduce_sum(input_tensor=B * B, axis=1)
     B2 = tf.reshape(B2, [-1, 1, 1])
 
     # outer prod
@@ -298,7 +298,7 @@ def pair_distance(A, B, n_feat=500, randomized=False, seeds=(100, 101)):
 
 
 def get_progress(args):
-    progress = tf.cast(tf.train.get_global_step(), tf.float32) / (
+    progress = tf.cast(tf.compat.v1.train.get_global_step(), tf.float32) / (
             np.sum(args.train_patches) * args.epochs / float(args.batch_size))
     return progress
 
@@ -315,7 +315,7 @@ def evolving_lambda(args, height=1.0, lower=0.1, alpha=10.0):
 def gaussian_kernel(size, mean, std, ):
     """Makes 2D gaussian Kernel for convolution."""
 
-    d = tf.distributions.Normal(mean, std)
+    d = tf.compat.v1.distributions.Normal(mean, std)
 
     vals = d.prob(tf.range(start=-size, limit=size + 1, dtype=tf.float32))
 
@@ -323,7 +323,7 @@ def gaussian_kernel(size, mean, std, ):
                              vals,
                              vals)
 
-    return gauss_kernel / tf.reduce_sum(gauss_kernel)
+    return gauss_kernel / tf.reduce_sum(input_tensor=gauss_kernel)
 
 
 # def gaussian_noise_layer(input_layer, std):
@@ -341,7 +341,7 @@ def low_pass_filter(img, args, blur_probability=0.0, progressive=True):
 
         scale_evol = 2.0 * height / (1.0 + tf.exp(-alpha * progress)) - height + lower
 
-        sigma = scale_evol * tf.where(tf.greater(blur_probability, tf.random.uniform([1])), [1.0], [0.0])
+        sigma = scale_evol * tf.compat.v1.where(tf.greater(blur_probability, tf.random.uniform([1])), [1.0], [0.0])
     else:
         sigma = height
     # # Make Gaussian Kernel with desired specs.
@@ -350,7 +350,7 @@ def low_pass_filter(img, args, blur_probability=0.0, progressive=True):
     gauss_kernel = gauss_kernel[:, :, tf.newaxis]
     kernel = tf.stack([gauss_kernel for _ in range(3)], 2)
 
-    imout = tf.nn.depthwise_conv2d(img, kernel, strides=[1, 1, 1, 1], padding="SAME")
+    imout = tf.nn.depthwise_conv2d(input=img, filter=kernel, strides=[1, 1, 1, 1], padding="SAME")
     return imout
 
 
@@ -498,7 +498,7 @@ class BestCheckpointCopier(tf.estimator.Exporter):
         self._copyCheckpoint(checkpoint)
 
     def _log(self, statement):
-        tf.logging.info('[{}] {}'.format(self.__class__.__name__, statement))
+        tf.compat.v1.logging.info('[{}] {}'.format(self.__class__.__name__, statement))
 
     def _pruneCheckpoints(self, checkpoint):
         destination_dir = self._destinationDir(checkpoint)

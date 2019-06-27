@@ -36,15 +36,15 @@ def colorize(value, vmin=None, vmax=None, cmap=None):
 
     # normalize
     value = tf.cast(value,tf.float32)
-    vmin = tf.reduce_min(value) if vmin is None else vmin
-    vmax = tf.reduce_max(value) if vmax is None else vmax
+    vmin = tf.reduce_min(input_tensor=value) if vmin is None else vmin
+    vmax = tf.reduce_max(input_tensor=value) if vmax is None else vmax
     value = (value - vmin) / (vmax - vmin) # vmin..vmax
     value = tf.clip_by_value(value, 0,1)
     # squeeze last dim if it exists
     value = tf.squeeze(value)
 
     # quantize
-    indices = tf.to_int32(tf.round(value * 255))
+    indices = tf.cast(tf.round(value * 255), dtype=tf.int32)
     # indices = tf.cast(value * 255.0, dtype=tf.uint8)
 
     # gather
@@ -87,15 +87,15 @@ def colorize1(value, vmin=None, vmax=None, colors=None):
     """
 
     # normalize
-    vmin = tf.reduce_min(value) if vmin is None else vmin
-    vmax = tf.reduce_max(value) if vmax is None else vmax
+    vmin = tf.reduce_min(input_tensor=value) if vmin is None else vmin
+    vmax = tf.reduce_max(input_tensor=value) if vmax is None else vmax
     value = (value - vmin) / (vmax - vmin)  # vmin..vmax
 
     # squeeze last dim if it exists
     value = tf.squeeze(value)
 
     # quantize
-    indices = tf.to_int32(tf.round(value * 255))
+    indices = tf.cast(tf.round(value * 255), dtype=tf.int32)
     # indices = tf.cast(value * 255.0, dtype=tf.uint8)
 
     # gather
@@ -161,8 +161,8 @@ def plot_rgb(value, max_luminance=4000, percentiles = (1,99), reorder = True):
     ma = tf.minimum(ma, max_luminance)
 
     # normalize
-    mi = tf.reduce_min(value) if mi is None else mi
-    ma = tf.reduce_max(value) if ma is None else ma
+    mi = tf.reduce_min(input_tensor=value) if mi is None else mi
+    ma = tf.reduce_max(input_tensor=value) if ma is None else ma
     value = (value - mi) / (ma - mi)  # vmin..vmax
 
     # squeeze last dim if it exists
