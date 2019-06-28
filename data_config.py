@@ -148,22 +148,51 @@ def get_dataset(DATASET, is_mounted = False):
         dset_config['tr'].append({
             'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
             'hr': None,
-            'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
-            'roi': '-7.2,4.5,-7.1,4.58',
-            'roi_lb': '-7.2,4.5,-7.1,4.58'})
+            'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp'})
+
+        if DATASET == "palmage1":
+            dset_config['tr'][-1]['roi'] = '-7.17,4.7,-7.13,4.68'
+        elif DATASET == "palmage2":
+            dset_config['tr'][-1]['roi'] = '-7.17,4.7,-7.13,4.65'
+        elif DATASET == "palmage3":
+            dset_config['tr'][-1]['roi'] = '-7.17,4.7,-7.13,4.6'
+        elif DATASET == "palmage4":
+            dset_config['tr'][-1]['roi'] = '-7.17,4.7,-7.13,4.54'
+
+        dset_config['tr'][-1]['roi_lb'] = dset_config['tr'][-1]['roi']
 
         dset_config['val'].append({
             'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
             'hr': None,
             'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
-            'roi': '-7.2,4.58,-7.1,4.65',
-            'roi_lb': '-7.2,4.58,-7.1,4.65'})
+            'roi': '-7.13,4.7,-7.1,4.54',
+            'roi_lb': '-7.13,4.7,-7.1,4.54'})
         dset_config['test'].append({
             'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
             'hr': None,
             'gt': None,
-            'roi': '-7.2,4.5,-7.1,4.58',
-            'roi_lb': '-7.2,4.5,-7.1,4.58'})
+            'roi': '-7.2,4.54,-7.01,4.791',
+            'roi_lb': '-7.2,4.54,-7.01,4.791'})
+
+        # dset_config['tr'].append({
+        #     'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+        #     'hr': None,
+        #     'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
+        #     'roi': '-7.2,4.5,-7.1,4.58',
+        #     'roi_lb': '-7.2,4.5,-7.1,4.58'})
+        #
+        # dset_config['val'].append({
+        #     'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+        #     'hr': None,
+        #     'gt': PATH + '/barry_palm/data/labels/socb/palm_density.shp',
+        #     'roi': '-7.2,4.58,-7.1,4.65',
+        #     'roi_lb': '-7.2,4.58,-7.1,4.65'})
+        # dset_config['test'].append({
+        #     'lr': PATH + '/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE',
+        #     'hr': None,
+        #     'gt': None,
+        #     'roi': '-7.2,4.5,-7.1,4.58',
+        #     'roi_lb': '-7.2,4.5,-7.1,4.58'})
         dset_config['attr'] = 'TreeAge'
 
 

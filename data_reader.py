@@ -230,6 +230,11 @@ class DataReader(object):
 
             labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
                                            is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
+            if 'age' in self.args.dataset:
+                print(f' Ages: {np.unique(labels)}')
+            else:
+                print(f' Densities percentiles 10,20,50,70,90 \n {np.percentile(labels, q=[0.1,0.2,0.5,0.7,0.9])}')
+
 
         return train, train_h, labels, lim_labels
 

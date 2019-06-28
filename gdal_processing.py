@@ -596,7 +596,7 @@ def roi_intersection(ds, geo_pts_ref, return_polygon = False):
             intersection)
 
         # Print the area in m^2
-        print('ROI intersection area {:.3f} Km^2 '.format(geom_area.area/(1000.**2)))
+        print('ROI intersection area {:.1f} Ha '.format(geom_area.area/(100.**2)))
     if return_polygon:
         return p1.intersects(p2), geom_area
     else:
