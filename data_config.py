@@ -291,7 +291,7 @@ def get_dataset(DATASET, is_mounted = False):
         dset_config['roi_lon_lat_tr'] = None
         dset_config['roi_lon_lat_val'] = None
         dset_config['roi_lon_lat_tr_lb'] = None
-        if DATASET == 'vaihingen1':
+        if DATASET == 'vaihingensmall':
             path_ = PATH+'/sparse/data/vaihingen/small/'
 
             dset_config['tr'].append({
@@ -321,14 +321,14 @@ def get_dataset(DATASET, is_mounted = False):
             path_ = PATH + '/sparse/data/ftp.ipi.uni-hannover.de/ISPRS_BENCHMARK_DATASETS/Vaihingen/semantic_segmentation_labeling_Vaihingen/'
 
 
-            for file in glob.glob(path_+"dsm_train/*.tif"):
+            for file in sorted(glob.glob(path_+"dsm_train/*.tif")):
                 file_number = file.split('area')[-1]
                 dset_config['tr'].append({
                     'hr': glob.glob(f"{path_}top_train/*{file_number}")[0],
                     'dsm': glob.glob(f"{path_}dsm_train/*{file_number}")[0],
                     'sem': glob.glob(f"{path_}gt_train/*{file_number}")[0]})
 
-            for file in glob.glob(path_+"dsm_val/*.tif"):
+            for file in sorted(glob.glob(path_+"dsm_val/*.tif")):
                 file_number = file.split('area')[-1]
                 dset_config['val'].append({
                     'hr': glob.glob(f"{path_}top_val/*{file_number}")[0],
@@ -344,7 +344,11 @@ def get_dataset(DATASET, is_mounted = False):
                 'sem': path_ + 'sem_9cm.tif',
                 'dsm': path_ + 'dsm_9cm.tif',
                 'hr': path_ + 'top_9cm.tif'})
-
+            data_size = DATASET.split('en')
+            if len(data_size) > 1:
+                data_size = int(data_size[-1])
+                dset_config['tr'] = dset_config['tr'][:data_size]
+                # dset_config['val'] = dset_config['val'][:data_size]
 
         dset_config['is_noS2'] = True
     else:
