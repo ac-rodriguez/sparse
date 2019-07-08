@@ -80,7 +80,7 @@ def get_dataset(DATASET, is_mounted = False):
             dset_config['tr'][0]['roi_lb'] = '117.86,8.85,117.92,8.88'
         elif DATASET == "coco100": # 267k
             dset_config['tr'][0]['roi_lb'] = '117.86,8.82,117.92,8.9'
-
+        dset_config['tr'][0]['roi'] = dset_config['tr'][0]['roi_lb']
     elif "palmsocb" in DATASET:
         OBJECT='palm'
         # dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE'+ \
