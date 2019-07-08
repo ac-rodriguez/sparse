@@ -49,26 +49,26 @@ def resid_block1(X, filters=[64, 128], is_residual=False, scale=0.1):
 
 def sum_pool(X, scale, name=None):
     return tf.multiply(float(scale ** 2),
-                       tf.nn.avg_pool2d(input=X, ksize=(1, scale, scale, 1),
+                       tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
                                       strides=(1, scale, scale, 1), padding='VALID'),
                        name=name)
 
 
 def max_pool(X, scale, name=None):
-    return tf.nn.max_pool2d(input=X, ksize=(1, scale, scale, 1),
+    return tf.nn.max_pool(X, ksize=(1, scale, scale, 1),
                           strides=(1, scale, scale, 1), padding='VALID', name=name)
 
 
 def avg_pool(X, scale, name=None):
     if len(X.shape) == 3: X = tf.expand_dims(X, -1)
-    return tf.nn.avg_pool2d(input=X, ksize=(1, scale, scale, 1),
+    return tf.nn.avg_pool(X, ksize=(1, scale, scale, 1),
                           strides=(1, scale, scale, 1), padding='VALID', name=name)
 
 
 def median_pool(X, scale, name=None):
     if len(X.shape) == 3: X = tf.expand_dims(X, -1)
 
-    patches = tf.image.extract_patches(X, [1, scale, scale, 1], [1, scale, scale, 1], 4 * [1], padding='VALID')
+    patches = tf.extract_image_patches(X, [1, scale, scale, 1], [1, scale, scale, 1], 4 * [1], padding='VALID')
     median = tf.contrib.distributions.percentile(patches, 50, axis=-1)
     return tf.identity(tf.expand_dims(median, -1), name=name)
 
@@ -369,93 +369,97 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
     if not os.path.isdir(save_dir): os.makedirs(save_dir)
     if m is not None:
         save_m(save_dir + '/metrics.txt', m)
-
+    f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
+    plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, cmap='viridis',
+                                                 percentiles=(0, 100))  # min=-1, max=2.0,
     # copy chkpt
     if chkpt_path is None and prefix != '':
         copy_last_ckpt(model_dir, prefix)
+    if not isinstance(patch_generator,list):
+        patch_generator = [patch_generator]
+    for id_ in  range(len(patch_generator)):
 
-    f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
-    plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, cmap='viridis', percentiles=(0,100))  #min=-1, max=2.0,
-    nr_patches = patch_generator.nr_patches
-
-    batch_idxs = int(np.ceil(nr_patches / batch_size))
-
-    if is_hr_pred:
-        patch = patch_generator.patch_h
-        border = patch_generator.border_lab
-        if 'val' in type_:
-            ref_data = reader.val_h
-        elif 'train' in type_:
-            ref_data = reader.train_h
+        if is_hr_pred:
+            patch = patch_generator[id_].patch_h
+            border = patch_generator[id_].border_lab
+            if 'val' in type_:
+                ref_data = reader.val_h[id_]
+            elif 'train' in type_:
+                ref_data = reader.train_h[id_]
+            else:
+                ref_data = reader.test_h[id_]
         else:
-            ref_data = reader.test_h
-    else:
-        patch = patch_generator.patch_l
-        border = patch_generator.border
+            patch = patch_generator[id_].patch_l
+            border = patch_generator[id_].border
 
-        if 'val' in type_:
-            ref_data = reader.val
-        elif 'train' in type_:
-            ref_data = reader.train
-        else:
-            ref_data = reader.test
-    if is_reg:
-        pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, 1]))
-    if is_sem:
-        pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
-    if isinstance(ref_data,list):
-        ref_data = ref_data[-1] # TODO fix choose data id
-    ref_size = (ref_data.shape[1], ref_data.shape[0])
+            if 'val' in type_:
+                ref_data = reader.val[id_]
+            elif 'train' in type_:
+                ref_data = reader.train[id_]
+            else:
+                ref_data = reader.test[id_]
 
-    # if args.domain is not None:
-    #     hook = [tools.SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", num_batches=10)]
-    # else:
-    hook = None
-    preds_iter = model.predict(input_fn=input_fn, yield_single_examples=False, hooks=hook, checkpoint_path=chkpt_path)
-    # checkpoint_path=tools.get_lastckpt(model_dir))  # ,predict_keys=['hr_hat_rgb'])
+        ref_size = (ref_data.shape[1], ref_data.shape[0])
+        nr_patches = patch_generator[id_].nr_patches
 
-    print('Predicting {} Patches...'.format(nr_patches))
-    for idx in tqdm(range(0, batch_idxs)):
-        p_ = next(preds_iter)
-        start = idx * batch_size
-        # print(start,stop,stop-start)
-        # print(p_['sem'].shape)
+        batch_idxs = int(np.ceil(nr_patches / batch_size))
+
         if is_reg:
-            stop = start + p_['reg'].shape[0]
-            if stop > nr_patches:
-                last_batch = nr_patches - start
-                pred_r_rec[start:stop] = p_['reg'][0:last_batch]
-            else:
-                pred_r_rec[start:stop] = p_['reg']
+            pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, 1]))
         if is_sem:
-            stop = start + p_['sem'].shape[0]
-            if stop > nr_patches:
-                last_batch = nr_patches - start
-                pred_c_rec[start:stop] = np.argmax(p_['sem'][0:last_batch], axis=-1)
-            else:
-                pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
+            pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
 
 
-    print(ref_size)
-    ## Recompose RGB
-    if is_reg:
-        data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-        if not return_array:
-            np.save('{}/{}_reg_pred'.format(save_dir, type_), data_r_recomposed)
-            plt_reg(data_r_recomposed, '{}/{}_reg_pred'.format(save_dir, type_))
-    else:
-        data_r_recomposed = None
+        # if args.domain is not None:
+        #     hook = [tools.SessionHook(values="Embeddings:0", labels="EmbeddingsLabel:0", num_batches=10)]
+        # else:
+        hook = None
+        preds_iter = model.predict(input_fn=input_fn[id_], yield_single_examples=False, hooks=hook, checkpoint_path=chkpt_path)
+        # checkpoint_path=tools.get_lastckpt(model_dir))  # ,predict_keys=['hr_hat_rgb'])
 
-    if is_sem:
-        data_c_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
-        if not return_array:
-            np.save('{}/{}_sem_pred'.format(save_dir, type_), data_c_recomposed)
-            plots.plot_labels(data_c_recomposed, '{}/{}_sem_pred'.format(save_dir, type_))
-    else:
-        data_c_recomposed = None
+        print('Predicting {} Patches...'.format(nr_patches))
+        for idx in tqdm(range(0, batch_idxs)):
+            p_ = next(preds_iter)
+            start = idx * batch_size
+            # print(start,stop,stop-start)
+            # print(p_['sem'].shape)
+            if is_reg:
+                stop = start + p_['reg'].shape[0]
+                if stop > nr_patches:
+                    last_batch = nr_patches - start
+                    pred_r_rec[start:stop] = p_['reg'][0:last_batch]
+                else:
+                    pred_r_rec[start:stop] = p_['reg']
+            if is_sem:
+                stop = start + p_['sem'].shape[0]
+                if stop > nr_patches:
+                    last_batch = nr_patches - start
+                    pred_c_rec[start:stop] = np.argmax(p_['sem'][0:last_batch], axis=-1)
+                else:
+                    pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
+        if type_ == 'test':
+            del reader
+        print(ref_size)
+        ## Recompose RGB
+        if is_reg:
+            data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
+            if not return_array:
+                np.save('{}/{}_reg_pred{}'.format(save_dir, type_,id_), data_r_recomposed)
+                plt_reg(data_r_recomposed, '{}/{}_reg_pred{}'.format(save_dir, type_,id_))
+        else:
+            data_r_recomposed = None
 
-    if return_array:
-        return data_r_recomposed, data_c_recomposed
+        if is_sem:
+            data_c_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
+            if not return_array:
+                np.save('{}/{}_sem_pred{}'.format(save_dir, type_,id_), data_c_recomposed)
+                plots.plot_labels(data_c_recomposed, '{}/{}_sem_pred{}'.format(save_dir, type_,id_))
+        else:
+            data_c_recomposed = None
+
+        if return_array:
+            print('Returning only fist array of dataset list')
+            return data_r_recomposed, data_c_recomposed
 
 
 class BestCheckpointCopier(tf.estimator.Exporter):

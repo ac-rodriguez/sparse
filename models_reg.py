@@ -110,14 +110,14 @@ def dl3(inputs, n_channels, is_training, base_architecture='resnet_v2_50', retur
     with tf.compat.v1.variable_scope("upsampling_logits"):
         x_log = layers_lib.conv2d(last, n_channels, [1, 1], activation_fn=None, normalizer_fn=None,
                                 scope='conv_1x1')
-        logits = tf.image.resize(x_log, inputs_size, name='upsample', method=tf.image.ResizeMethod.BILINEAR)
+        logits = tf.image.resize_bilinear(x_log, inputs_size, name='upsample')
 
     # net = end_points[base_architecture + '/block4']
     # mid_feat2 = atrous_spatial_pyramid_pooling(mid_feat, output_stride, batch_norm_decay, is_training, scope='aspp_reg')
     with tf.compat.v1.variable_scope("upsampling_reg"):
         x_reg = layers_lib.conv2d(last, 1, [1, 1], activation_fn=None, normalizer_fn=None,
                                 scope='conv_1x1')
-        pred_reg = tf.image.resize(x_reg, inputs_size, name='upsample', method=tf.image.ResizeMethod.BILINEAR)
+        pred_reg = tf.image.resize_bilinear(x_reg, inputs_size, name='upsample')
 
     if return_feat:
         return {'reg': pred_reg, 'sem': logits},  mid_feat, last
@@ -165,7 +165,7 @@ def atrous_spatial_pyramid_pooling(inputs, output_stride, is_training, depth=256
           # 1x1 convolution with 256 filters( and batch normalization)
           image_level_features = layers_lib.conv2d(image_level_features, depth, [1, 1], stride=1, scope='conv_1x1')
           # bilinearly upsample features
-          image_level_features = tf.image.resize(image_level_features, inputs_size, name='upsample', method=tf.image.ResizeMethod.BILINEAR)
+          image_level_features = tf.image.resize_bilinear(image_level_features, inputs_size,name='upsample')
 
         net = tf.concat([conv_1x1, conv_3x3_1, conv_3x3_2, conv_3x3_3, image_level_features], axis=3, name='concat')
         net = layers_lib.conv2d(net, depth, [1, 1], stride=1, scope='conv_1x1_concat')
@@ -189,7 +189,7 @@ def countception(input,pad, scope_name='countception', is_training=True, is_retu
             w = tf.compat.v1.get_variable('weights', shape=[kernel_size[0], kernel_size[1],
                                                   x.get_shape()[3], num_filters],
                                 initializer=tf.compat.v1.keras.initializers.VarianceScaling(scale=1.0, mode="fan_avg", distribution="uniform"))
-            conv = tf.nn.conv2d(input=x, filters=w, strides=[1, 1, 1, 1], padding=pad)
+            conv = tf.nn.conv2d(x, w, strides=[1, 1, 1, 1], padding=pad)
             if is_last:
                 b = tf.compat.v1.get_variable('biases', [num_filters], initializer=tf.compat.v1.zeros_initializer())
                 return conv + b

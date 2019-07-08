@@ -328,19 +328,18 @@ def get_dataset(DATASET, is_mounted = False):
                     'dsm': glob.glob(f"{path_}dsm_train/*{file_number}")[0],
                     'sem': glob.glob(f"{path_}gt_train/*{file_number}")[0]})
 
-            # for file in glob.glob(path_+"dsm_val/*.tif"):
-            #     file_number = file.split('area')[-1]
-            #     dset_config['val'].append({
-            #         'hr': glob.glob(f"{path_}top_val/*{file_number}")[0],
-            #         'dsm': glob.glob(f"{path_}dsm_val/*{file_number}")[0],
-            #         'sem': glob.glob(f"{path_}gt_val/*{file_number}")[0]})
+            for file in glob.glob(path_+"dsm_val/*.tif"):
+                file_number = file.split('area')[-1]
+                dset_config['val'].append({
+                    'hr': glob.glob(f"{path_}top_val/*{file_number}")[0],
+                    'dsm': glob.glob(f"{path_}dsm_val/*{file_number}")[0],
+                    'sem': glob.glob(f"{path_}gt_val/*{file_number}")[0]})
             # dset_config['val'] = [dset_config['val'][0]]
+            # dset_config['val'].append({
+            #     'sem': path_ + 'sem_val_9cm.tif',
+            #     'dsm': path_ + 'dsm_val_9cm.tif',
+            #     'hr': path_ + 'top_val_9cm.tif'})
             path_ = PATH+'/sparse/data/vaihingen/'
-
-            dset_config['val'].append({
-                'sem': path_ + 'sem_val_9cm.tif',
-                'dsm': path_ + 'dsm_val_9cm.tif',
-                'hr': path_ + 'top_val_9cm.tif'})
             dset_config['test'].append({
                 'sem': path_ + 'sem_9cm.tif',
                 'dsm': path_ + 'dsm_9cm.tif',

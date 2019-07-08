@@ -145,29 +145,36 @@ class DataReader(object):
             #                                     scale=args.scale)
             # val_random = True if self.args.dataset == 'vaihingen' else False
             # if val_random:
-            val_dset_ = -1 # TODO implement several datasets for val dset
-            self.patch_gen_val_complete = PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
-                                                         label=self.labels_val[val_dset_],
-                                                         patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                                                         is_random=False, border=4,
-                                                         scale=self.scale, lims_with_labels=self.lims_labels_val[val_dset_],
-                                                         patches_with_labels=self.args.patches_with_labels,
-                                                         two_ds=self.two_ds)
-            if self.patch_gen_val_complete.nr_patches*10 >= args.val_patches:
+            self.single_gen_val = []
+            self.single_gen_rand_val = []
+            # val_dset_ = -1 # TODO implement several datasets for val dset
+            for val_dset_ in range(len(self.val)):
+                self.single_gen_val.append(
+                    PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
+                                                             label=self.labels_val[val_dset_],
+                                                             patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                                             is_random=False, border=4,
+                                                             scale=self.scale, lims_with_labels=self.lims_labels_val[val_dset_],
+                                                             patches_with_labels=self.args.patches_with_labels,
+                                                             two_ds=self.two_ds))
+                if self.single_gen_val[-1].nr_patches*10 >= args.val_patches:
 
-                self.patch_gen_val_rand = PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
-                                                         label=self.labels_val[val_dset_],
-                                                         patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                                                         is_random=True, border=4,
-                                                         scale=args.scale, max_N=args.val_patches,
-                                                         lims_with_labels=self.lims_labels_val[val_dset_],
-                                                         patches_with_labels=self.args.patches_with_labels,
-                                                         two_ds=self.two_ds)
-            else:
-                print(f' Complete val dataset has {self.patch_gen_val_complete.nr_patches} and it is used as random sub-sample too...')
+                    self.single_gen_rand_val.append(
+                        PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
+                                                             label=self.labels_val[val_dset_],
+                                                             patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                                             is_random=True, border=4,
+                                                             scale=args.scale, max_N=args.val_patches,
+                                                             lims_with_labels=self.lims_labels_val[val_dset_],
+                                                             patches_with_labels=self.args.patches_with_labels,
+                                                             two_ds=self.two_ds))
+                else:
+                    print(f' Complete val dataset has {self.single_gen_val[-1].nr_patches} and it is used as random sub-sample too...')
 
-                self.patch_gen_val_rand = self.patch_gen_val_complete
+                    self.single_gen_rand_val.append(self.single_gen_val[-1])
 
+            # self.patch_gen_val_complete = PatchWraper(self.single_gen_val, n_workers=4, max_queue_size=10)
+            self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=4, max_queue_size=10)
             # featl,data_h = self.patch_gen_val.get_inputs()
             # plt.imshow(data_h[...,0:3])
             # im = plot_rgb(featl,file ='', return_img=True)
@@ -230,10 +237,11 @@ class DataReader(object):
 
             labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
                                            is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
-            if 'age' in self.args.dataset:
-                print(f' Ages: {np.unique(labels)}')
-            else:
-                print(f' Densities percentiles 10,20,50,70,90 \n {np.percentile(labels, q=[0.1,0.2,0.5,0.7,0.9])}')
+            if labels is not None:
+                if 'age' in self.args.dataset:
+                    print(f' Ages: {np.unique(labels)}')
+                else:
+                    print(f' Densities percentiles 10,20,50,70,90 \n {np.percentile(labels, q=[0.1,0.2,0.5,0.7,0.9])}')
 
 
         return train, train_h, labels, lim_labels
@@ -458,11 +466,19 @@ class DataReader(object):
 
         return ds
 
-    def get_input_val(self, is_restart=False):
-        if is_restart:
-            self.patch_gen_val_complete.define_queues()
+    def get_input_val(self, is_restart=False, as_list=False):
+        if not as_list:
+            if is_restart:
+                self.patch_gen_val_complete.define_queues()
 
-        return partial(self.input_fn, type='val_complete')
+            return partial(self.input_fn, type='val_complete')
+        else:
+            list_fn = []
+            for id_, d_ in enumerate(self.single_gen_val):
+                if is_restart:
+                    d_.define_queues()
+                list_fn.append(partial(self.input_fn,type=f'val_complete-{id_}'))
+            return list_fn
 
     def normalize(self, features, labels):
 
@@ -569,6 +585,12 @@ class DataReader(object):
             batch = self.batch_eval
         elif type == 'test':
             gen_func = self.patch_gen_test.get_iter
+            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
+            batch = self.batch_eval
+        elif 'val_complete' in type:
+            type,id_ = type.split('-')
+            id_ = int(id_)
+            gen_func = self.single_gen_val[id_].get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
         else:

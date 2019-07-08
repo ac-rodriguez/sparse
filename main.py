@@ -292,8 +292,8 @@ def main(unused_args):
             if comp_fn(best, metrics[metric_]):
                 print (f'New best at epoch {epoch_}, {metric_}:{metrics[metric_]} from {best}')
                 best = metrics[metric_]
-                input_fn_val_comp = reader.get_input_val(is_restart=True)
-                tools.predict_and_recompose(model,reader,input_fn_val_comp, reader.patch_gen_val_complete,is_hr_pred,args.batch_size_eval,'val',
+                input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
+                tools.predict_and_recompose(model,reader,input_fn_val_comp, reader.single_gen_val,is_hr_pred,args.batch_size_eval,'val',
                                             prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0), m=metrics)
 
             else:
