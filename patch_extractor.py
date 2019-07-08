@@ -90,7 +90,7 @@ class PatchExtractor:
             self.border_lab = self.border * self.scale if self.is_HR_label else self.border
         if not self.is_random:
             self.compute_tile_ranges()
-
+            self.indices1 = range(self.nr_patches)
         else:
 
             n_x, self.n_y = np.subtract(self.d_l.shape[0:2], self.patch_l)
