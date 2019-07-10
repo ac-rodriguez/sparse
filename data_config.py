@@ -344,9 +344,8 @@ def get_dataset(DATASET, is_mounted = False):
                 'sem': path_ + 'sem_9cm.tif',
                 'dsm': path_ + 'dsm_9cm.tif',
                 'hr': path_ + 'top_9cm.tif'})
-            data_size = DATASET.split('en')
-            if len(data_size) > 1:
-                data_size = int(data_size[-1])
+            if not DATASET.endswith('gen'):
+                data_size = int(DATASET.split('en')[-1])
                 dset_config['tr'] = dset_config['tr'][:data_size]
                 # dset_config['val'] = dset_config['val'][:data_size]
 
