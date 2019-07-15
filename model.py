@@ -203,6 +203,10 @@ class Model:
 
             self.y_hat = dl3(inputs=feat_l_up, n_channels=2, is_training=self.is_training)
 
+        elif self.model == 'dl3HR_l':
+            Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.scale)
+            self.y_hat = dl3(inputs=Ench, n_channels=2, is_training=self.is_training)
+
         elif self.model == 'dl3HR_h':
             self.y_hat = dl3(inputs=self.feat_h, n_channels=2, is_training=self.is_training)
 
@@ -560,12 +564,19 @@ class Model:
     def DIS_models(self):
 
         with tf.compat.v1.variable_scope('teacher'):
-            if 'h' in self.model:
-                Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+            if 'dl' not in self.model:
+                if 'h' in self.model:
+                    Ench = semi.encode_same(input=self.feat_h, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+                else:
+                    Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.args.scale)
+                self.y_hat_teacher = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
+                                          config_volume=self.config)
             else:
-                Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.args.scale)
-            self.y_hat_teacher = countception(Ench, pad=self.pad, is_training=self.is_training, is_return_feat=False,
-                                      config_volume=self.config)
+                if 'h' in self.model:
+                    Ench = self.feat_h
+                else:
+                    Ench = semi.encode(input=self.feat_h, is_training=self.is_training, is_bn=True, scale=self.args.scale)
+                self.y_hat_teacher = dl3(inputs=Ench, n_channels=2, is_training=self.is_training)
 
     def add_semi_loss(self):
         # TODO fix label and labelh separation

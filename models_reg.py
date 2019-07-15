@@ -103,7 +103,9 @@ def dl3(inputs, n_channels, is_training, base_architecture='resnet_v2_50', retur
                                    global_pool=False,
                                    output_stride=output_stride)
 
-    mid_feat = end_points[base_architecture + '/block4']
+    mid_feat_name = [x for x in end_points if x.endswith(base_architecture + '/block4')][0]
+    mid_feat = end_points[mid_feat_name]
+
     last = atrous_spatial_pyramid_pooling(mid_feat, output_stride, is_training)
 
 
