@@ -110,6 +110,10 @@ parser.add_argument("--semi-supervised",dest='semi', default=None,
                     help="semi-supervised task")
 parser.add_argument("--distill-from", default=None, type=str,
                     help="distill from a pretrained HR based model")
+parser.add_argument("--is-hard-distill", default=False, action="store_true",
+                    help="distillation from hard predictions")
+parser.add_argument("--is-distill-only", default=False, action="store_true",
+                    help="using distilled loss only, not using GT")
 parser.add_argument("--domain-loss",dest='domain', default=None,
                     help="domain transfer model  HR to LR")
 parser.add_argument("--optimizer", type=str, default='adam',
@@ -162,7 +166,13 @@ def main(unused_args):
     if args.domain == 'None' or args.domain == 'none': args.domain = None
     if args.domain is not None: args.tag = '_'+args.domain + args.tag
     if args.degraded_hr: args.tag = '_degHR' + args.tag
-    if args.distill_from is not None: args.tag = '_distilled' + args.tag
+    if args.distill_from is not None:
+        tag_ = 'distilled'
+        if args.is_hard_distill:
+            tag_ = 'hard'+tag_
+        if args.is_distill_only:
+            tag_ = tag_+'_only'
+        args.tag = '_'+tag_ + args.tag
 
     # if args.is_lower_bound:
     #     print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,

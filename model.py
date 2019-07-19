@@ -345,6 +345,9 @@ class Model:
         if "vaihingen" in self.args.dataset:
             labels = tf.expand_dims(labels[...,0],-1)
         # self.lossTasks = 0.0
+        if self.is_training and self.args.distill_from is not None:
+            if self.args.is_distill_only:
+                self.add_yhat = False
         if self.add_yhat:
             # lam_evol = tools.evolving_lambda(self.args)
             # lam_evol = 1.0
@@ -796,14 +799,19 @@ class Model:
     def add_distilled_loss(self):
         if self.args.lambda_reg == 1.0:
             y_hat_ = self.y_hat['reg']
-            y_hat_teacher = self.y_hat_teacher['reg']
+            y_teacher = self.y_hat_teacher['reg']
         elif self.args.lambda_reg == 0.0:
             y_hat_ = self.y_hat['sem']
-            y_hat_teacher = self.y_hat_teacher['sem']
+            y_teacher = self.y_hat_teacher['sem']
         else:
             y_hat_ = tf.concat((self.y_hat['reg'], self.y_hat['sem']), axis=-1)
-            y_hat_teacher = tf.concat((self.y_hat_teacher['reg'], self.y_hat_teacher['sem']), axis=-1)
-        loss_dst = tf.compat.v1.losses.mean_squared_error(y_hat_, y_hat_teacher)
+            y_teacher = tf.concat((self.y_hat_teacher['reg'], self.y_hat_teacher['sem']), axis=-1)
+        if self.args.is_hard_distill:
+            assert self.args.lambda_reg == 0.0, 'implemented only for segmentation'
+            y_teacher_hard = tf.math.argmax(y_hat_,axis=-1)
+            loss_dst = cross_entropy(labels=y_teacher_hard,logits=y_hat_)
+        else:
+            loss_dst = tf.compat.v1.losses.mean_squared_error(y_hat_, y_teacher)
         lambda_dst = 1.0
         self.losses.append(loss_dst)
         self.scale_losses.append(lambda_dst)
