@@ -13,6 +13,7 @@ class PatchWraper:
 
         self.nr_patches = [len(x.indices1) for x in self.extractors]
         self.n_pixels = [(x.d_l.shape[0]*x.d_l.shape[1]) for x in self.extractors]
+        self.is_onlyLR = all([x.is_onlyLR for x in self.extractors])
         self.weights = self.n_pixels / np.sum(self.n_pixels)
         print(f' Fetch Prob. {self.weights}')
         self.indices1 = np.random.choice(len(extractors),size=100,p=self.weights)
@@ -69,7 +70,7 @@ class PatchExtractor:
             self.is_HR_label = not (self.d_l.shape[0:2] == self.label.shape[0:2])
         else:
             self.is_HR_label = False
-
+        self.is_onlyLR = not self.is_HR_label and self.d_h is None
         self.is_random = is_random
         self.border = border
         self.scale = scale
@@ -103,7 +104,15 @@ class PatchExtractor:
             size_label_ind = max_patches
 
             cloud_threshold = 90
-            valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1), axis=2) if self.label is not None else True
+            if self.label is not None:
+                if self.label.shape[-1] == 1:
+                    valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1), axis=2)
+                else:
+                    valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1),
+                                                         axis=2)
+            else:
+                valid_pixels = True
+            assert np.any(valid_pixels),'no pixel is valid in the dataset'
             if self.is_HR_label:
                 valid_input = np.logical_and.reduce(~np.equal(self.d_h, 0), axis=2)
             else:
@@ -179,9 +188,12 @@ class PatchExtractor:
                         for jj in self.range_j:
                             # print(i, ii, jj)
                             if self.two_ds:
-                                patches = self.get_patches(xy_corner=(ii, jj))
-                                patches = np.concatenate((patches[0], patches[0]), axis=-1), np.concatenate(
-                                    (patches[1], patches[1]), axis=-1)
+                                patches, patches_h = self.get_patches(xy_corner=(ii, jj))
+                                if self.is_onlyLR:
+                                    patches = np.concatenate((patches, patches), axis=-1)
+                                else:
+                                    patches = np.concatenate((patches, patches), axis=-1), np.concatenate(
+                                        (patches_h, patches_h), axis=-1)
                                 self.inputs_queue.put(patches)
                             else:
                                 self.inputs_queue.put(self.get_patches(xy_corner=(ii, jj)))  # + (i,)
@@ -229,10 +241,9 @@ class PatchExtractor:
                 patch_l = np.dstack((patch_l, label))
         if self.return_corner:
             return patch_l, data_h, xy_corner
-        elif data_h is not None:
-            return patch_l, data_h
         else:
-            return patch_l
+            return patch_l, data_h
+
     def get_patches_unlab(self, xy_corner):
 
         x_l, y_l = map(int, xy_corner)
@@ -277,16 +288,17 @@ class PatchExtractor:
                 # ind = 50
             # corner1_ = divmod(ind1, self.n_y)
             # corner2_ = divmod(ind2, self.n_y)
-            patches1 = self.get_patches(ind1)
+            patches1, patches1_h = self.get_patches(ind1)
             if self.unlab is None:
-                patches2 = self.get_patches(ind2)
-                patches = np.concatenate((patches1[0], patches2[0]), axis=-1), np.concatenate(
-                    (patches1[1], patches2[1]), axis=-1)
-                return patches
+                patches2, patches2_h = self.get_patches(ind2)
             else:
-                patches2 = self.get_patches_unlab(ind2)
-                return np.concatenate((patches1[0],patches2[0]),axis=-1) , np.concatenate(
-                    (patches1[1], patches1[1]), axis=-1)
+                patches2, patches2_h = self.get_patches_unlab(ind2)
+            if self.is_onlyLR:
+                patches = np.concatenate((patches1, patches2), axis=-1)
+            else:
+                patches = np.concatenate((patches1, patches2), axis=-1), np.concatenate(
+                    (patches1_h, patches2), axis=-1)
+            return patches
 
 
     def compute_tile_ranges(self):

@@ -405,7 +405,7 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
         batch_idxs = int(np.ceil(nr_patches / batch_size))
 
         if is_reg:
-            pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, 1]))
+            pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, reader.n_classes]))
         if is_sem:
             pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
 
@@ -445,7 +445,8 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
             data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
             if not return_array:
                 np.save('{}/{}_reg_pred{}'.format(save_dir, type_,id_), data_r_recomposed)
-                plt_reg(data_r_recomposed, '{}/{}_reg_pred{}'.format(save_dir, type_,id_))
+                for i in range(data_r_recomposed.shape[-1]):
+                    plt_reg(data_r_recomposed[...,i], '{}/{}_reg_pred_class{}_{}'.format(save_dir, type_,i,id_))
         else:
             data_r_recomposed = None
 

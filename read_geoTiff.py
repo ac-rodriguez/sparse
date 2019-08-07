@@ -175,8 +175,9 @@ def readS2(args, roi_lon_lat, data_file =None):
     chan3 = data10[:, :, b3_10_ind]
     vis = (chan3 < 1).astype(np.int)
     if np.all(chan3 < 1):
-        print(" [!] All data is blank on Band 3")
-        sys.exit(0)
+        print(" [!] All data is blank on Band 3, returning None, None")
+        return None, None
+        # sys.exit(0)
     elif np.sum(vis) > 0:
         print(' [!] The selected image has some blank pixels')
         # sys.exit()
@@ -189,7 +190,11 @@ def readS2(args, roi_lon_lat, data_file =None):
 
     print("Selected 10m bands: {}".format(select_bands10))
     print("Selected 20m bands: {}".format(select_bands20))
-
+    cloud_threshold = 90
+    cloud_free_pixels = np.logical_and.reduce(np.less(data20[..., -1], cloud_threshold))
+    if np.sum(cloud_free_pixels) == 0:
+        print(' [!] Dataset with only cloudy pixels, skipping it...')
+        return None, None
 
     if len(data20.shape) == 2:
         data20 = np.expand_dims(data20, axis = 2)

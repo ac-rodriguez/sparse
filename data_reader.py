@@ -57,6 +57,8 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat):
         data10, data20 = geotif.readS2_old(args, roi_lon_lat, data_file=data_file)
     else:
         data10, data20 = geotif.readS2(args, roi_lon_lat, data_file=data_file)
+    if data10 is None:
+        return None
     data20 = interpPatches(data20, data10.shape[0:2], squeeze=True)
 
     data = np.concatenate((data10, data20), axis=2)
@@ -110,7 +112,6 @@ class DataReader(object):
                 self.labels = ndimage.gaussian_filter(self.labels, sigma=args.sigma_smooth)
 
             self.n_channels = self.train[0].shape[-1]
-
             d2_after = self.args.unlabeled_after * self.batch_tr
             self.single_gen = []
             pixels_ = [x.shape[0]*x.shape[1] for x in self.train]
@@ -242,6 +243,14 @@ class DataReader(object):
                     print(f' Ages: {np.unique(labels)}')
                 else:
                     print(f' Densities percentiles 10,20,50,70,90 \n {np.percentile(labels, q=[0.1,0.2,0.5,0.7,0.9])}')
+                    if self.args.dataset == 'palmcoco':
+                        if 'labels/palm' in path_dict['gt']:
+                            labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
+
+                            print('Palm Object - class 1')
+                        else:
+                            labels = np.concatenate((np.zeros_like(labels),labels),axis=-1)
+                            print('Coco Object - class 2')
 
 
         return train, train_h, labels, lim_labels
@@ -259,17 +268,19 @@ class DataReader(object):
         self.train = []
         self.labels = []
         self.lims_labels = []
+        is_upsample = not self.args.dataset == 'palmcoco'
         for tr_ in self.args.tr:
-            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
-
-            self.train.append(train)
-            self.train_h.append(train_h)
-            self.labels.append(labels)
-            self.lims_labels.append(lim_labels)
+            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
+            if train is not None:
+                self.train.append(train)
+                self.train_h.append(train_h)
+                self.labels.append(labels)
+                self.lims_labels.append(lim_labels)
 
         if self.args.unlabeled_data is not None:
             self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
                                                 roi_lon_lat=self.args.roi_lon_lat_unlab)
+        self.n_classes = self.labels[0].shape[-1]
 
         print('\n [*] Loading VALIDATION data \n')
 
@@ -279,12 +290,13 @@ class DataReader(object):
         self.lims_labels_val = []
         for val_ in self.args.val:
 
-            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
+            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
+            if val is not None:
 
-            self.val.append(val)
-            self.val_h.append(val_h)
-            self.labels_val.append(labels_val)
-            self.lims_labels_val.append(lim_labels_val)
+                self.val.append(val)
+                self.val_h.append(val_h)
+                self.labels_val.append(labels_val)
+                self.lims_labels_val.append(lim_labels_val)
 
         # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
         # self.N_pixels = self.train.shape[0] * self.train.shape[1]
@@ -326,14 +338,34 @@ class DataReader(object):
                     np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
                     np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
                 else:
-
-                    plt_reg(self.labels_val[i_], self.args.model_dir + f'/val_reg_label{i_}')
+                    for j in range(self.n_classes):
+                        plt_reg(self.labels_val[i_][...,j], self.args.model_dir + f'/val_reg_label{i_}_class{j}')
                     plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}')
 
                     plots.plot_rgb(self.val_h[i_], file=self.args.model_dir+f'/val_HR{i_}', reorder=False, normalize=False)
                     np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
                     np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
                     np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
+            # for i_ in range(len(self.train)):
+            #     if 'vaihingen' in self.args.dataset:
+            #         plots.plot_heatmap(self.labels[i_][..., 1], file=self.args.model_dir + f'/train_reg_label{i_}', min=0,
+            #                            percentiles=(0, 100))
+            #         plots.plot_labels(self.labels[i_][..., 0], file=self.args.model_dir + f'/train_sem_label{i_}')
+            #         plots.plot_rgb(self.train[i_], file=self.args.model_dir + f'/train_LR{i_}', reorder=False, normalize=False)
+            #
+            #         plots.plot_rgb(self.train_h[i_], file=self.args.model_dir + f'/train_HR{i_}', reorder=False, normalize=False)
+            #         np.save(self.args.model_dir + f'/train_LR{i_}', self.train[i_])
+            #         np.save(self.args.model_dir + f'/train_HR{i_}', self.train_h[i_])
+            #         np.save(self.args.model_dir + f'/train_reg_label{i_}', self.labels[i_])
+            #     else:
+            #
+            #         plt_reg(self.labels[i_], self.args.model_dir + f'/train_reg_label{i_}')
+            #         plots.plot_rgb(self.train[i_], file=self.args.model_dir + f'/train_LR{i_}')
+            #
+            #         plots.plot_rgb(self.train_h[i_], file=self.args.model_dir+f'/train_HR{i_}', reorder=False, normalize=False)
+            #         np.save(self.args.model_dir + f'/train_LR{i_}', self.train[i_])
+            #         np.save(self.args.model_dir + f'/train_HR{i_}', self.train_h[i_])
+            #         np.save(self.args.model_dir + f'/train_reg_label{i_}', self.labels[i_])
             # sys.exit(0)
 
         if self.args.is_padding:
@@ -482,11 +514,15 @@ class DataReader(object):
 
     def normalize(self, features, labels):
 
-        features['feat_l'] -= self.mean_train
-        features['feat_l'] /= self.std_train
-        if self.two_ds:
-            features['feat_lU'] -= self.mean_train
-            features['feat_lU'] /= self.std_train
+        if isinstance(features,dict):
+            features['feat_l'] -= self.mean_train
+            features['feat_l'] /= self.std_train
+            if self.two_ds:
+                features['feat_lU'] -= self.mean_train
+                features['feat_lU'] /= self.std_train
+        else:
+            features -= self.mean_train
+            features /= self.std_train
         return features, labels
 
     def add_spatial_masking(self, features, labels):
@@ -504,7 +540,13 @@ class DataReader(object):
 
         return features, labels
 
-    def reorder_ds(self, data_l, data_h):
+    # def reorder_ds(self, data_l, data_h):
+    def reorder_ds(self,data):
+        if isinstance(data,tuple):
+            data_l, data_h = data
+        else:
+            data_l,data_h = data,None
+
         n = self.n_channels
         if 'vaihingen' in self.args.dataset:
             if self.is_HR_labels:
@@ -520,6 +562,11 @@ class DataReader(object):
                         'feat_hU': data_h[..., 3:]}, \
                        data_l[..., n:n + 2]
 
+        elif 'palmcoco' in self.args.dataset:
+            if self.two_ds:
+                return {'feat_l':data_l[..., 0:n],'feat_lU':data_l[..., (n + 2):2 * n + 2]}, data_l[..., n:n+2]
+            else:
+                return data_l[..., 0:n], data_l[...,n:n+2]
         else:
 
             if not self.two_ds:
@@ -575,28 +622,33 @@ class DataReader(object):
             gen_func = self.patch_gen.get_iter
             patch_l, patch_h = self.patch_l, self.patch_h
             batch = self.batch_tr
+            is_onlyLR = self.patch_gen.is_onlyLR
         elif type == 'val':
             gen_func = self.patch_gen_val_rand.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
+            is_onlyLR = self.patch_gen_val_rand.is_onlyLR
         elif type == 'val_complete':
             gen_func = self.patch_gen_val_complete.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
+            is_onlyLR = self.patch_gen_val_complete.is_onlyLR
         elif type == 'test':
             gen_func = self.patch_gen_test.get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
+            is_onlyLR = self.patch_gen_test.is_onlyLR
         elif 'val_complete' in type:
             type,id_ = type.split('-')
             id_ = int(id_)
             gen_func = self.single_gen_val[id_].get_iter
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
+            is_onlyLR = self.single_gen_val[id_].is_onlyLR
         else:
             sys.exit(1)
         multiplier = 2 if self.two_ds else 1
-        self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset else 1
+        self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset or 'palmcoco' in self.args.dataset else 1
         n_lab = self.n_channels_lab
         if self.is_HR_labels:
             n_low = self.n_channels * multiplier
@@ -604,14 +656,22 @@ class DataReader(object):
         else:
             n_low = (self.n_channels + n_lab) * multiplier
             n_high = 3 * multiplier
-        ds = tf.data.Dataset.from_generator(
-            gen_func, (tf.float32, tf.float32),
-            (
-                tf.TensorShape([patch_l, patch_l,
-                                n_low]),
-                tf.TensorShape([patch_h, patch_h,
-                                n_high])
-            ))
+        if is_onlyLR:
+            ds = tf.data.Dataset.from_generator(
+                gen_func, (tf.float32),
+                (
+                    tf.TensorShape([patch_l, patch_l,
+                                    n_low])
+                ))
+        else:
+            ds = tf.data.Dataset.from_generator(
+                gen_func, (tf.float32, tf.float32),
+                (
+                    tf.TensorShape([patch_l, patch_l,
+                                    n_low]),
+                    tf.TensorShape([patch_h, patch_h,
+                                    n_high])
+                ))
         if type == 'train':
             ds = ds.shuffle(buffer_size=batch * 5)
         ds = ds.map(self.reorder_ds, num_parallel_calls=6)

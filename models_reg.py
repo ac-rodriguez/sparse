@@ -29,7 +29,8 @@ def block(x, is_training, is_bn = True):
     return x2
 
 
-def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True,reuse=tf.compat.v1.AUTO_REUSE, return_feat=False, deeper=None):
+def simple(input, n_classes, scope_name='simple', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE,
+           return_feat=False, deeper=None):
 
     feature_size = 256
 
@@ -67,11 +68,11 @@ def simple(input, n_channels, scope_name='simple', is_training=True, is_bn=True,
         # Regression
         last = tf.nn.relu(x7_ + x7)
         # last = x8a_
-        x8a = tf.compat.v1.layers.conv2d(last, n_channels, kernel_size=3, use_bias=False, padding='same')
+        x8a = tf.compat.v1.layers.conv2d(last, n_classes, kernel_size=3, use_bias=False, padding='same')
 
         # Semantic
         # x8b_ = tf.nn.relu(x7_ + x7)
-        x8b = tf.compat.v1.layers.conv2d(last, 2, kernel_size=3, use_bias=False, padding='same')
+        x8b = tf.compat.v1.layers.conv2d(last, n_classes + 1, kernel_size=3, use_bias=False, padding='same')
 
     if return_feat:
         return {'reg': x8a, 'sem': x8b}, mid, last

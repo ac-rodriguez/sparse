@@ -44,6 +44,8 @@ def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='viridis', f
 
 def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, percentiles = (1,99), bw = False, normalize=True):
 
+    if data is None:
+        return None
     data[np.isnan(data)] = -1
 
     if normalize:

@@ -319,21 +319,25 @@ def main(unused_args):
                     plots.plot_labels(gen_.label_1[...,0], model_dir + f'/sample_train_sem_label{i_}')
                     plt_reg(gen_.label_1[...,-1], model_dir + f'/sample_train_reg_label{i_}')
                 else:
-                    plt_reg(gen_.label_1, model_dir + f'/sample_train_reg_label{i_}')
+                    for j in range(reader.n_classes):
+                        plt_reg(gen_.label_1[...,j], model_dir + f'/sample_train_reg_label{i_}_class{j}')
 
             except AttributeError:
                 pass
-        try:
-            plots.plot_rgb(reader.patch_gen_val_rand.d_l1, file=model_dir + '/sample_val_LR')
-            if 'vaihingen' in args.dataset:
-                plots.plot_labels(reader.patch_gen_val_rand.label_1[...,0], model_dir + '/sample_val_sem_label')
-                plt_reg(reader.patch_gen_val_rand.label_1[...,-1], model_dir + '/sample_val_reg_label')
-            else:
-                plt_reg(reader.patch_gen_val_rand.label_1, model_dir + '/sample_val_reg_label')
-        except AttributeError:
-            pass
+        # TODO implement for several datasets
+        # try:
+        #     plots.plot_rgb(reader.patch_gen_val_rand.d_l1, file=model_dir + '/sample_val_LR')
+        #     if 'vaihingen' in args.dataset:
+        #         plots.plot_labels(reader.patch_gen_val_rand.label_1[...,0], model_dir + '/sample_val_sem_label')
+        #         plt_reg(reader.patch_gen_val_rand.label_1[...,-1], model_dir + '/sample_val_reg_label')
+        #     else:
+        #         for j in range(reader.n_classes):
+        #             plt_reg(reader.patch_gen_val_rand.label_1[...,j], model_dir + '/sample_val_reg_label')
+        # except AttributeError:
+        #     pass
+        input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
 
-        tools.predict_and_recompose(model, reader, reader.get_input_val(is_restart=True), reader.patch_gen_val_complete,
+        tools.predict_and_recompose(model, reader, input_fn_val_comp, reader.single_gen_val,
                                     is_hr_pred, args.batch_size_eval,
                                     'val', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                     chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))

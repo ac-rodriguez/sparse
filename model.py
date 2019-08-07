@@ -38,6 +38,7 @@ class Model:
         self.max_output_img = 1
         self.model = self.args.model
         self.two_ds = True
+        self.n_classes = 2 if self.args.dataset == 'palmcoco' else 1
 
         self.hr_emb = False
         self.add_yhath = False
@@ -57,10 +58,9 @@ class Model:
     def get_w(self, lab):
         if self.not_s2:
             lab = tf.expand_dims(lab[...,0],-1)
-        w = self.float_(tf.compat.v1.where(tf.greater_equal(lab, 0.0),
-                                      tf.ones_like(lab),  ## for wherever i have labels
-                                      tf.zeros_like(lab)))
-        return w
+        w = tf.greater_equal(lab,0.0)
+        return self.float_(w)
+
     def get_sem(self,lab, return_w = False):
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
         w = self.get_w(lab)
@@ -68,8 +68,12 @@ class Model:
         if self.not_s2:
             label_sem = int_(tf.equal(lab[...,0], 5.0))
         else:
-            label_sem = tf.squeeze(int_(tf.greater(lab, self.sem_threshold)), axis=3)
-            label_sem = tf.compat.v1.where(tf.squeeze(tf.greater(w, 0), axis=3), label_sem,
+
+            zeros_background = tf.zeros_like(lab[...,-1])[...,tf.newaxis]
+            lab = tf.concat((zeros_background,lab),axis=-1) # adding background class for argmax
+            label_sem = tf.argmax(int_(tf.greater(lab, self.sem_threshold)), axis=3, output_type=tf.int32)
+            w_ = tf.reduce_any(tf.greater(w, 0),-1)
+            label_sem = tf.compat.v1.where(w_, label_sem,
                                  tf.ones_like(label_sem, dtype=tf.int32) * -1)
         if return_w:
             return label_sem,w
@@ -81,9 +85,11 @@ class Model:
         if not self.is_training and self.is_slim: self.max_output_img = 2
 
         if isinstance(features, dict):
-            self.feat_l, self.feat_h = features['feat_l'], features['feat_h']
+            self.feat_l = features['feat_l']
+            self.feat_h = features['feat_h'] if 'feat_h' in features.keys() else None
             if self.two_ds:
-                self.feat_lU, self.feat_hU = features['feat_lU'], features['feat_hU']
+                self.feat_lU = features['feat_lU']
+                self.feat_hU = features['feat_hU'] if 'feat_hU' in features.keys() else None
         else:
             self.feat_l = features
             self.feat_h = None
@@ -152,20 +158,24 @@ class Model:
             earlyl = self.feat_l
             if self.model == 'simpleA':
                 earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
-            self.y_hat, mid, latel = simple(earlyl, n_channels=1, is_training=self.is_training, return_feat=True)
+            self.y_hat, mid, latel = simple(earlyl, n_classes=self.n_classes, is_training=self.is_training,
+                                            return_feat=True)
             if self.is_semi:
                 earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
-                self.y_hatU,midlU,latelU = simple(earlylU, n_channels=1, is_training=self.is_training, return_feat=True)
+                self.y_hatU,midlU,latelU = simple(earlylU, n_classes=self.n_classes, is_training=self.is_training,
+                                                  return_feat=True)
                 self.Zl = latel
                 self.ZlU =latelU
         elif 'simpleA' in self.model:
 
             depth = int(self.model.replace('simpleA',''))
             earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
-            self.y_hat, mid, latel = simple(earlyl, n_channels=1, is_training=self.is_training, return_feat=True, deeper=depth)
+            self.y_hat, mid, latel = simple(earlyl, n_classes=self.n_classes, is_training=self.is_training,
+                                            return_feat=True, deeper=depth)
             if self.is_semi:
                 earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
-                self.y_hatU,midlU,latelU = simple(earlylU, n_channels=1, is_training=self.is_training, return_feat=True, deeper=depth)
+                self.y_hatU,midlU,latelU = simple(earlylU, n_classes=self.n_classes, is_training=self.is_training,
+                                                  return_feat=True, deeper=depth)
                 self.Zl = latel
                 self.ZlU =latelU
 
@@ -359,7 +369,8 @@ class Model:
                 # self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
                 tf.compat.v1.summary.scalar('loss/reg', loss_reg)
             if self.args.lambda_reg < 1.0:
-                loss_sem = cross_entropy(labels=label_sem, logits=self.y_hat['sem'], weights=w)
+                w_ = self.float_(tf.reduce_any(tf.greater(w, 0), -1))
+                loss_sem = cross_entropy(labels=label_sem, logits=self.y_hat['sem'], weights=w_)
                 self.losses.append(loss_sem)
                 self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
                 # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
@@ -375,7 +386,8 @@ class Model:
                 # self.lossTasks += self.args.lambda_reg * loss_reg * lam_evol
                 tf.compat.v1.summary.scalar('loss/regH', loss_reg)
             if self.args.lambda_reg < 1.0:
-                loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w)
+                w_ = self.float_(tf.reduce_any(tf.greater(w, 0), -1))
+                loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w_)
                 self.losses.append(loss_sem)
                 self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
                 # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
@@ -837,7 +849,7 @@ class Model:
         f1 = lambda x: tf.compat.v1.where(x == -1, x, x * (2.0 / max_dens))
         inv_regh_ = lambda x: uint8_(colorize(f1(x), vmin=-1, vmax=max_, cmap='viridis'))
         inv_reg_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=max_, cmap='viridis'))
-        inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=1.0, cmap='hot'))
+        inv_sem_ = lambda x: uint8_(colorize(x, vmin=-1, vmax=self.n_classes, cmap='jet'))
         inv_difreg_ = lambda x: uint8_(colorize(x,vmin=-2,vmax=2, cmap='coolwarm'))
 
 
@@ -931,12 +943,12 @@ class Model:
                 'metrics/mae': tf.compat.v1.metrics.mean_absolute_error(labels=labels, predictions=y_hat_reg_down, weights=w),
                 'metrics/mse': tf.compat.v1.metrics.mean_squared_error(labels=labels, predictions=y_hat_reg_down, weights=w),
                 }
-
+            w_ = self.float_(tf.reduce_any(tf.greater(w, 0), -1))
             metrics_sem = {
-                'metrics/iou': tf.compat.v1.metrics.mean_iou(labels=label_sem, predictions=pred_class_down, num_classes=2, weights=w),
-                'metrics/prec': tf.compat.v1.metrics.precision(labels=label_sem, predictions=pred_class_down, weights=w),
-                'metrics/acc': tf.compat.v1.metrics.accuracy(labels=label_sem, predictions=pred_class_down, weights=w),
-                'metrics/recall': tf.compat.v1.metrics.recall(labels=label_sem, predictions=pred_class_down, weights=w)}
+                'metrics/iou': tf.compat.v1.metrics.mean_iou(labels=label_sem, predictions=pred_class_down, num_classes=self.n_classes+1, weights=w_),
+                'metrics/prec': tf.compat.v1.metrics.precision(labels=label_sem, predictions=pred_class_down, weights=w_),
+                'metrics/acc': tf.compat.v1.metrics.accuracy(labels=label_sem, predictions=pred_class_down, weights=w_),
+                'metrics/recall': tf.compat.v1.metrics.recall(labels=label_sem, predictions=pred_class_down, weights=w_)}
 
             if self.args.lambda_reg > 0.0:
                 self.eval_metric_ops.update(metrics_reg)
@@ -955,11 +967,17 @@ class Model:
         return labels
 
     def concat_reg(self, labels, y_hat_reg, inv_reg_, inv_difreg_):
-        labels = self.get_reg(labels)
-        image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg, ]), dtype=tf.uint8)
-        image_array_top = tf.concat(axis=2, values=[image_array_top,
-                                                    tf.map_fn(inv_difreg_, labels - y_hat_reg, dtype=tf.uint8)])
-        return image_array_top
+        labels_all = self.get_reg(labels)
+        img_out = []
+        for i in range(self.n_classes):
+            labels = tf.expand_dims(labels_all[..., i], axis=-1)
+            y_hat_reg_ = tf.expand_dims(y_hat_reg[..., i], axis=-1)
+            image_array_top = tf.map_fn(inv_reg_, tf.concat(axis=2, values=[labels, y_hat_reg_, ]), dtype=tf.uint8)
+            image_array_top = tf.concat(axis=2, values=[image_array_top,
+                                                        tf.map_fn(inv_difreg_, labels - y_hat_reg_, dtype=tf.uint8)])
+            img_out.append(image_array_top)
+
+        return tf.concat(values=img_out,axis=1)
     @staticmethod
     def concat_sem(label_sem, pred_class, inv_sem_, inv_difreg_):
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
