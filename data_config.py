@@ -125,6 +125,51 @@ def get_dataset(DATASET, is_mounted = False):
                 'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
                 'roi': roi_test,
                 'roi_lb': roi_test})
+        # West Kalimantan DATA
+        if DATASET == 'palmcoco1':
+            rois = ['109.2,-0.85,109.63,-0.6']
+            rois_val = ['109.2,-0.85,109.63,-1']
+
+            rois_test = ['109.2,-1.0,109.8,-0.6']
+            tilenames = ['R132_T49MCV']
+
+            tilename = tilenames[0]
+            roi = rois[0]
+            roi_val = rois_val[0]
+            roi_test = rois_test[0]
+            filelist = glob.glob(PATH + f'/barry_palm/data/2A/palmcountries_2017/*{tilename}*.SAFE/MTD_MSIL2A.xml')
+
+            top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/palmcountries_2017/Indonesia_all_8410.txt'
+
+            lines = [line.rstrip('\n') for line in open(top_10_list)]
+            lines = [x.replace('_MSIL1C_', '_MSIL2A_') + '.SAFE' for x in lines]
+            filelist = [x for x in filelist if x.split('/')[-2] in lines]
+
+            # filter that 2A is correct
+            lines = [line.rstrip('\n') for line in open(PATH + '/barry_palm/data/2A/palmcountries_2017/correct_2A.txt')]
+            lines = [x + '.SAFE' for x in lines]
+            filelist = [x for x in filelist if x.split('/')[-2] in lines]
+
+            for file in filelist[:1]:
+                dset_config['tr'].append({
+                    'lr': file,
+                    'hr': None,
+                    'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
+                    'roi': roi,
+                    'roi_lb': roi})
+                dset_config['val'].append({
+                    'lr': file,
+                    'hr': None,
+                    'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
+                    'roi': roi_val,
+                    'roi_lb': roi_val})
+                dset_config['test'].append({
+                    'lr': file,
+                    'hr': None,
+                    'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
+                    'roi': roi_test,
+                    'roi_lb': roi_test})
+            dset_config['attr'] = 'ID'
 
     elif "coco" in DATASET:
         OBJECT='coco'

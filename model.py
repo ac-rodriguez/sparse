@@ -38,7 +38,7 @@ class Model:
         self.max_output_img = 1
         self.model = self.args.model
         self.two_ds = True
-        self.n_classes = 2 if self.args.dataset == 'palmcoco' else 1
+        self.n_classes = 2 if 'palmcoco' in self.args.dataset else 1
 
         self.hr_emb = False
         self.add_yhath = False

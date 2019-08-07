@@ -243,14 +243,18 @@ class DataReader(object):
                     print(f' Ages: {np.unique(labels)}')
                 else:
                     print(f' Densities percentiles 10,20,50,70,90 \n {np.percentile(labels, q=[0.1,0.2,0.5,0.7,0.9])}')
-                    if self.args.dataset == 'palmcoco':
+                    if 'palmcoco' in self.args.dataset:
                         if 'labels/palm' in path_dict['gt']:
                             labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
 
                             print('Palm Object - class 1')
-                        else:
+                        elif 'labels/coco/' in path_dict['gt']:
                             labels = np.concatenate((np.zeros_like(labels),labels),axis=-1)
                             print('Coco Object - class 2')
+                        elif 'labels/coconutSHP/' in path_dict['gt']:
+                            labels = np.concatenate((labels == 6, labels == 2), axis=-1) ## Palm is code 6 and coco code 2
+                            labels = np.int32(labels) * 0.8 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
+                            print('Coco and Palm Object')
 
 
         return train, train_h, labels, lim_labels
@@ -268,7 +272,7 @@ class DataReader(object):
         self.train = []
         self.labels = []
         self.lims_labels = []
-        is_upsample = not self.args.dataset == 'palmcoco'
+        is_upsample = not 'palmcoco' in self.args.dataset
         for tr_ in self.args.tr:
             train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
             if train is not None:
