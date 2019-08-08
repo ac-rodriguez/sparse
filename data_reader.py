@@ -94,6 +94,7 @@ class DataReader(object):
         self.scale = self.args.scale
         self.gsd = str(10.0 / self.scale)
 
+        self.is_upsample = self.args.is_upsample_LR
         if "HR_file" in self.args:
             self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
         else:
@@ -193,14 +194,14 @@ class DataReader(object):
 
 
         else:
-            self.read_test_data()
-            self.n_channels = self.test[0].shape[-1]
-            self.two_ds = False
-            self.patch_gen_test = PatchExtractor(dataset_low=self.test[0], dataset_high=self.test_h[0],
-                                                 label=self.labels_test[0],
-                                                 patch_l=self.patch_l_eval, n_workers=1, is_random=False, border=4,
-                                                 scale=self.scale, lims_with_labels=self.lims_labels_test[0],
-                                                 patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
+            self.prepare_test_data()
+            # self.read_test_data()
+            # self.two_ds = False
+            # self.patch_gen_test = PatchExtractor(dataset_low=self.test[0], dataset_high=self.test_h[0],
+            #                                      label=self.labels_test[0],
+            #                                      patch_l=self.patch_l_eval, n_workers=1, is_random=False, border=4,
+            #                                      scale=self.scale, lims_with_labels=self.lims_labels_test[0],
+            #                                      patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
 
             # for _ in range(10):
             #     feat,_ = self.patch_gen_test.get_inputs()
@@ -273,9 +274,9 @@ class DataReader(object):
         self.labels = []
         self.lims_labels = []
         is_valid = []
-        is_upsample = self.args.is_upsample_LR
+
         for tr_ in self.args.tr:
-            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
+            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample)
             is_valid.append(train is not None)
             if is_valid[-1]:
                 self.train.append(train)
@@ -298,7 +299,7 @@ class DataReader(object):
         is_valid = []
         for val_ in self.args.val:
 
-            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
+            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample)
             is_valid.append(val is not None)
             if is_valid[-1]:
                 # mask out clouds
@@ -425,13 +426,19 @@ class DataReader(object):
         self.test = []
         self.labels_test = []
         self.lims_labels_test = []
+        is_valid = []
         for test_ in self.args.test:
-            test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, upsample_lr=False, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
 
-            self.test.append(test)
-            self.test_h.append(test_h)
-            self.labels_test.append(labels_test)
-            self.lims_labels_test.append(lim_labels_test)
+            test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, upsample_lr=self.is_upsample, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
+            is_valid.append(test is not None)
+            test[test[..., -1] > 50] = np.nan
+            if is_valid[-1]:
+                self.test.append(test)
+                self.test_h.append(test_h)
+                self.labels_test.append(labels_test)
+                self.lims_labels_test.append(lim_labels_test)
+        self.test_info = compress(self.args.test,is_valid)
+        self.test_tilenames = [x['tilename'] for x in self.test_info]
 
         scale = self.scale
 
@@ -440,16 +447,36 @@ class DataReader(object):
                 self.test_h[i_], self.test[i_], self.labels_test[i_] = self.correct_shapes(
                     self.test_h[i_], self.test[i_], self.labels_test[i_], scale, type='Test', is_hr_lab=self.is_HR_labels)
 
+        if not hasattr(self,'n_classes'):
+            self.n_classes = self.labels_test[0].shape[-1] if self.labels_test is not None else 1
+        self.n_channels = self.test[0].shape[-1]
 
         if self.args.save_arrays:
             f1 = lambda x: (np.where(x == -1, x, x * (2.0 / self.max_dens)) if self.is_HR_labels else x)
             plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=2.0, cmap='viridis')
-            for i_ in range(len(self.test)):
-                if self.labels_test[i_] is not None:
-                    plt_reg(self.labels_test[i_], self.args.model_dir + f'/test_reg_label{i_}')
-                if self.test_h[i_] is not None:
-                    plots.plot_rgb(self.test_h[i_], file=self.args.model_dir + f'/test_HR{i_}', reorder=False, percentiles=(0, 100))
-                plots.plot_rgb(self.test[i_], file=self.args.model_dir + f'/test_S2{i_}')
+            if 'palmcoco' in self.args.dataset or 'cococomplete' in self.args.dataset:
+                for tile in set(self.test_tilenames):
+                    index = [tile == x for x in self.test_tilenames]
+                    test = list(compress(self.test, index))
+                    lab_test = list(compress(self.labels_test, index))
+                    if lab_test[0] is not None:
+                        for j in range(self.n_classes):
+                            plt_reg(lab_test[0][..., j], self.args.model_dir + f'/test_reg_label{tile}_class{j}')
+
+                    test = np.stack(test, axis=-1)
+                    test = np.nanmedian(test, axis=-1)
+                    plots.plot_rgb(test, file=self.args.model_dir + f'/test_LR_{tile}')
+
+                    np.save(self.args.model_dir + f'/test_LR_{tile}', test)
+                    np.save(self.args.model_dir + f'/test_reg_label_{tile}', lab_test[0])
+            else:
+
+                for i_ in range(len(self.test)):
+                    if self.labels_test[i_] is not None:
+                        plt_reg(self.labels_test[i_], self.args.model_dir + f'/test_reg_label{i_}')
+                    if self.test_h[i_] is not None:
+                        plots.plot_rgb(self.test_h[i_], file=self.args.model_dir + f'/test_HR{i_}', reorder=False, percentiles=(0, 100))
+                    plots.plot_rgb(self.test[i_], file=self.args.model_dir + f'/test_S2{i_}')
 
     def correct_shapes(self,high, low, label, scale, type, is_hr_lab):
         x_shapes, y_shapes = self.compute_shapes(dset_h=high, dset_l=low, scale=scale)
@@ -479,15 +506,36 @@ class DataReader(object):
         self.read_test_data()
         self.two_ds = False
 
-        self.patch_gen_test = PatchExtractor(dataset_low=self.test[0], dataset_high=self.test_h[0],
-                                             label=self.labels_test[0],
-                                             patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                                             is_random=False, border=4,
-                                             scale=self.scale, lims_with_labels=self.lims_labels_test[0],
-                                             patches_with_labels=self.args.patches_with_labels,
-                                             two_ds=self.two_ds)
+        self.single_gen_test = []
 
-    def get_input_test(self):  #
+
+        for test_dset_ in range(len(self.test)):
+            self.single_gen_test.append(
+                PatchExtractor(dataset_low=self.test[test_dset_], dataset_high=self.test_h[test_dset_],
+                               label=self.labels_test[test_dset_],
+                               patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                               is_random=False, border=4,
+                               scale=self.scale, lims_with_labels=self.lims_labels_test[test_dset_],
+                               patches_with_labels=self.args.patches_with_labels,
+                               two_ds=self.two_ds))
+
+
+
+    def get_input_test(self, is_restart=False, as_list=False):
+        if not as_list:
+            if is_restart:
+                self.patch_gen_test.define_queues()
+
+            return partial(self.input_fn, type='test')
+        else:
+            list_fn = []
+            for id_, d_ in enumerate(self.single_gen_test):
+                if is_restart:
+                    d_.define_queues()
+                list_fn.append(partial(self.input_fn,type=f'test_complete-{id_}'))
+            return list_fn
+
+    def get_input_test_old(self):  #
         self.init_constants_normalization()
 
         gen_func = self.patch_gen_test.get_iter_test
@@ -668,11 +716,6 @@ class DataReader(object):
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
             is_onlyLR = self.patch_gen_val_complete.is_onlyLR
-        elif type == 'test':
-            gen_func = self.patch_gen_test.get_iter
-            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
-            batch = self.batch_eval
-            is_onlyLR = self.patch_gen_test.is_onlyLR
         elif 'val_complete' in type:
             type,id_ = type.split('-')
             id_ = int(id_)
@@ -680,6 +723,18 @@ class DataReader(object):
             patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
             batch = self.batch_eval
             is_onlyLR = self.single_gen_val[id_].is_onlyLR
+        elif type == 'test':
+            gen_func = self.patch_gen_test.get_iter
+            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
+            batch = self.batch_eval
+            is_onlyLR = self.patch_gen_test.is_onlyLR
+        elif 'test_complete' in type:
+            type,id_ = type.split('-')
+            id_ = int(id_)
+            gen_func = self.single_gen_test[id_].get_iter
+            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
+            batch = self.batch_eval
+            is_onlyLR = self.single_gen_test[id_].is_onlyLR
         else:
             sys.exit(1)
         multiplier = 2 if self.two_ds else 1

@@ -338,8 +338,8 @@ def main(unused_args):
         input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
 
         tools.predict_and_recompose(model, reader, input_fn_val_comp, reader.single_gen_val,
-                                    is_hr_pred, args.batch_size_eval,
-                                    'val', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+                                    is_hr_pred, args.batch_size_eval,'val',
+                                    is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                     chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
         np.save('{}/train_label'.format(model_dir), reader.labels)
         np.save('{}/val_label'.format(model_dir), reader.labels_val)
@@ -350,9 +350,11 @@ def main(unused_args):
     else:
         assert os.path.isdir(args.model_dir)
         reader = DataReader(args, is_training=False)
+    input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
 
-    tools.predict_and_recompose(model, reader, reader.get_input_test, reader.patch_gen_test, is_hr_pred, args.batch_size_eval,
-                                'test', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+    tools.predict_and_recompose(model, reader, input_fn_test_comp, reader.single_gen_test,
+                                is_hr_pred, args.batch_size_eval,'test',
+                                is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                 chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
 
     np.save('{}/test_label'.format(model_dir), reader.labels_test)

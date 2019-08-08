@@ -207,7 +207,10 @@ class PatchExtractor:
                                         (patches_h, patches_h), axis=-1)
                                 self.inputs_queue.put(patches)
                             else:
-                                self.inputs_queue.put(self.get_patches(xy_corner=(ii, jj)))  # + (i,)
+                                patches, patches_h = self.get_patches(xy_corner=(ii, jj))
+                                if not self.is_onlyLR:
+                                    patches = (patches,patches_h)
+                                self.inputs_queue.put(patches)  # + (i,)
                             i += 1
                     print('starting over Val set {}'.format(i))
 

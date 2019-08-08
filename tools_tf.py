@@ -423,7 +423,7 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
         # checkpoint_path=tools.get_lastckpt(model_dir))  # ,predict_keys=['hr_hat_rgb'])
 
         print('Predicting {} Patches...'.format(nr_patches))
-        for idx in tqdm(range(0, batch_idxs)):
+        for idx in tqdm(range(0, batch_idxs),disable=None):
             p_ = next(preds_iter)
             start = idx * batch_size
             # print(start,stop,stop-start)
@@ -442,8 +442,8 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
                     pred_c_rec[start:stop] = np.argmax(p_['sem'][0:last_batch], axis=-1)
                 else:
                     pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
-        if type_ == 'test':
-            del reader
+        # if type_ == 'test':
+        #     del reader
         print(ref_size)
         ## Recompose RGB
         if is_reg:
@@ -462,14 +462,19 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
             print('Returning only fist array of dataset list')
             return data_r_recomposed, data_c_recomposed
 
-    if 'val' in type_:
-        ref_tiles = reader.val_tilenames
+    if not 'train' in type_:
+        if 'val' in type_:
+            ref_tiles = reader.val_tilenames
+            ref_data = reader.val
+        else:
+            ref_tiles = reader.test_tilenames
+            ref_data = reader.test
 
         for tile in set(ref_tiles):
             index = [tile == x for x in ref_tiles]
             if is_reg:
                 reg = list(compress(predictions['reg'], index))
-                val_data = list(compress(reader.val,index))
+                val_data = list(compress(ref_data,index))
                 for i_, reg_ in enumerate(reg):
                     reg_[np.isnan(val_data[i_][..., -1])] = np.nan
                 reg = np.stack(reg, axis=-1)
@@ -478,7 +483,7 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
                     plt_reg(reg[...,i], '{}/{}_reg_pred{}_class{}'.format(save_dir, type_,tile,i))
             if is_sem:
                 reg = list(compress(predictions['sem'], index))
-                val_data = list(compress(reader.val, index))
+                val_data = list(compress(ref_data, index))
                 for i_, reg_ in enumerate(reg):
                     reg_[np.isnan(val_data[i_][..., -1])] = np.nan
                 reg = np.stack(reg, axis=-1)
