@@ -342,18 +342,18 @@ class DataReader(object):
             if 'palmcoco' in self.args.dataset or 'cococomplete' in self.args.dataset:
                 for tile in set(self.val_tilenames):
                     index = [tile == x for x in self.val_tilenames]
+                    val = list(compress(self.val, index))
+                    lab_val = list(compress(self.labels_val, index))
 
                     for j in range(self.n_classes):
-                        plt_reg(self.labels_val[0][..., j], self.args.model_dir + f'/val_reg_label{tile}_class{j}')
-
-                    val = list(compress(self.val, index))
+                        plt_reg(lab_val[0][..., j], self.args.model_dir + f'/val_reg_label{tile}_class{j}')
 
                     val = np.stack(val, axis=-1)
                     val = np.nanmedian(val, axis=-1)
                     plots.plot_rgb(val, file=self.args.model_dir + f'/val_LR_{tile}')
 
                     np.save(self.args.model_dir + f'/val_LR_{tile}', val)
-                    np.save(self.args.model_dir + f'/val_reg_label_{tile}', self.labels_val[0])
+                    np.save(self.args.model_dir + f'/val_reg_label_{tile}', lab_val[0])
 
 
             else:

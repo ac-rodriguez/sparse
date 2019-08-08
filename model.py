@@ -161,7 +161,9 @@ class Model:
             self.y_hat, mid, latel = simple(earlyl, n_classes=self.n_classes, is_training=self.is_training,
                                             return_feat=True)
             if self.is_semi:
-                earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
+                earlylU = self.feat_lU
+                if self.model == 'simpleA':
+                    earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
                 self.y_hatU,midlU,latelU = simple(earlylU, n_classes=self.n_classes, is_training=self.is_training,
                                                   return_feat=True)
                 self.Zl = latel
