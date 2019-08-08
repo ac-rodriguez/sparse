@@ -57,7 +57,8 @@ def get_dataset(DATASET, is_mounted = False):
         lines = [line.rstrip('\n') for line in open(PATH+'/barry_palm/data/2A/palmcountries_2017/correct_2A.txt')]
         lines = [x+'.SAFE' for x in lines]
         filelist = [x for x in filelist if x.split('/')[-2] in lines]
-
+        if 'small' in DATASET:
+            filelist = filelist[:2]
         for file in filelist:
 
             dset_config['tr'].append({
@@ -65,19 +66,22 @@ def get_dataset(DATASET, is_mounted = False):
                 'hr': None,
                 'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
                 'roi': roi,
-                'roi_lb': roi})
+                'roi_lb': roi,
+                'tilename':tilename})
             dset_config['val'].append({
                 'lr': file,
                 'hr': None,
                 'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
                 'roi': roi_val,
-                'roi_lb': roi_val})
+                'roi_lb': roi_val,
+                'tilename':tilename})
             dset_config['test'].append({
                 'lr': file,
                 'hr': None,
                 'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
                 'roi': roi_test,
-                'roi_lb': roi_test})
+                'roi_lb': roi_test,
+                'tilename':tilename})
 
 
         # COCO DATA
@@ -104,7 +108,8 @@ def get_dataset(DATASET, is_mounted = False):
         lines = [x + '.SAFE' for x in lines]
         filelist = [x for x in filelist if x.split('/')[-2] in lines]
 
-
+        if 'small' in DATASET:
+            filelist = filelist[:1]
         for file in filelist:
 
             dset_config['tr'].append({
@@ -112,19 +117,22 @@ def get_dataset(DATASET, is_mounted = False):
                 'hr': None,
                 'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
                 'roi': roi,
-                'roi_lb': roi})
+                'roi_lb': roi,
+                'tilename':tilename})
             dset_config['val'].append({
                 'lr': file,
                 'hr': None,
                 'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
                 'roi': roi_val,
-                'roi_lb': roi_val})
+                'roi_lb': roi_val,
+                'tilename':tilename})
             dset_config['test'].append({
                 'lr': file,
                 'hr': None,
                 'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
                 'roi': roi_test,
-                'roi_lb': roi_test})
+                'roi_lb': roi_test,
+                'tilename':tilename})
         # West Kalimantan DATA
         if DATASET == 'palmcoco1':
             rois = ['109.2,-0.85,109.63,-0.6']
@@ -149,26 +157,30 @@ def get_dataset(DATASET, is_mounted = False):
             lines = [line.rstrip('\n') for line in open(PATH + '/barry_palm/data/2A/palmcountries_2017/correct_2A.txt')]
             lines = [x + '.SAFE' for x in lines]
             filelist = [x for x in filelist if x.split('/')[-2] in lines]
-
-            for file in filelist[:1]:
+            if 'small' in DATASET:
+                filelist = filelist[:1]
+            for file in filelist:
                 dset_config['tr'].append({
                     'lr': file,
                     'hr': None,
                     'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
                     'roi': roi,
-                    'roi_lb': roi})
+                    'roi_lb': roi,
+                'tilename':tilename})
                 dset_config['val'].append({
                     'lr': file,
                     'hr': None,
                     'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
                     'roi': roi_val,
-                    'roi_lb': roi_val})
+                    'roi_lb': roi_val,
+                'tilename':tilename})
                 dset_config['test'].append({
                     'lr': file,
                     'hr': None,
                     'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
                     'roi': roi_test,
-                    'roi_lb': roi_test})
+                    'roi_lb': roi_test,
+                'tilename':tilename})
             dset_config['attr'] = 'ID'
 
     elif "coco" in DATASET:

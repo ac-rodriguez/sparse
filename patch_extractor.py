@@ -77,6 +77,7 @@ class PatchExtractor:
         self.nr_patches = max_N
         self.return_corner = return_corner
         self.keep_edges = keep_edges
+        self.clouded_patches = []
 
         self.patch_l = patch_l
         assert self.patch_l <= self.d_l.shape[0] and self.patch_l <= self.d_l.shape[1], \
@@ -103,7 +104,7 @@ class PatchExtractor:
 
             size_label_ind = max_patches
 
-            cloud_threshold = 90
+            cloud_threshold = 50
             if self.label is not None:
                 if self.label.shape[-1] == 1:
                     valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1), axis=2)
@@ -118,7 +119,7 @@ class PatchExtractor:
             else:
                 if self.d_l.shape[-1] > 3:
                     valid_input = np.logical_and.reduce(~np.equal(self.d_l[...,:-1], 0), axis=2)
-                    valid_input = valid_input & np.logical_and.reduce(np.less(self.d_l[...,-1], cloud_threshold))
+                    valid_input = valid_input & np.less(self.d_l[...,-1], cloud_threshold)
                 else:
                     valid_input = np.logical_and.reduce(~np.equal(self.d_l, 0), axis=2)
 
@@ -173,11 +174,21 @@ class PatchExtractor:
             worker = Thread(target=self._inputs_producer)
             worker.setDaemon(True)
             worker.start()
-
+    def is_clouded(self,patches):
+        # Compute if 50% of the pixels have 50% cloud prob
+        n_ = self.d_l.shape[-1]
+        if isinstance(patches,tuple):
+            patches,_ = patches
+        cloud = patches[...,n_]
+        return np.nanmean(cloud > 50) > 0.5
     def _inputs_producer(self):
         if self.is_random:
             while True:
-                self.inputs_queue.put(self.get_random_patches())
+                is_correct = False
+                while not is_correct:
+                    patches = self.get_random_patches()
+                    is_correct =  not self.is_clouded(patches)
+                self.inputs_queue.put(patches)
         else:
 
             while True:
@@ -257,7 +268,6 @@ class PatchExtractor:
         else:
             return patch_l, data_h
     def get_random_patches(self):
-
 
         if not self.two_ds:
             with self.lock:

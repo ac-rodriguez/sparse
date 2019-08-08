@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import ndimage
 from skimage.transform import resize, downscale_local_mean
-
+from itertools import compress
 from functools import partial
 
 import plots
@@ -272,14 +272,17 @@ class DataReader(object):
         self.train = []
         self.labels = []
         self.lims_labels = []
+        is_valid = []
         is_upsample = not 'palmcoco' in self.args.dataset
         for tr_ in self.args.tr:
             train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
-            if train is not None:
+            is_valid.append(train is not None)
+            if is_valid[-1]:
                 self.train.append(train)
                 self.train_h.append(train_h)
                 self.labels.append(labels)
                 self.lims_labels.append(lim_labels)
+        self.train_info = list(compress(self.args.tr,is_valid))
 
         if self.args.unlabeled_data is not None:
             self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
@@ -292,15 +295,21 @@ class DataReader(object):
         self.val = []
         self.labels_val = []
         self.lims_labels_val = []
+        is_valid = []
         for val_ in self.args.val:
 
             val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
-            if val is not None:
+            is_valid.append(val is not None)
+            if is_valid[-1]:
+                # mask out clouds
+                val[val[..., -1] > 50] = np.nan
 
                 self.val.append(val)
                 self.val_h.append(val_h)
                 self.labels_val.append(labels_val)
                 self.lims_labels_val.append(lim_labels_val)
+        self.val_info = compress(self.args.val,is_valid)
+        self.val_tilenames = [x['tilename'] for x in self.val_info]
 
         # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
         # self.N_pixels = self.train.shape[0] * self.train.shape[1]
@@ -330,26 +339,46 @@ class DataReader(object):
             max_ = 20.0 if 'palmage' in self.args.dataset else 2.0
             f1 = lambda x: (np.where(x == -1, x, x * (max_ / self.max_dens)) if self.is_HR_labels else x)
             plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=max_, cmap='viridis')
-            for i_ in range(len(self.val)):
-                if 'vaihingen' in self.args.dataset:
-                    plots.plot_heatmap(self.labels_val[i_][..., 1], file=self.args.model_dir + f'/val_reg_label{i_}', min=0,
-                                       percentiles=(0, 100))
-                    plots.plot_labels(self.labels_val[i_][..., 0], file=self.args.model_dir + f'/val_sem_label{i_}')
-                    plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}', reorder=False, normalize=False)
+            if 'palmcoco' in self.args.dataset:
+                for tile in set(self.val_tilenames):
+                    index = [tile == x for x in self.val_tilenames]
 
-                    plots.plot_rgb(self.val_h[i_], file=self.args.model_dir + f'/val_HR{i_}', reorder=False, normalize=False)
-                    np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
-                    np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
-                    np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
-                else:
                     for j in range(self.n_classes):
-                        plt_reg(self.labels_val[i_][...,j], self.args.model_dir + f'/val_reg_label{i_}_class{j}')
-                    plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}')
+                        plt_reg(self.labels_val[0][..., j], self.args.model_dir + f'/val_reg_label{tile}_class{j}')
 
-                    plots.plot_rgb(self.val_h[i_], file=self.args.model_dir+f'/val_HR{i_}', reorder=False, normalize=False)
-                    np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
-                    np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
-                    np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
+                    val = list(compress(self.val, index))
+
+                    val = np.stack(val, axis=-1)
+                    val = np.nanmedian(val, axis=-1)
+                    plots.plot_rgb(val, file=self.args.model_dir + f'/val_LR_{tile}')
+
+                    np.save(self.args.model_dir + f'/val_LR_{tile}', val)
+                    np.save(self.args.model_dir + f'/val_reg_label_{tile}', self.labels_val[0])
+
+
+            else:
+                for i_ in range(len(self.val)):
+                    if 'vaihingen' in self.args.dataset:
+                        plots.plot_heatmap(self.labels_val[i_][..., 1], file=self.args.model_dir + f'/val_reg_label{i_}', min=0,
+                                           percentiles=(0, 100))
+                        plots.plot_labels(self.labels_val[i_][..., 0], file=self.args.model_dir + f'/val_sem_label{i_}')
+                        plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}', reorder=False, normalize=False)
+
+                        plots.plot_rgb(self.val_h[i_], file=self.args.model_dir + f'/val_HR{i_}', reorder=False, normalize=False)
+                        np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
+                        np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
+                        np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
+                    else:
+                        for j in range(self.n_classes):
+                            plt_reg(self.labels_val[i_][...,j], self.args.model_dir + f'/val_reg_label{i_}_class{j}')
+                        plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}')
+
+                        if self.val_h[i_] is not None:
+                            plots.plot_rgb(self.val_h[i_], file=self.args.model_dir+f'/val_HR{i_}', reorder=False, normalize=False)
+                            np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
+
+                        np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
+                        np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
             # for i_ in range(len(self.train)):
             #     if 'vaihingen' in self.args.dataset:
             #         plots.plot_heatmap(self.labels[i_][..., 1], file=self.args.model_dir + f'/train_reg_label{i_}', min=0,

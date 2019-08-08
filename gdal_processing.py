@@ -329,7 +329,8 @@ def getrefDataset(refds,is_use_gtiff =False):
 
 def get_jp2(path, band, res=10):
     if band == 'CLD':
-        return glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2")[0]
+        cld = glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2") + glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLDPRB_{res}m.jp2")
+        return cld[0]
     else:
         return glob.glob(f"{path}/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")[0]
 

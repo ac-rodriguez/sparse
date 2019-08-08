@@ -1,4 +1,6 @@
 import os, glob, shutil
+from itertools import compress
+
 import tensorflow as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
@@ -369,7 +371,9 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
     if not os.path.isdir(save_dir): os.makedirs(save_dir)
     if m is not None:
         save_m(save_dir + '/metrics.txt', m)
-    f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
+
+    # f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
+    f1 = lambda x:x
     plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, cmap='viridis',
                                                  percentiles=(0, 100))  # min=-1, max=2.0,
     # copy chkpt
@@ -377,6 +381,7 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
         copy_last_ckpt(model_dir, prefix)
     if not isinstance(patch_generator,list):
         patch_generator = [patch_generator]
+    predictions = {'reg':[],'sem':[]}
     for id_ in  range(len(patch_generator)):
 
         if is_hr_pred:
@@ -443,24 +448,60 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
         ## Recompose RGB
         if is_reg:
             data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-            if not return_array:
-                np.save('{}/{}_reg_pred{}'.format(save_dir, type_,id_), data_r_recomposed)
-                for i in range(data_r_recomposed.shape[-1]):
-                    plt_reg(data_r_recomposed[...,i], '{}/{}_reg_pred_class{}_{}'.format(save_dir, type_,i,id_))
+            predictions['reg'].append(data_r_recomposed)
         else:
             data_r_recomposed = None
 
         if is_sem:
             data_c_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
-            if not return_array:
-                np.save('{}/{}_sem_pred{}'.format(save_dir, type_,id_), data_c_recomposed)
-                plots.plot_labels(data_c_recomposed, '{}/{}_sem_pred{}'.format(save_dir, type_,id_))
+            predictions['sem'].append(data_c_recomposed)
         else:
             data_c_recomposed = None
 
         if return_array:
             print('Returning only fist array of dataset list')
             return data_r_recomposed, data_c_recomposed
+
+    if 'val' in type_:
+        ref_tiles = reader.val_tilenames
+
+        for tile in set(ref_tiles):
+            index = [tile == x for x in ref_tiles]
+            if is_reg:
+                reg = list(compress(predictions['reg'], index))
+                val_data = list(compress(reader.val,index))
+                for i_, reg_ in enumerate(reg):
+                    reg_[np.isnan(val_data[i_][..., -1])] = np.nan
+                reg = np.stack(reg, axis=-1)
+                reg = np.nanmedian(reg, axis=-1)
+                for i in range(reg.shape[-1]):
+                    plt_reg(reg[...,i], '{}/{}_reg_pred{}_class{}'.format(save_dir, type_,tile,i))
+            if is_sem:
+                reg = list(compress(predictions['sem'], index))
+                val_data = list(compress(reader.val, index))
+                for i_, reg_ in enumerate(reg):
+                    reg_[np.isnan(val_data[i_][..., -1])] = np.nan
+                reg = np.stack(reg, axis=-1)
+                reg = np.nanmedian(reg, axis=-1)
+
+                np.save('{}/{}_sem_pred{}'.format(save_dir, type_, tile), reg)
+                plots.plot_labels(reg, '{}/{}_sem_pred{}'.format(save_dir, type_,tile))
+
+    else:
+        print('saving as individual files')
+        for id_ in range(len(patch_generator)):
+
+            if is_reg:
+                data_r_recomposed = predictions['reg'][id_]
+
+                np.save('{}/{}_reg_pred{}'.format(save_dir, type_,id_), data_r_recomposed)
+                for i in range(data_r_recomposed.shape[-1]):
+                    plt_reg(data_r_recomposed[...,i], '{}/{}_reg_pred_class{}_{}'.format(save_dir, type_,i,id_))
+            if is_sem:
+                data_c_recomposed = predictions['sem'][id_]
+                np.save('{}/{}_sem_pred{}'.format(save_dir, type_,id_), data_c_recomposed)
+                plots.plot_labels(data_c_recomposed, '{}/{}_sem_pred{}'.format(save_dir, type_,id_))
+
 
 
 class BestCheckpointCopier(tf.estimator.Exporter):

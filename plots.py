@@ -20,33 +20,29 @@ def check_dims(data):
 
 def plot_heatmap(data, min=None, max=None, percentiles=(1,99), cmap='viridis', file=None):
 
-    data[np.isnan(data)] = -1
     data = np.float32(data)
     mi, ma = np.nanpercentile(data, percentiles)
     if min is None:
         min = mi
     if max is None:
         max = ma
-
+    nan_mask = np.isnan(data)
     band_data = np.clip(data, min, max)
     if min < max: # added for when all uniform pixels are given
         band_data = (band_data - min) / (max - min)
-
+    band_data = np.ma.array(band_data,mask=nan_mask)
     band_data  = np.squeeze(band_data)
 
     assert len(band_data.shape) == 2, 'For more channels in image use plot_rgb'
 
     cm = plt.get_cmap(cmap)
+    cm.set_bad('black',1)
     if file is None:
         return Image.fromarray(cm(band_data, bytes=True))
     else:
         Image.fromarray(cm(band_data, bytes=True)).save(file+'.png')
 
 def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, percentiles = (1,99), bw = False, normalize=True):
-
-    if data is None:
-        return None
-    data[np.isnan(data)] = -1
 
     if normalize:
         mi, ma = np.nanpercentile(data, percentiles)
@@ -87,14 +83,16 @@ def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, per
 def plot_labels(preds, file, colors=None, return_img=False):
 
     filename = file + '.png'
-    preds  = np.squeeze(preds)
+    preds = np.squeeze(preds)
+    preds = np.ma.array(preds,mask=np.isnan(preds))
+
     if colors is not None:
         colors1 = [tuple([y / 255.0 for y in x]) for x in colors]
         cm = LinearSegmentedColormap.from_list('my_cmap', colors1, N=len(colors))
     else:
         preds = (preds - preds.min()) / (preds.max() - preds.min())
         cm = plt.get_cmap("tab20")
-
+    cm.set_bad('black', 1)
     img = Image.fromarray(cm(preds, bytes=True))
     if return_img:
         return img
