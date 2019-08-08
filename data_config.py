@@ -16,6 +16,22 @@ parser.add_argument("--dataset", default='palm')
 # class Bunch(object):
 #   def __init__(self, adict):
 #     self.__dict__.update(adict)
+def parse_filelist(PATH,tilename, top_10_list, loc):
+
+    filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE/MTD_MSIL2A.xml')
+
+    # top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/phillipines_2017/Phillipines_all_1840.txt'
+
+    lines = [line.rstrip('\n') for line in open(top_10_list)]
+    lines = [x.replace('_MSIL1C_', '_MSIL2A_') + '.SAFE' for x in lines]
+    filelist = [x for x in filelist if x.split('/')[-2] in lines]
+
+    # filter that 2A is correct
+    lines = [line.rstrip('\n') for line in open(PATH + f'/barry_palm/data/2A/{loc}/correct_2A.txt')]
+    lines = [x + '.SAFE' for x in lines]
+    filelist = [x for x in filelist if x.split('/')[-2] in lines]
+    return filelist
+
 
 def get_dataset(DATASET, is_mounted = False):
 
@@ -23,16 +39,42 @@ def get_dataset(DATASET, is_mounted = False):
     dset_config['tr'] = []
     dset_config['val'] = []
     dset_config['test'] = []
+    dset_config['is_upsample_LR'] = True # if needed
+    def add_datasets(files,gtfile, roi_,roi_val_,roi_test_,tilename_=''):
+        for file_ in files:
+
+            dset_config['tr'].append({
+                'lr': file_,
+                'hr': None,
+                'gt': gtfile,
+                'roi': roi_,
+                'roi_lb': roi_,
+                'tilename':tilename_})
+            dset_config['val'].append({
+                'lr': file_,
+                'hr': None,
+                'gt': gtfile,
+                'roi': roi_val_,
+                'roi_lb': roi_val_,
+                'tilename':tilename_})
+            dset_config['test'].append({
+                'lr': file_,
+                'hr': None,
+                'gt': gtfile,
+                'roi': roi_test_,
+                'roi_lb': roi_test_,
+                'tilename':tilename_})
+
     if 'pf-pc' in socket.gethostname():
-        PATH='/home/pf/pfstaff/projects/andresro'
-        # PATH='/scratch/andresro/leon_igp'
+        # PATH='/home/pf/pfstaff/projects/andresro'
+        PATH='/scratch/andresro/leon_igp'
         PATH_TRAIN='/home/pf/pfstaff/projects/andresro'
     else:
         PATH='/cluster/work/igp_psr/andresro'
         PATH_TRAIN='/cluster/scratch/andresro'
     if 'palmcoco' in DATASET:
         OBJECT = 'palmcoco'
-
+        dset_config['is_upsample_LR'] = False
         # PALM DATA
 
         rois = ['101.45,0.48,101.62,0.53'] # was 0.52
@@ -44,44 +86,15 @@ def get_dataset(DATASET, is_mounted = False):
         roi = rois[0]
         roi_val = rois_val[0]
         roi_test = rois_test[0]
-        filelist = glob.glob(PATH+f'/barry_palm/data/2A/palmcountries_2017/*{tilename}*.SAFE/MTD_MSIL2A.xml')
 
-        # filter that is in the initial pandas list
         top_10_list = PATH+'/barry_palm/data/1C/dataframes_download/palmcountries_2017/Indonesia_all_8410.txt'
-        top_10_list1 = PATH + '/barry_palm/data/1C/dataframes_download/palmcountries_2017/Malaysia_all_1150.txt'
-        lines = [line.rstrip('\n') for line in open(top_10_list)]+[line.rstrip('\n') for line in open(top_10_list1)]
-        lines = [x.replace('_MSIL1C_','_MSIL2A_')+'.SAFE' for x in lines]
-        filelist = [x for x in filelist if x.split('/')[-2] in lines]
 
-        # filter that 2A is correct
-        lines = [line.rstrip('\n') for line in open(PATH+'/barry_palm/data/2A/palmcountries_2017/correct_2A.txt')]
-        lines = [x+'.SAFE' for x in lines]
-        filelist = [x for x in filelist if x.split('/')[-2] in lines]
+        filelist = parse_filelist(PATH,tilename,top_10_list,loc='palmcountries_2017')
         if 'small' in DATASET:
             filelist = filelist[:2]
-        for file in filelist:
 
-            dset_config['tr'].append({
-                'lr': file,
-                'hr': None,
-                'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
-                'roi': roi,
-                'roi_lb': roi,
-                'tilename':tilename})
-            dset_config['val'].append({
-                'lr': file,
-                'hr': None,
-                'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
-                'roi': roi_val,
-                'roi_lb': roi_val,
-                'tilename':tilename})
-            dset_config['test'].append({
-                'lr': file,
-                'hr': None,
-                'gt': PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
-                'roi': roi_test,
-                'roi_lb': roi_test,
-                'tilename':tilename})
+        GT = PATH + '/barry_palm/data/labels/palm/kml_geoproposals'
+        add_datasets(files=filelist,gtfile=GT,roi_=roi,roi_val_=roi_val,roi_test_=roi_test,tilename_=tilename)
 
 
         # COCO DATA
@@ -95,48 +108,20 @@ def get_dataset(DATASET, is_mounted = False):
         roi = rois[0]
         roi_val = rois_val[0]
         roi_test = rois_test[0]
-        filelist = glob.glob(PATH+f'/barry_palm/data/2A/phillipines_2017/*_{tilename}_*.SAFE/MTD_MSIL2A.xml')
 
         top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/phillipines_2017/Phillipines_all_1840.txt'
 
-        lines = [line.rstrip('\n') for line in open(top_10_list)]
-        lines = [x.replace('_MSIL1C_', '_MSIL2A_') + '.SAFE' for x in lines]
-        filelist = [x for x in filelist if x.split('/')[-2] in lines]
-
-        # filter that 2A is correct
-        lines = [line.rstrip('\n') for line in open(PATH + '/barry_palm/data/2A/phillipines_2017/correct_2A.txt')]
-        lines = [x + '.SAFE' for x in lines]
-        filelist = [x for x in filelist if x.split('/')[-2] in lines]
-
+        filelist = parse_filelist(PATH, tilename, top_10_list, loc='phillipines_2017')
         if 'small' in DATASET:
             filelist = filelist[:1]
-        for file in filelist:
 
-            dset_config['tr'].append({
-                'lr': file,
-                'hr': None,
-                'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
-                'roi': roi,
-                'roi_lb': roi,
-                'tilename':tilename})
-            dset_config['val'].append({
-                'lr': file,
-                'hr': None,
-                'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
-                'roi': roi_val,
-                'roi_lb': roi_val,
-                'tilename':tilename})
-            dset_config['test'].append({
-                'lr': file,
-                'hr': None,
-                'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
-                'roi': roi_test,
-                'roi_lb': roi_test,
-                'tilename':tilename})
+        GT = PATH + '/barry_palm/data/labels/coco/points_detections.kml'
+        add_datasets(files=filelist, gtfile=GT, roi_=roi, roi_val_=roi_val, roi_test_=roi_test, tilename_=tilename)
+
         # West Kalimantan DATA
-        if DATASET == 'palmcoco1':
-            rois = ['109.2,-0.85,109.63,-0.6']
-            rois_val = ['109.2,-0.85,109.63,-1']
+        if 'palmcoco1' in DATASET:
+            rois = ['109.23,-0.85,109.63,-0.6']
+            rois_val = ['109.24,-0.85,109.63,-0.93']
 
             rois_test = ['109.2,-1.0,109.8,-0.6']
             tilenames = ['R132_T49MCV']
@@ -145,43 +130,41 @@ def get_dataset(DATASET, is_mounted = False):
             roi = rois[0]
             roi_val = rois_val[0]
             roi_test = rois_test[0]
-            filelist = glob.glob(PATH + f'/barry_palm/data/2A/palmcountries_2017/*{tilename}*.SAFE/MTD_MSIL2A.xml')
 
             top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/palmcountries_2017/Indonesia_all_8410.txt'
 
-            lines = [line.rstrip('\n') for line in open(top_10_list)]
-            lines = [x.replace('_MSIL1C_', '_MSIL2A_') + '.SAFE' for x in lines]
-            filelist = [x for x in filelist if x.split('/')[-2] in lines]
+            filelist = parse_filelist(PATH, tilename, top_10_list, loc='palmcountries_2017')
 
-            # filter that 2A is correct
-            lines = [line.rstrip('\n') for line in open(PATH + '/barry_palm/data/2A/palmcountries_2017/correct_2A.txt')]
-            lines = [x + '.SAFE' for x in lines]
-            filelist = [x for x in filelist if x.split('/')[-2] in lines]
             if 'small' in DATASET:
                 filelist = filelist[:1]
-            for file in filelist:
-                dset_config['tr'].append({
-                    'lr': file,
-                    'hr': None,
-                    'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
-                    'roi': roi,
-                    'roi_lb': roi,
-                'tilename':tilename})
-                dset_config['val'].append({
-                    'lr': file,
-                    'hr': None,
-                    'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
-                    'roi': roi_val,
-                    'roi_lb': roi_val,
-                'tilename':tilename})
-                dset_config['test'].append({
-                    'lr': file,
-                    'hr': None,
-                    'gt': PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
-                    'roi': roi_test,
-                    'roi_lb': roi_test,
-                'tilename':tilename})
+
+            GT = PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp'
+            add_datasets(files=filelist, gtfile=GT, roi_=roi, roi_val_=roi_val, roi_test_=roi_test, tilename_=tilename)
             dset_config['attr'] = 'ID'
+
+    elif 'cococomplete' in DATASET:
+
+        OBJECT='coco'
+        dset_config['is_upsample_LR'] = False
+
+        rois = ['117.86,8.82,117.92,8.9']
+        rois_val = ['117.84,8.82,117.86,8.88']
+        rois_test = ['117.81,8.82,117.84,8.88']
+        tilenames = ['T50PNQ']
+
+        tilename = tilenames[0]
+        roi = rois[0]
+        roi_val = rois_val[0]
+        roi_test = rois_test[0]
+
+        top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/phillipines_2017/Phillipines_all_1840.txt'
+
+        filelist = parse_filelist(PATH, tilename, top_10_list, loc='phillipines_2017')
+        if 'small' in DATASET:
+            filelist = filelist[:1]
+
+        GT = PATH + '/barry_palm/data/labels/coco/points_detections.kml'
+        add_datasets(files=filelist, gtfile=GT, roi_=roi, roi_val_=roi_val, roi_test_=roi_test, tilename_=tilename)
 
     elif "coco" in DATASET:
         OBJECT='coco'

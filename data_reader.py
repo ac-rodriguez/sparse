@@ -273,7 +273,7 @@ class DataReader(object):
         self.labels = []
         self.lims_labels = []
         is_valid = []
-        is_upsample = not 'palmcoco' in self.args.dataset
+        is_upsample = self.args.is_upsample_LR
         for tr_ in self.args.tr:
             train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=is_upsample)
             is_valid.append(train is not None)
@@ -339,7 +339,7 @@ class DataReader(object):
             max_ = 20.0 if 'palmage' in self.args.dataset else 2.0
             f1 = lambda x: (np.where(x == -1, x, x * (max_ / self.max_dens)) if self.is_HR_labels else x)
             plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, min=-1, max=max_, cmap='viridis')
-            if 'palmcoco' in self.args.dataset:
+            if 'palmcoco' in self.args.dataset or 'cococomplete' in self.args.dataset:
                 for tile in set(self.val_tilenames):
                     index = [tile == x for x in self.val_tilenames]
 
@@ -581,6 +581,7 @@ class DataReader(object):
             data_l,data_h = data,None
 
         n = self.n_channels
+        n_c = self.n_classes
         if 'vaihingen' in self.args.dataset:
             if self.is_HR_labels:
                 return {'feat_l': data_l[..., :n],
@@ -595,21 +596,22 @@ class DataReader(object):
                         'feat_hU': data_h[..., 3:]}, \
                        data_l[..., n:n + 2]
 
-        elif 'palmcoco' in self.args.dataset:
+        elif not self.args.is_upsample_LR:
             if self.two_ds:
-                return {'feat_l':data_l[..., 0:n],'feat_lU':data_l[..., (n + 2):2 * n + 2]}, data_l[..., n:n+2]
+                return {'feat_l':data_l[..., 0:n],'feat_lU':data_l[..., (n + n_c):2 * n + n_c]}, data_l[..., n:n+n_c]
             else:
-                return data_l[..., 0:n], data_l[...,n:n+2]
+                return data_l[..., 0:n], data_l[...,n:n+n_c]
         else:
 
             if not self.two_ds:
                 if self.is_HR_labels:
                     return {'feat_l': data_l,
-                            'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -1], axis=-1)
+                            'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -n_c:], axis=-1)
                 else:
                     return {'feat_l': data_l[..., 0:n],
-                            'feat_h': data_h}, tf.expand_dims(data_l[..., -1], axis=-1)
+                            'feat_h': data_h}, tf.expand_dims(data_l[..., -n_c], axis=-1)
             else:
+                assert n_c == 1, 'not implemented for more classes'
                 if self.is_HR_labels:
                     return {'feat_l': data_l[..., :n],
                             'feat_h': data_h[..., 0:3],
