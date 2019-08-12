@@ -95,7 +95,7 @@ class DataReader(object):
         self.gsd = str(10.0 / self.scale)
 
         self.is_upsample = self.args.is_upsample_LR
-        if "HR_file" in self.args:
+        if "HR_file" in self.args and not self.args.HR_file is None:
             self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
         else:
             self.args.HR_file = None
@@ -309,7 +309,7 @@ class DataReader(object):
                 self.val_h.append(val_h)
                 self.labels_val.append(labels_val)
                 self.lims_labels_val.append(lim_labels_val)
-        self.val_info = compress(self.args.val,is_valid)
+        self.val_info = list(compress(self.args.val,is_valid))
         self.val_tilenames = [x['tilename'] for x in self.val_info]
 
         # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
@@ -431,13 +431,15 @@ class DataReader(object):
 
             test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, upsample_lr=self.is_upsample, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
             is_valid.append(test is not None)
-            test[test[..., -1] > 50] = np.nan
             if is_valid[-1]:
+                test[test[..., -1] > 50] = np.nan
+
                 self.test.append(test)
                 self.test_h.append(test_h)
                 self.labels_test.append(labels_test)
                 self.lims_labels_test.append(lim_labels_test)
-        self.test_info = compress(self.args.test,is_valid)
+        self.test_info = list(compress(self.args.test,is_valid))
+        assert len(self.test_info) > 0, 'no valid datasets were left'
         self.test_tilenames = [x['tilename'] for x in self.test_info]
 
         scale = self.scale
@@ -448,7 +450,12 @@ class DataReader(object):
                     self.test_h[i_], self.test[i_], self.labels_test[i_], scale, type='Test', is_hr_lab=self.is_HR_labels)
 
         if not hasattr(self,'n_classes'):
-            self.n_classes = self.labels_test[0].shape[-1] if self.labels_test is not None else 1
+            if self.labels_test[0] is not None:
+                self.n_classes = self.labels_test[0].shape[-1]
+            elif 'palmcoco' in self.args.model_dir:
+                self.n_classes = 2
+            else:
+                self.n_classes = 1
         self.n_channels = self.test[0].shape[-1]
 
         if self.args.save_arrays:
@@ -740,6 +747,18 @@ class DataReader(object):
         multiplier = 2 if self.two_ds else 1
         self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset or 'palmcoco' in self.args.dataset else 1
         n_lab = self.n_channels_lab
+        if 'test' in type and self.labels_test[0] is None:
+            ds = tf.data.Dataset.from_generator(
+                gen_func, tf.float32,
+                tf.TensorShape([patch_l, patch_l, self.n_channels]))
+            if batch is None:
+                batch = self.args.batch_size
+            normalize = lambda x: (x - self.mean_train) / self.std_train
+            ds = ds.batch(batch).map(normalize, num_parallel_calls=6)
+
+            ds = ds.prefetch(buffer_size=batch * 2)
+            return ds
+
         if self.is_HR_labels:
             n_low = self.n_channels * multiplier
             n_high = (3 + n_lab) * multiplier

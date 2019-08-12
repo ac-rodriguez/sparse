@@ -38,7 +38,12 @@ class Model:
         self.max_output_img = 1
         self.model = self.args.model
         self.two_ds = True
-        self.n_classes = 2 if 'palmcoco' in self.args.dataset else 1
+        self.n_classes = 1
+        if 'palmcoco' in self.args.dataset:
+            self.n_classes = 2
+        elif hasattr(self.args,'save_dir'):
+            if 'palmcoco' in self.args.model_dir:
+                self.n_classes = 2
 
         self.hr_emb = False
         self.add_yhath = False
@@ -160,7 +165,7 @@ class Model:
                 earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             self.y_hat, mid, latel = simple(earlyl, n_classes=self.n_classes, is_training=self.is_training,
                                             return_feat=True)
-            if self.is_semi:
+            if self.is_semi and self.is_training:
                 earlylU = self.feat_lU
                 if self.model == 'simpleA':
                     earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)

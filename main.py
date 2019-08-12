@@ -14,6 +14,7 @@ import plots
 
 from data_config import get_dataset
 import tools_tf as tools
+from predict_and_recompose import predict_and_recompose_individual,predict_and_recompose
 # colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
@@ -303,7 +304,7 @@ def main(unused_args):
                 print (f'New best at epoch {epoch_}, {metric_}:{metrics[metric_]} from {best}')
                 best = metrics[metric_]
                 input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
-                tools.predict_and_recompose(model,reader,input_fn_val_comp, reader.single_gen_val,is_hr_pred,args.batch_size_eval,'val',
+                predict_and_recompose(model,reader,input_fn_val_comp, reader.single_gen_val,is_hr_pred,args.batch_size_eval,'val',
                                             prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0), m=metrics)
 
             else:
@@ -337,7 +338,7 @@ def main(unused_args):
         #     pass
         input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
 
-        tools.predict_and_recompose(model, reader, input_fn_val_comp, reader.single_gen_val,
+        predict_and_recompose(model, reader, input_fn_val_comp, reader.single_gen_val,
                                     is_hr_pred, args.batch_size_eval,'val',
                                     is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                     chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
@@ -352,7 +353,7 @@ def main(unused_args):
         reader = DataReader(args, is_training=False)
     input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
 
-    tools.predict_and_recompose(model, reader, input_fn_test_comp, reader.single_gen_test,
+    predict_and_recompose_individual(model, reader, input_fn_test_comp, reader.single_gen_test,
                                 is_hr_pred, args.batch_size_eval,'test',
                                 is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
                                 chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))

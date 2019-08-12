@@ -2,6 +2,7 @@ import numpy as np
 import os
 import argparse
 import sys
+import glob
 import shutil
 import tensorflow as tf
 
@@ -15,6 +16,7 @@ import plots
 import patches
 from data_config import get_dataset
 import tools_tf as tools
+from predict_and_recompose import predict_and_recompose_individual
 import gdal_processing as gp
 # colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 # HRFILE='/home/pf/pfstaff/projects/andresro/sparse/data/coco'
@@ -147,86 +149,47 @@ args = parser.parse_args()
 
 
 def main(unused_args):
-    # if args.is_train:
-    #     d = get_dataset(args.dataset)
-    # else:
-    #     d = get_dataset(args.dataset, is_mounted=args.is_mounted)
-    #
-    # args.__dict__.update(d)
-    # if 'SR' in args.model: args.tag = '_Lsr{:.1f}'.format(args.lambda_sr) + args.tag
-    # if args.sq_kernel <= 0: args.sq_kernel = None
-    #
-    # if args.sq_kernel is not None: args.tag = '_sq{}'.format(args.sq_kernel) + args.tag
-    # # if args.is_hr_label:
+
     if ('HR' in args.model or 'SR' in args.model or 'DA_h' in args.model or 'B_h' in args.model) and \
             not '_l' in args.model and not args.is_fake_hr_label:
         args.is_hr_label = True
-    #     args.tag = '_hrlab' + args.tag
     else:
         args.is_hr_label = False
-    # if args.is_fake_hr_label: args.tag = '_fakehrlab' + args.tag
-    # if args.is_hr_pred: args.tag = '_hrpred' + args.tag
-    # if args.is_noS2: args.tag = '_noS2' + args.tag
-    # if args.is_same_volume: args.tag = '_samevol' + args.tag
-    # assert not (args.is_fake_hr_label and args.is_hr_label)
-    # if args.semi is not None: args.tag = '_'+args.semi + args.tag
-    # if args.domain == 'None' or args.domain == 'none': args.domain = None
-    # if args.domain is not None: args.tag = '_'+args.domain + args.tag
-    # if args.degraded_hr: args.tag = '_degHR' + args.tag
-    # if args.distill_from is not None: args.tag = '_distilled' + args.tag
-    #
-    # if args.is_lower_bound:
-    #     print(' [!] Train ROI changed from {} to {}\n computing lower bound.'.format(args.roi_lon_lat_tr,
-    #                                                                                  args.roi_lon_lat_tr_lb))
-    #     args.roi_lon_lat_tr = args.roi_lon_lat_tr_lb
-    #     args.tag = 'LOWER' + args.tag
-    #
-    # if args.roi_lon_lat_tr_lb == 'all':
-    #     args.roi_lon_lat_tr_lb = args.roi_lon_lat_tr
-    #     args.tag = 'allGT' + args.tag
-    #
-    # if args.HR_file == 'None' or args.HR_file == 'none': args.HR_file = None
-    # if args.patch_size_eval is None: args.patch_size_eval = args.patch_size
-    # if args.batch_size_eval is None: args.batch_size_eval = args.batch_size
-    # if args.lambda_reg == 0.0:
-    #     args.save_dir = args.save_dir+'_sem'
-    # elif args.lambda_reg == 1.0:
-    #     args.save_dir = args.save_dir + '_reg'
-    #
-    # lambdas = 'Lr{:.1f}_Lw{:.4f}'.format(args.lambda_reg, args.lambda_weights)
-    # model_dir = os.path.join(args.save_dir, '{}/PATCH{}_{}_SCALE{}_{}{}'.format(
-    #     args.model, args.patch_size, args.patch_size_eval, args.scale, lambdas, args.tag))
-    #
-    foldername = (args.data_dir.split('.SAFE')[0]+'.SAFE').split('/')[-1]
+
+    args.is_upsample_LR = False
+
+    if '*' in args.data_dir:
+        foldername = '_'.join(args.data_dir.split('*')[-2:])
+        data_dir = glob.glob(args.data_dir)[:10]
+    else:
+        foldername = (args.data_dir.split('.SAFE')[0]+'.SAFE').split('/')[-1]
+        data_dir = [args.data_dir]
 
     if args.tag is None:
         args.tag = ""
         # args.save_dir = args.save_dir +'_' + args.tag
     model_dir = os.path.join(args.save_dir,args.tag, foldername, '')
 
-    # if args.is_overwrite and os.path.exists(model_dir):
-    #     print(' [!] Removing exsiting model and starting training from iter 0...')
-    #     shutil.rmtree(model_dir, ignore_errors=True)
-    # elif not args.is_restore and args.is_train:
-    #     model_dir = add_letter_path(model_dir, timestamp=False)
 
     if '.ckpt' in args.model_weights:
         ckpt = args.model_weights
     else:
         ckpt = tools.get_last_best_ckpt(args.model_weights, folder='best/*')
-    # args.ckpt = ckpt
-    # if not args.is_overwrite_pred:
-    #     assert not os.path.isfile(os.path.join(model_dir,'test_sem_pred.png')), 'predictions exist'
-    #     assert not os.path.isfile(os.path.join(model_dir,'test_reg_pred.png')), 'predictions exist'
 
-    if not os.path.exists(model_dir): os.makedirs(model_dir)
+    if not os.path.exists(model_dir):
+        os.makedirs(model_dir)
+    elif os.path.exists(model_dir+'/preds_reg.tif') and not args.is_overwrite_pred:
+        print('preds_reg.tif already exists')
+        sys.exit(0)
 
-    args.test = [{
-            'lr': args.data_dir,
+    test_dsets = [{
+            'lr': x,
             'hr': None,
             'gt': None,
             'roi': args.roi_lon_lat_test,
-            'roi_lb': None}]
+            'tilename':foldername, # only one for now
+            'roi_lb': None} for x in data_dir]
+
     args.tr = []
     args.val = []
     args.model_dir = model_dir
@@ -246,26 +209,6 @@ def main(unused_args):
         run_config = tf.estimator.RunConfig(log_step_count_steps=log_steps)
     best_ckpt = True
 
-    # if args.warm_start_from is not None:
-    #     if args.warm_start_from == 'LOWER':
-    #         assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
-    #         warm_dir = model_dir.replace(lambdas,lambdas+'LOWER')
-    #     else:
-    #         warm_dir = os.path.join(args.save_dir,args.warm_start_from)
-    #         if not os.path.isdir(warm_dir):
-    #             warm_dir = args.warm_start_from
-    #         if best_ckpt:
-    #             warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
-    #
-    #     warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=["encode.*","countception.*"]) #,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
-    # elif args.distill_from is not None:
-    #     warm_dir = args.distill_from
-    #     if best_ckpt:
-    #         warm_dir = tools.get_last_best_ckpt(args.distill_from, 'best/*')
-    #
-    #     warm_dir = tf.estimator.WarmStartSettings(warm_dir, vars_to_warm_start=["encode.*", "countception.*"]) #,"teacher[^/]"])
-    # else:
-    #     warm_dir = None
     Model_fn = Model(params)
     model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
                                    model_dir=model_dir, config=run_config)
@@ -273,16 +216,22 @@ def main(unused_args):
 
     tf.logging.set_verbosity(tf.logging.INFO)  # Show training logs.
 
-    reader = DataReader(args, is_training=False)
+    for test_ in test_dsets:
+        print('processing',test_)
+        args.test = [test_]
+        try:
+            reader = DataReader(args, is_training=False)
+        except AssertionError:
+            reader = None
 
-    pred_r, pred_c = tools.predict_and_recompose(model, reader, reader.get_input_test, reader.patch_gen_test, is_hr_pred, args.batch_size_eval,
-                                'test', is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-                                chkpt_path=ckpt, return_array=True)
+        if reader is not None:
+            input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
 
-    refDataset = gp.get_jp2(args.data_dir,'B03',res=10)
-    gp.rasterize_numpy(pred_r,refDataset,filename=model_dir+'/preds_reg.tif',type='float32')
-    gp.rasterize_numpy(pred_c,refDataset,filename=model_dir+'/preds_class.tif')
-    # np.save('{}/test_label'.format(model_dir), reader.labels_test)
+            predict_and_recompose_individual(model, reader, input_fn_test_comp, reader.single_gen_test,
+                            is_hr_pred, args.batch_size_eval,'test',
+                            is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+                            chkpt_path=ckpt,return_array=False)
+
 
 if __name__ == '__main__':
     tf.app.run()

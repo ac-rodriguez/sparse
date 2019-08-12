@@ -4,6 +4,7 @@ import argparse
 import simplekml
 import shapely
 from functools import partial
+import tarfile
 import pyproj
 import glob
 
@@ -13,14 +14,22 @@ parser = argparse.ArgumentParser(description="Partial Supervision",
 
 
 parser.add_argument("--dataset", default='palm')
-# class Bunch(object):
-#   def __init__(self, adict):
-#     self.__dict__.update(adict)
+
 def parse_filelist(PATH,tilename, top_10_list, loc):
+
+    filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE')
+
+    if len(filelist) < 10:
+        # TODO extract only the ones missing
+        filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*{tilename}*.tar')
+        print('extracting SAFE from tar files')
+        for file in filelist:
+            tar = tarfile.open(file)
+            tar.extractall(path=PATH+f'/barry_palm/data/2A/{loc}/')
+            tar.close()
 
     filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE/MTD_MSIL2A.xml')
 
-    # top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/phillipines_2017/Phillipines_all_1840.txt'
 
     lines = [line.rstrip('\n') for line in open(top_10_list)]
     lines = [x.replace('_MSIL1C_', '_MSIL2A_') + '.SAFE' for x in lines]
@@ -41,6 +50,8 @@ def get_dataset(DATASET, is_mounted = False):
     dset_config['test'] = []
     dset_config['is_upsample_LR'] = True # if needed
     def add_datasets(files,gtfile, roi_,roi_val_,roi_test_,tilename_=''):
+        if not isinstance(files,list):
+            files = [files]
         for file_ in files:
 
             dset_config['tr'].append({
@@ -150,6 +161,7 @@ def get_dataset(DATASET, is_mounted = False):
         rois = ['117.86,8.82,117.92,8.9']
         rois_val = ['117.84,8.82,117.86,8.88']
         rois_test = ['117.81,8.82,117.84,8.88']
+        # rois_test = ['117.4,8.4,118.0,9.0']
         tilenames = ['T50PNQ']
 
         tilename = tilenames[0]
@@ -167,34 +179,30 @@ def get_dataset(DATASET, is_mounted = False):
         add_datasets(files=filelist, gtfile=GT, roi_=roi, roi_val_=roi_val, roi_test_=roi_test, tilename_=tilename)
 
     elif "coco" in DATASET:
+        tilename = 'R046_T50PNQ'
         OBJECT='coco'
         dset_config['tr'].append({
             'lr': PATH + '/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml',
             'hr': os.path.join(PATH, 'sparse/data', OBJECT),
             'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
-            'roi': '117.86,8.82,117.92,8.9'})
+            'roi': '117.86,8.82,117.92,8.9',
+            'tilename':tilename})
 
         dset_config['val'].append({
             'lr': PATH + '/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml',
             'hr': os.path.join(PATH, 'sparse/data', OBJECT),
             'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
             'roi': '117.84,8.82,117.86,8.88',
-            'roi_lb': '117.84,8.82,117.86,8.88'})
+            'roi_lb': '117.84,8.82,117.86,8.88',
+            'tilename': tilename})
 
         dset_config['test'].append({
             'lr': PATH + '/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml',
             'hr': os.path.join(PATH, 'sparse/data', OBJECT),
             'gt': PATH + '/barry_palm/data/labels/coco/points_detections.kml',
             'roi': '117.81,8.82,117.84,8.88',
-            'roi_lb': '117.81,8.82,117.84,8.88'})
-        # dset_config['LR_file']=PATH+'/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
-        # dset_config['points']=PATH+'/barry_palm/data/labels/coco/points_detections.kml'
-        # dset_config['roi_lon_lat_tr'] = '117.86,8.82,117.92,8.9'
-        # dset_config['roi_lon_lat_val'] = '117.84,8.82,117.86,8.88'
-        # dset_config['roi_lon_lat_test'] = '117.81,8.82,117.84,8.88'
-
-        # if DATASET == "coco0.3": # 2K
-        #     dset_config['roi_lon_lat_tr_lb']='117.885,8.867,117.89,8.874'
+            'roi_lb': '117.81,8.82,117.84,8.88',
+            'tilename': tilename})
 
         if DATASET == "coco2a": # 8.5k
             dset_config['tr'][0]['roi_lb']='117.88,8.88,117.891,8.895'
@@ -220,19 +228,6 @@ def get_dataset(DATASET, is_mounted = False):
         dset_config['tr'][0]['roi'] = dset_config['tr'][0]['roi_lb']
     elif "palmsocb" in DATASET:
         OBJECT='palm'
-        # dset_config['LR_file']=PATH+'/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE'+ \
-        #                        ';'+PATH+'/barry_palm/data/2A/socb_2018/S2A_MSIL2A_20180428T104021_N0206_R008_T29NQF_20180428T155845.SAFE'
-        #
-        # dset_config['points']=PATH+'/barry_palm/data/labels/palm/kml_geoproposals'+ \
-        #                       ";"+PATH+'/barry_palm/data/labels/socb/palm_density.shp'
-        #
-        # dset_config['roi_lon_lat_tr'] = '101.45,0.48,101.62,0.52' + \
-        #                                 ';-7.2,4.5,-7.1,4.58'
-        # # ";-7.19,4.5870,-7.47,4.54"
-        # dset_config['roi_lon_lat_val'] = '101.45,0.52,101.62,0.53'+ ';-7.2,4.58,-7.1,4.65'
-        # dset_config['roi_lon_lat_test'] = '101.45,0.53,101.62,0.55'+ ""
-        # dset_config['roi_lon_lat_tr_lb'] = '101.45,0.48,101.62,0.53'+ \
-        #                                 ";-7.2,4.5,-7.1,4.58"
 
         dset_config['tr'].append({
             'lr': PATH + '/barry_palm/data/2A/palm_2017a/S2A_MSIL2A_20170921T032531_N0205_R018_T47NQA_20170921T034446.SAFE',

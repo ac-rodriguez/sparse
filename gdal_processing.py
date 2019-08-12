@@ -328,6 +328,8 @@ def getrefDataset(refds,is_use_gtiff =False):
     return  tenMsets[0][0]
 
 def get_jp2(path, band, res=10):
+    if path.endswith('.xml'):
+        path = os.path.dirname(path)
     if band == 'CLD':
         cld = glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2") + glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLDPRB_{res}m.jp2")
         return cld[0]
@@ -335,10 +337,16 @@ def get_jp2(path, band, res=10):
         return glob.glob(f"{path}/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")[0]
 
 
-def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte):
+def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte, roi_lon_lat = None):
     if type == 'float32':
         type = gdal.GDT_Float32
     Image = gdal.Open(refDataset)
+    if roi_lon_lat:
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = split_roi_string(roi_lon_lat)
+        xmin, ymin, xmax, ymax = to_xy_box((roi_lon1, roi_lat1, roi_lon2, roi_lat2), Image, enlarge=1)
+    else:
+        xmin, ymin = 0, 0
+        xmax, ymax = Image.RasterXSize - 1, Image.RasterYSize - 1
 
     if len(Input.shape) == 2:
         Input = np.expand_dims(Input, axis = 2)
@@ -346,16 +354,18 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
     nbands = Input.shape[-1]
 
     options = ['alpha=yes']
-    target_ds = gdal.GetDriverByName('GTiff').Create(filename, Image.RasterXSize, Image.RasterYSize, nbands, type, options=options)
+    target_ds = gdal.GetDriverByName('GTiff').Create(filename, xmax - xmin + 1, ymax - ymin + 1, nbands, type, options=options)
 
-    target_ds.SetGeoTransform(Image.GetGeoTransform())
+    ox, pw, a, oy,b, ph = Image.GetGeoTransform()
+    ox = xmin *pw + ox
+    oy = ymin *ph + oy
+    target_ds.SetGeoTransform((ox, pw, a, oy,b, ph))
     target_ds.SetProjection(Image.GetProjectionRef())
 
     for i in range(nbands):
         band = target_ds.GetRasterBand(i+1)
-
         band.WriteArray(Input[...,i], 0, 0)
-
+    target_ds.FlushCache()
     target_ds = None
 
     print('{} saved!'.format(filename))
