@@ -15,18 +15,29 @@ parser = argparse.ArgumentParser(description="Partial Supervision",
 
 parser.add_argument("--dataset", default='palm')
 
+def untar(file_pattern, save_dir=None):
+    if save_dir is None:
+        save_dir = os.path.dirname(file_pattern)
+    if file_pattern.endswith('.SAFE'):
+        file_pattern = file_pattern.replace('.SAFE','.tar')
+    elif not file_pattern.endswith('.tar'):
+        raise ValueError('wrong file name',file_pattern)
+    # TODO extract only the ones missing
+    filelist = glob.glob(file_pattern)
+    print('extracting SAFE from tar files')
+    for file in filelist:
+        tar = tarfile.open(file)
+        tar.extractall(path=save_dir)
+        tar.close()
+
 def parse_filelist(PATH,tilename, top_10_list, loc):
 
     filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE')
 
     if len(filelist) < 10:
         # TODO extract only the ones missing
-        filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*{tilename}*.tar')
-        print('extracting SAFE from tar files')
-        for file in filelist:
-            tar = tarfile.open(file)
-            tar.extractall(path=PATH+f'/barry_palm/data/2A/{loc}/')
-            tar.close()
+        file_pattern = PATH + f'/barry_palm/data/2A/{loc}/*{tilename}*.tar'
+        untar(file_pattern,save_dir=PATH+f'/barry_palm/data/2A/{loc}/')
 
     filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE/MTD_MSIL2A.xml')
 

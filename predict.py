@@ -17,6 +17,7 @@ import patches
 from data_config import get_dataset
 import tools_tf as tools
 from predict_and_recompose import predict_and_recompose_individual
+from data_config import untar
 import gdal_processing as gp
 # colormax = {2: 0.93, 4: 0.155, 8: 0.04}
 # HRFILE='/home/pf/pfstaff/projects/andresro/sparse/data/coco'
@@ -161,6 +162,10 @@ def main(unused_args):
     if '*' in args.data_dir:
         foldername = '_'.join(args.data_dir.split('*')[-2:])
         data_dir = glob.glob(args.data_dir)[:10]
+        if len(data_dir) < 10:
+            untar(file_pattern=args.data_dir)
+        data_dir = glob.glob(args.data_dir)[:10]
+
     else:
         foldername = (args.data_dir.split('.SAFE')[0]+'.SAFE').split('/')[-1]
         data_dir = [args.data_dir]
