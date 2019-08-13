@@ -168,6 +168,8 @@ def main(unused_args):
 
     else:
         foldername = (args.data_dir.split('.SAFE')[0]+'.SAFE').split('/')[-1]
+        foldername = foldername.split('_')[4:6]
+        foldername = '_'.join(foldername)
         data_dir = [args.data_dir]
 
     if args.tag is None:

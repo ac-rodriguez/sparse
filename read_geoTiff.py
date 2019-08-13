@@ -163,6 +163,26 @@ def readS2(args, roi_lon_lat, data_file =None):
         if dsBANDS[band_id] is None:
             raise ValueError(' [!] Band {} is not avaliable'.format(band_id))
 
+    ## Load 20m bands
+    for band_name in select_bands20:
+        Btemp = dsBANDS[band_name].ReadAsArray(xoff=xmin // 2, yoff=ymin // 2, xsize=(xmax - xmin + 1) // 2,
+                                               ysize=(ymax - ymin + 1) // 2,
+                                               buf_xsize=(xmax - xmin + 1) // 2, buf_ysize=(ymax - ymin + 1) // 2)
+        if band_name == 'CLD':
+            # cloud_free_pixels = np.less(Btemp, cloud_threshold)
+            if np.mean(Btemp > 50) > 0.5:
+                print(' [!] Dataset with P_cloud > 0.5 in more than 50% of the pixels, skipping it...')
+                return None, None
+
+
+        data20 = np.dstack((data20, Btemp)) if data20 is not None else Btemp
+
+    print("Selected 10m bands: {}".format(select_bands10))
+    print("Selected 20m bands: {}".format(select_bands20))
+
+
+    if len(data20.shape) == 2:
+        data20 = np.expand_dims(data20, axis=2)
 
     ## Load 10m bands
     for band_name in select_bands10:
@@ -182,22 +202,6 @@ def readS2(args, roi_lon_lat, data_file =None):
         print(' [!] The selected image has some blank pixels')
         # sys.exit()
 
-    ## Load 20m bands
-    for band_name in select_bands20:
-        Btemp = dsBANDS[band_name].ReadAsArray(xoff=xmin // 2, yoff=ymin // 2, xsize=(xmax - xmin + 1) // 2, ysize=(ymax - ymin + 1) // 2,
-                             buf_xsize=(xmax - xmin + 1) // 2, buf_ysize=(ymax - ymin + 1) // 2)
-        data20 = np.dstack((data20, Btemp)) if data20 is not None else Btemp
-
-    print("Selected 10m bands: {}".format(select_bands10))
-    print("Selected 20m bands: {}".format(select_bands20))
-    cloud_threshold = 90
-    cloud_free_pixels = np.logical_and.reduce(np.less(data20[..., -1], cloud_threshold))
-    if np.sum(cloud_free_pixels) == 0:
-        print(' [!] Dataset with only cloudy pixels, skipping it...')
-        return None, None
-
-    if len(data20.shape) == 2:
-        data20 = np.expand_dims(data20, axis = 2)
 
     return data10.astype(np.float32), data20.astype(np.float32)
     # patches.save_numpy(data10, data20, labels, select_bands10, select_bands20, args, folder, view, filename='data', points = points)
