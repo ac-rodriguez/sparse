@@ -58,6 +58,11 @@ parser.add_argument("--is-hr-pred", default=False, action="store_true",
                     help="predict and eval in hr")
 parser.add_argument("--train-patches", default=5000, type=int,
                     help="Number of random patches extracted from train area")
+parser.add_argument("--is-total-patches-datasets",default=False, action="store_true",
+                    help="distribute N train patches over datasets according to size")
+
+
+
 parser.add_argument("--patches-with-labels", default=0.5, type=float, help="Percent of patches with labels")
 parser.add_argument("--val-patches", default=2000, type=int, help="Number of random patches extracted from train area")
 parser.add_argument("--numpy-seed", default=None, type=int, help="Random seed for random patches extraction")

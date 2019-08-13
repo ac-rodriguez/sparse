@@ -115,11 +115,14 @@ class DataReader(object):
             self.n_channels = self.train[0].shape[-1]
             d2_after = self.args.unlabeled_after * self.batch_tr
             self.single_gen = []
-            pixels_ = [x.shape[0]*x.shape[1] for x in self.train]
-            train_patches = [args.train_patches*x // np.sum(pixels_) for x in pixels_]
+            if not args.is_total_patches_datasets:
+                train_patches = [args.train_patches] * len(self.train)
+            else:
+                pixels_ = [x.shape[0] * x.shape[1] for x in self.train]
+                train_patches = [args.train_patches*x // np.sum(pixels_) for x in pixels_]
 
-            # Adding rounding down patches left out in the first dataset
-            train_patches[0] = train_patches[0] + args.train_patches - np.sum(train_patches)
+                # Adding rounding down patches left out in the first dataset
+                train_patches[0] = train_patches[0] + args.train_patches - np.sum(train_patches)
 
             for id_ in range(len(self.train)):
                 self.single_gen.append(

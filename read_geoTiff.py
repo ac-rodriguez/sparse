@@ -169,9 +169,9 @@ def readS2(args, roi_lon_lat, data_file =None):
                                                ysize=(ymax - ymin + 1) // 2,
                                                buf_xsize=(xmax - xmin + 1) // 2, buf_ysize=(ymax - ymin + 1) // 2)
         if band_name == 'CLD':
-            # cloud_free_pixels = np.less(Btemp, cloud_threshold)
-            if np.mean(Btemp > 50) > 0.5:
-                print(' [!] Dataset with P_cloud > 0.5 in more than 50% of the pixels, skipping it...')
+            cloudy = np.mean(Btemp > 50)
+            if cloudy > 0.5:
+                print(f' [!] Dataset with P_cloud > 0.5 in {cloudy*100:.2f}% of the pixels, skipping it...')
                 return None, None
 
 
