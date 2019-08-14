@@ -76,7 +76,7 @@ def get_dataset(DATASET, is_mounted=False):
                     'roi_lb': roi_,
                     'tilename': tilename_})
             else:
-                print(f'dataset for {datatype} in tile {tilename} does not intersect with roi {roi_}, skipping it')
+                print(f'dataset for {datatype} in tile {tilename_} does not intersect with roi {roi_}, skipping it')
     def add_datasets_intile(tilenames,rois_train, rois_val,rois_test, GT, loc,top_10_list):
         for tilename in tilenames:
             filelist = parse_filelist(PATH, tilename, top_10_list, loc=loc)
@@ -104,10 +104,10 @@ def get_dataset(DATASET, is_mounted=False):
         dset_config['is_upsample_LR'] = False
         # PALM DATA
 
-        rois_train = ['101.45,0.48,101.62,0.53']  # was 0.52
+        rois_train = ['101.45,0.48,101.62,0.53','100.95,0.15,101.0,0.2', '101.05,-0.3,101.1,-0.25']  # was 0.52
         rois_val = ['101.45,0.52,101.62,0.53']
         rois_test = ['101.45,0.53,101.62,0.55']
-        tilenames = ['R018_T47NQA']
+        tilenames = ['R018_T47NQA','R018_T47MQV']
 
         GT = PATH + '/barry_palm/data/labels/palm/kml_geoproposals'
 
