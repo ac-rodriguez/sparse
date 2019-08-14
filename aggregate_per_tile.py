@@ -15,8 +15,22 @@ parser.add_argument("data_dir", type=str, default="",
 parser.add_argument("--save_dir", default=None)
 parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="overwrite predictions already in folder")
+parser.add_argument("--is-avgprobs", default=False, action="store_true",
+                    help="if true: average probabilities and then compute argmax, else mayority voting of classes")
+
 args = parser.parse_args()
 
+
+def nanargmax(data, nanclass=99):
+    # nanargmax does not handle properly pixels with all Nan values
+    mask = np.isnan(data)
+    mask = np.all(mask, axis=-1)
+
+    data[mask] = -np.inf
+
+    classes = np.nanargmax(data, axis=-1)
+    classes[mask] = nanclass
+    return classes
 
 if args.save_dir is None:
     args.save_dir = os.path.dirname(args.data_dir)
@@ -45,9 +59,17 @@ if not os.path.isfile(reg_filename) or args.is_overwrite:
 
 
 classprob_filename = f'{args.save_dir}/{tilename}_preds_classprob.tif'
+is_compute_class = not os.path.isfile(classprob_filename) or args.is_overwrite
+
 sem_filename = f'{args.save_dir}/{tilename}_preds_sem.tif'
 
-if not os.path.isfile(sem_filename) or not os.path.isfile(classprob_filename) or args.is_overwrite :
+if args.is_avgprobs:
+    sem_filename = sem_filename.replace('sem.tif','semA.tif')
+    is_compute_class = False
+
+is_compute_sem = not os.path.isfile(sem_filename) or args.is_overwrite
+
+if is_compute_class or is_compute_sem:
     sem_dirs = glob.glob(args.data_dir + '/*preds_classprob.tif')
 
     arrays = []
@@ -59,23 +81,26 @@ if not os.path.isfile(sem_filename) or not os.path.isfile(classprob_filename) or
         data_ = np.stack(data_, axis=-1)
         arrays.append(data_)
 
-    arrays = np.stack(arrays, axis=-1)
-    print('computing median value')
-    arrays = np.nanmedian(arrays, axis=-1)
+    if args.is_avgprobs:
+        arrays = np.stack(arrays, axis=-1)
+        print('computing median value of probs and then argmax')
+        arrays = np.nanmedian(arrays, axis=-1)
 
-    if not os.path.isfile(classprob_filename) or args.is_overwrite:
+        if is_compute_class:
+            gp.rasterize_numpy(arrays, sem_dirs[0], filename=classprob_filename, type='float32')
 
-        gp.rasterize_numpy(arrays, sem_dirs[0], filename=classprob_filename, type='float32')
+        if is_compute_sem:
+            arrays = nanargmax(arrays)
+            gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
+    else:
+        print('computing argmax and then majority voting')
+        arrays = [nanargmax(x) for x in arrays]
+        arrays = np.stack(arrays,axis=-1)
+        arrays = np.percentile(arrays, 50, axis=-1, interpolation='nearest')
 
-    if not os.path.isfile(sem_filename) or args.is_overwrite:
+        gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
 
-        # nanargmax does not handle properly pixels with all Nan values
-        mask = np.isnan(arrays)
-        mask = np.all(mask,axis=-1)
 
-        arrays[mask] = -np.inf
 
-        classes = np.nanargmax(arrays, axis=-1)
-        classes[mask] = 99
-        gp.rasterize_numpy(classes, sem_dirs[0], filename=sem_filename)
+
 
