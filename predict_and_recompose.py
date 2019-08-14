@@ -127,20 +127,29 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
                 val_data = list(compress(ref_data,index))
                 for i_, reg_ in enumerate(reg):
                     reg_[np.isnan(val_data[i_][..., -1])] = np.nan
-                reg = np.stack(reg, axis=-1)
-                reg = np.nanmedian(reg, axis=-1)
-                for i in range(reg.shape[-1]):
-                    plt_reg(reg[...,i], '{}/{}_reg_pred{}_class{}'.format(save_dir, type_,tile,i))
+
+                shapes = set([x.shape for x in reg])
+                for i, s in enumerate(shapes):
+                    reg_sameshape = [x for x in reg if s == x.shape]
+
+                    reg_sameshape = np.stack(reg_sameshape, axis=-1)
+                    reg_sameshape = np.nanmedian(reg_sameshape, axis=-1)
+                    for j in range(reg_sameshape.shape[-1]):
+                        plt_reg(reg_sameshape[...,j], f'{save_dir}/{type_}_reg_pred{tile}_class{j}_{i}')
             if is_sem:
                 sem = list(compress(predictions['sem'], index))
                 val_data = list(compress(ref_data, index))
                 for i_, sem_ in enumerate(sem):
                     sem_[np.isnan(val_data[i_][..., -1])] = np.nan
-                sem = np.stack(sem, axis=-1)
-                sem = np.nanmedian(sem, axis=-1)
+                shapes = set([x.shape for x in sem])
+                for i, s in enumerate(shapes):
+                    sem_sameshape = [x for x in sem if s == x.shape]
 
-                np.save('{}/{}_sem_pred{}'.format(save_dir, type_, tile), sem)
-                plots.plot_labels(sem, '{}/{}_sem_pred{}'.format(save_dir, type_,tile))
+                    sem_sameshape = np.stack(sem_sameshape, axis=-1)
+                    sem_sameshape = np.nanmedian(sem_sameshape, axis=-1)
+
+                    np.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}',sem_sameshape)
+                    plots.plot_labels(sem_sameshape, f'{save_dir}/{type_}_sem_pred{tile}_{i}')
 
     else:
         print('saving as individual files')

@@ -207,19 +207,22 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
 
     mask = np.where(mask > threshold, mask,mask_bool)
     z = float(np.sum(mask>-1))
-    print(' Total points: {} (after smoothing and downscaling)'.format(np.sum(mask[mask>-1])))
-    print(' Density Distribution: p'+str([0,1,25,5,75,99,100]))
-    print(np.percentile(mask[mask>0],q=(0,1,25,5,75,99,100)))
-    print(' Class Distribution: \n\t1:{:.4f} \n\t0:{:.4f} '.format(np.sum(mask>0)/z, np.sum(mask==0)/z))
+    total_points = np.sum(mask[mask>-1])
+    print(' Total points: {} (after smoothing and downscaling)'.format(total_points))
+    if total_points > 0:
+        print(' Density Distribution: p'+str([0,1,25,5,75,99,100]))
+        print(np.percentile(mask[mask>0],q=(0,1,25,5,75,99,100)))
+        print(' Class Distribution: \n\t1:{:.4f} \n\t0:{:.4f} '.format(np.sum(mask>0)/z, np.sum(mask==0)/z))
 
     print('\n Distribution on LR space:')
     mask_ = block_reduce(mask, (16//up_scale, 16//up_scale), np.sum)
     z = float(np.sum(mask_ > -1))
-    print(' Total points: {}'.format(np.sum(mask_[mask_ > -1])))
-    print(' Density Distribution: p' + str([0, 1, 25, 5, 75, 99, 100]))
-    print(np.percentile(mask_[mask_ > 0], q=(0, 1, 25, 5, 75, 99, 100)))
-    print(' Class Distribution: \n\t1:{:.4f} \n\t0:{:.4f} '.format(np.sum(mask_ > 0) / z, np.sum(mask_ == 0) / z))
-
+    total_points_ = np.sum(mask_[mask_ > -1])
+    if total_points_ > 0 :
+        print(' Total points: {}'.format(total_points_))
+        print(' Density Distribution: p' + str([0, 1, 25, 5, 75, 99, 100]))
+        print(np.percentile(mask_[mask_ > 0], q=(0, 1, 25, 5, 75, 99, 100)))
+        print(' Class Distribution: \n\t1:{:.4f} \n\t0:{:.4f} '.format(np.sum(mask_ > 0) / z, np.sum(mask_ == 0) / z))
 
     print(' Masked pixels: {} / {} ({:.2f}%)'.format(np.sum(mask == -1),mask.shape[0]*mask.shape[1],100.* np.sum(mask == -1) /float(mask.shape[0]*mask.shape[1])))
     print('Image size: width={} x height={}'.format(mask.shape[1],mask.shape[0]))
@@ -588,7 +591,15 @@ def get_lonlat(ds, verbose= False):
 
 
 def roi_intersection(ds, geo_pts_ref, return_polygon = False):
+    if geo_pts_ref is None:
+        return True
     geo_pts = get_lonlat(ds)
+
+    if isinstance(geo_pts_ref,str) or isinstance(geo_pts_ref,tuple):
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = split_roi_string(geo_pts_ref)
+
+        geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
+
 
     p1 = Polygon(geo_pts)
     p2 = Polygon(geo_pts_ref)
@@ -611,7 +622,7 @@ def roi_intersection(ds, geo_pts_ref, return_polygon = False):
     if return_polygon:
         return p1.intersects(p2), geom_area
     else:
-        return p1.intersects(p2), None
+        return p1.intersects(p2)
 
 
 def enlarge_pixel(xmin, xmax, ref=6):

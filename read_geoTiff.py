@@ -112,14 +112,11 @@ def readS2(args, roi_lon_lat, data_file =None):
     dsREF = gdal.Open(dsREFfile)
 
     if roi_lon_lat:
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(roi_lon_lat)
 
-        xmin, ymin, xmax, ymax = gp.to_xy_box((roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF, enlarge=1)
-
-        geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
-
-        if not gp.roi_intersection(dsREF, geo_pts_ref):
-            raise ValueError(" [!] The ROI does not intersect with the data product")
+        if not gp.roi_intersection(dsREF, roi_lon_lat):
+            print(" [!] The ROI does not intersect with the data product, skipping it")
+            return None, None
+        xmin, ymin, xmax, ymax = gp.to_xy_box(roi_lon_lat, dsREF, enlarge=1)
 
     else:
         xmin, ymin = 0, 0

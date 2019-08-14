@@ -349,15 +349,18 @@ class DataReader(object):
                     val = list(compress(self.val, index))
                     lab_val = list(compress(self.labels_val, index))
 
-                    for j in range(self.n_classes):
-                        plt_reg(lab_val[0][..., j], self.args.model_dir + f'/val_reg_label{tile}_class{j}')
+                    shapes = set([x.shape for x in val])
+                    for i,s in enumerate(shapes):
+                        val_sameshape = [x for x in val if s == x.shape]
+                        val_sameshape = np.stack(val_sameshape, axis=-1)
+                        val_sameshape = np.nanmedian(val_sameshape, axis=-1)
+                        plots.plot_rgb(val_sameshape, file=self.args.model_dir + f'/val_LR_{tile}_{i}')
 
-                    val = np.stack(val, axis=-1)
-                    val = np.nanmedian(val, axis=-1)
-                    plots.plot_rgb(val, file=self.args.model_dir + f'/val_LR_{tile}')
-
-                    np.save(self.args.model_dir + f'/val_LR_{tile}', val)
-                    np.save(self.args.model_dir + f'/val_reg_label_{tile}', lab_val[0])
+                        np.save(self.args.model_dir + f'/val_LR_{tile}_{i}', val_sameshape)
+                        lab_sameshape = [x for x in lab_val if s[0:2] == x.shape[0:2]]
+                        for j in range(self.n_classes):
+                            plt_reg(lab_sameshape[0][..., j], self.args.model_dir + f'/val_reg_label{tile}_class{j}_{i}')
+                        np.save(self.args.model_dir + f'/val_reg_label_{tile}_{i}', lab_sameshape[0])
 
 
             else:
