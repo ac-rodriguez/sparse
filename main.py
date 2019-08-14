@@ -82,6 +82,7 @@ parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to
 parser.add_argument("--unlabeled-after", default=0, type=np.int64, help="Feed unlabeled data after number of iterations")
 parser.add_argument("--sr-after", default=None, type=np.int64, help="Start SR task after number of iterations")
 parser.add_argument("--eval-every", default=1, type=int, help="Number of epochs between evaluations")
+parser.add_argument("--logsteps", default=500, type=int, help="Number of steps between train logs")
 parser.add_argument("--is-slim-eval", default=False, action="store_true",
                     help="at eval do not add DA, and feat_h architectures in the graph to speed up evaluation")
 parser.add_argument("--model", default="simple",
@@ -224,7 +225,7 @@ def main(unused_args):
 
     params['model_dir'] = model_dir
     params['args'] = args
-    log_steps = 500
+    log_steps = args.logsteps
     if args.is_multi_gpu:
         strategy = tf.contrib.distribute.MirroredStrategy()
         run_config = tf.estimator.RunConfig(

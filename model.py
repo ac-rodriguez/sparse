@@ -179,7 +179,7 @@ class Model:
             earlyl = semi.encode_same(self.feat_l, is_training=self.is_training, is_bn=True, is_small=self.is_small)
             self.y_hat, mid, latel = simple(earlyl, n_classes=self.n_classes, is_training=self.is_training,
                                             return_feat=True, deeper=depth)
-            if self.is_semi:
+            if self.is_semi and self.is_training:
                 earlylU = semi.encode_same(self.feat_lU, is_training=self.is_training, is_bn=True, is_small=self.is_small)
                 self.y_hatU,midlU,latelU = simple(earlylU, n_classes=self.n_classes, is_training=self.is_training,
                                                   return_feat=True, deeper=depth)
