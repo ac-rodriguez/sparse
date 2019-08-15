@@ -85,7 +85,7 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True):
         return  data10
 
 
-def readS2(args, roi_lon_lat, data_file =None):
+def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False):
     if data_file is None: data_file = args.LR_file
     # data_file = args.LR_file
     # if '_USER_' in data_file:
@@ -125,6 +125,8 @@ def readS2(args, roi_lon_lat, data_file =None):
     # convert comma separated band list into a list
     select_bands = set([x for x in re.split(',',select_bands)])
     select_bands.add('CLD') ## Always get CLD band
+    if is_get_SCL:
+        select_bands.add('SCL') ## Always get CLD band
 
     print("Image size: width={} x height={}".format(xmax - xmin + 1, ymax - ymin + 1))
 

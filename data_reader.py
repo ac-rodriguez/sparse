@@ -12,7 +12,7 @@ import read_geoTiff as geotif
 from patch_extractor import PatchExtractor, PatchWraper
 
 
-def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
+def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None, mode='reflect'):
     image_20lr = plots.check_dims(image_20lr)
     N, w, h, ch = image_20lr.shape
 
@@ -23,7 +23,7 @@ def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None):
     data20_interp = np.zeros(((N, ch) + ref_shape)).astype(np.float32)
     for k in range(N):
         for w in range(ch):
-            data20_interp[k, w] = resize(image_20lr[k, w] / 65000, ref_shape, mode='reflect') * 65000  # bicubic
+            data20_interp[k, w] = resize(image_20lr[k, w] / 65000, ref_shape, mode=mode) * 65000  # bicubic
 
     data20_interp = np.rollaxis(data20_interp, 1, 4)
     if squeeze:
@@ -44,7 +44,7 @@ def downscale(img, scale):
     return imout
 
 
-def read_and_upsample_sen2(data_file, args, roi_lon_lat):
+def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None):
     if data_file is None:
         return None
         # if 'LR_file' in args:
@@ -53,16 +53,33 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat):
         #         LR_file = LR_file.split(';')[0]
         # else:
         #     LR_file = args.data_dir
+    if mask_out_dict is not None:
+        is_get_SCL = 'SCL' in mask_out_dict.keys()
+    else:
+        is_get_SCL = False
     if 'USER' in data_file:
         data10, data20 = geotif.readS2_old(args, roi_lon_lat, data_file=data_file)
     else:
-        data10, data20 = geotif.readS2(args, roi_lon_lat, data_file=data_file)
+        data10, data20 = geotif.readS2(args, roi_lon_lat, data_file=data_file, is_get_SCL=is_get_SCL)
     if data10 is None:
         return None
+    if mask_out_dict is not None:
+        mask = np.zeros_like(data20[...,0], dtype=np.bool)
+        for key, val in mask_out_dict.items():
+            if 'CLD' == key:
+                mask = np.logical_or(mask,data20[...,-2]>val)
+            elif 'SCL' == key:
+                for item in val:
+                    mask = np.logical_or(mask, data20[..., -1] == item)
+        mask = interpPatches(mask, data10.shape[0:2], squeeze=True, mode='edge') > 0.5
+        data20 = data20[...,0:-1]  # Dropping the SCL band
+
     data20 = interpPatches(data20, data10.shape[0:2], squeeze=True)
 
     data = np.concatenate((data10, data20), axis=2)
-
+    if mask_out_dict is not None:
+        # mask = np.repeat(mask,data.shape[-1], axis=2)
+        data[mask.squeeze()] = np.nan
     size = np.prod(data.shape) * data.itemsize
 
     print('{:.2f} GB loaded in memory'.format(size / 1e9))
@@ -215,7 +232,7 @@ class DataReader(object):
             #
             # print('done')
 
-    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1):
+    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None):
 
         if is_vaihingen:
             train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=None, scale=self.scale)
@@ -234,7 +251,7 @@ class DataReader(object):
                 assert train_h is not None
                 train = downscale(train_h.copy(), scale=self.scale)
             else:
-                train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'])
+                train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict)
 
             if train_h is None and upsample_lr:
                 train_h = interpPatches(train, scale=self.scale)
@@ -300,13 +317,13 @@ class DataReader(object):
         self.labels_val = []
         self.lims_labels_val = []
         is_valid = []
+        maskout = {'CLD':10,'SCL':[3,11]}
         for val_ in self.args.val:
-
-            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample)
+            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, mask_out_dict=maskout)
             is_valid.append(val is not None)
             if is_valid[-1]:
                 # mask out clouds
-                val[val[..., -1] > 50] = np.nan
+                # val[val[..., -1] > 50] = np.nan
 
                 self.val.append(val)
                 self.val_h.append(val_h)
@@ -433,12 +450,18 @@ class DataReader(object):
         self.labels_test = []
         self.lims_labels_test = []
         is_valid = []
+        maskout = {'CLD':10,'SCL':[3,11]}
+
         for test_ in self.args.test:
 
-            test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, upsample_lr=self.is_upsample, is_vaihingen=is_vaihingen,ref_scale=ref_scale)
+            test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_,
+                                                                              upsample_lr=self.is_upsample,
+                                                                              is_vaihingen=is_vaihingen,
+                                                                              ref_scale=ref_scale, mask_out_dict=maskout)
             is_valid.append(test is not None)
             if is_valid[-1]:
-                test[test[..., -1] > 50] = np.nan
+                # test[test[..., -2] > 50] = np.nan
+                # test[test[..., -1] == 50] = np.nan
 
                 self.test.append(test)
                 self.test_h.append(test_h)
