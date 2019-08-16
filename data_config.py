@@ -8,12 +8,15 @@ import tarfile
 import pyproj
 import glob
 from osgeo import gdal
+import pandas as pd
+import json
 import gdal_processing as gp
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument("--dataset", default='palm')
+parser.add_argument("--save-dir", default='.')
 
 
 def untar(file_pattern, save_dir=None):
@@ -53,7 +56,7 @@ def parse_filelist(PATH, tilename, top_10_list, loc):
     return filelist
 
 
-def get_dataset(DATASET, is_mounted=False):
+def get_dataset(DATASET, is_mounted=False, is_load_file=True):
     dset_config = {}
     dset_config['tr'] = []
     dset_config['val'] = []
@@ -106,6 +109,40 @@ def get_dataset(DATASET, is_mounted=False):
     else:
         PATH = '/cluster/work/igp_psr/andresro'
         PATH_TRAIN = '/cluster/scratch/andresro'
+
+    if is_load_file:
+
+        filename = f'{PATH}/barry_palm/data/2A/datasets/{DATASET}.csv'
+        ds = pd.read_csv(filename)
+
+        ds = ds.where((pd.notnull(ds)), None)
+        ds['base_path'] = ds['lr'].map(lambda x: x.split('/barry_palm/', 1)[0] + '/barry_palm/')
+        add_path = lambda x: PATH+'/barry_palm/'+x if isinstance(x, str) else x
+        ds['lr'] = ds['lr'].map(add_path)
+        ds['hr'] = ds['hr'].map(add_path)
+        ds['gt'] = ds['gt'].map(add_path)
+
+
+        ds_ =ds[ds.type == 'tr'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
+        dset_config['tr'] = [row.to_dict() for index, row in ds_.iterrows()]
+
+        ds_ = ds[ds.type == 'val'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
+        dset_config['val'] = [row.to_dict() for index, row in ds_.iterrows()]
+
+        ds_ = ds[ds.type == 'test'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
+        dset_config['test'] = [row.to_dict() for index, row in ds_.iterrows()]
+
+        with open(filename.replace('.csv','.json'), 'r') as fp:
+            data = json.load(fp)
+        print('loaded dataconfig from', filename)
+
+        dset_config = {**dset_config, **data}
+
+        save_dir = dset_config['save_dir'].split('/sparse/training/snapshots/')[-1]
+        dset_config['save_dir'] = PATH_TRAIN+'/sparse/training/snapshots/'+ save_dir
+
+        return dset_config
+
     if 'palmcoco' in DATASET:
         OBJECT = 'palmcoco'
         top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
@@ -149,7 +186,7 @@ def get_dataset(DATASET, is_mounted=False):
                                 GT=PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
                                 loc='palmcountries_2017',
                                 top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
-
+            dset_config['attr'] = 'ID'
 
     elif 'cococomplete' in DATASET:
 
@@ -160,7 +197,7 @@ def get_dataset(DATASET, is_mounted=False):
         rois_val = ['117.84,8.82,117.86,8.88', '117.7,8.90,117.77,8.92', '117.57,8.865,117.61,8.85']
         rois_test = ['117.81,8.82,117.84,8.88']
         # rois_test = ['117.4,8.4,118.0,9.0']
-        tilenames = ['T50PNQ']
+        tilenames = ['R046_T50PNQ']
 
         top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/phillipines_2017/Phillipines_all_1840.txt'
         GT = PATH + '/barry_palm/data/labels/coco/points_detections.kml'
@@ -485,38 +522,73 @@ def get_dataset(DATASET, is_mounted=False):
 
 
 if __name__ == '__main__':
+
     args = parser.parse_args()
-    kml = simplekml.Kml()
 
-    for i in ['100', '50', '10', '2a', '2b', '2c', '1a', '1b', '1c']:
-        data_ = args.dataset + i
-        config = get_dataset(DATASET=data_)
+    config = get_dataset(args.dataset, is_load_file=False)
 
-        for key, val in config.iteritems():
 
-            if 'roi_lon_lat' in key:
-                name_ = data_ + key.replace('roi_lon_lat', '_')
-                pol = kml.newpolygon(name=name_)
+    ds_train = pd.DataFrame(config['tr'])
+    ds_train['type'] = 'tr'
 
-                a = val
-                roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(val)
-                geo_pts = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
-                pol.outerboundaryis = geo_pts
-                pol.style.polystyle.color = simplekml.Color.changealphaint(100, simplekml.Color.white)
+    ds_val = pd.DataFrame(config['val'])
+    ds_val['type'] = 'val'
 
-                p1 = shapely.geometry.Polygon(geo_pts)
+    ds_test = pd.DataFrame(config['test'])
+    ds_test['type'] = 'test'
 
-                geom_area = shapely.ops.transform(
-                    partial(
-                        pyproj.transform,
-                        pyproj.Proj(init='EPSG:4326'),
-                        pyproj.Proj(
-                            proj='aea',
-                            lat1=p1.bounds[1],
-                            lat2=p1.bounds[3])),
-                    p1)
+    ds = pd.concat((ds_train,ds_val,ds_test),axis=0)
 
-                pol.description = 'Area: {:.5f} Km2'.format(geom_area.area / (1000. ** 2))
+    ds['base_path'] = ds['lr'].map(lambda x: x.split('/barry_palm/',1)[0]+'/barry_palm/')
+    ds['lr'] = ds['lr'].map(lambda x: x.split('/barry_palm/',1)[-1] if isinstance(x,str) else x)
+    ds['hr'] = ds['hr'].map(lambda x: x.split('/barry_palm/',1)[-1] if isinstance(x,str) else x)
+    ds['gt'] = ds['gt'].map(lambda x: x.split('/barry_palm/',1)[-1] if isinstance(x,str) else x)
 
-                print('{} Area: {:.5f} Km2'.format(name_, geom_area.area / (1000. ** 2)))
-    kml.save('roi_{}.kml'.format(args.dataset))
+    filename = f"{args.save_dir}/{args.dataset}.csv"
+    ds.to_csv(filename)
+
+    config.pop('tr')
+    config.pop('val')
+    config.pop('test')
+    filename = f"{args.save_dir}/{args.dataset}.json"
+
+    with open(filename, 'w') as fp:
+        json.dump(config, fp)
+    print('saved', filename)
+
+
+    # args = parser.parse_args()
+    # kml = simplekml.Kml()
+    #
+    # for i in ['100', '50', '10', '2a', '2b', '2c', '1a', '1b', '1c']:
+    #     data_ = args.dataset + i
+    #     config = get_dataset(DATASET=data_)
+    #
+    #     for key, val in config.iteritems():
+    #
+    #         if 'roi_lon_lat' in key:
+    #             name_ = data_ + key.replace('roi_lon_lat', '_')
+    #             pol = kml.newpolygon(name=name_)
+    #
+    #             a = val
+    #             roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(val)
+    #             geo_pts = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
+    #             pol.outerboundaryis = geo_pts
+    #             pol.style.polystyle.color = simplekml.Color.changealphaint(100, simplekml.Color.white)
+    #
+    #             p1 = shapely.geometry.Polygon(geo_pts)
+    #
+    #             geom_area = shapely.ops.transform(
+    #                 partial(
+    #                     pyproj.transform,
+    #                     pyproj.Proj(init='EPSG:4326'),
+    #                     pyproj.Proj(
+    #                         proj='aea',
+    #                         lat1=p1.bounds[1],
+    #                         lat2=p1.bounds[3])),
+    #                 p1)
+    #
+    #             pol.description = 'Area: {:.5f} Km2'.format(geom_area.area / (1000. ** 2))
+    #
+    #             print('{} Area: {:.5f} Km2'.format(name_, geom_area.area / (1000. ** 2)))
+    # kml.save('roi_{}.kml'.format(args.dataset))
