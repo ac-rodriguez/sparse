@@ -78,6 +78,13 @@ def get_dataset(DATASET, is_mounted=False):
             else:
                 print(f'dataset for {datatype} in tile {tilename_} does not intersect with roi {roi_}, skipping it')
     def add_datasets_intile(tilenames,rois_train, rois_val,rois_test, GT, loc,top_10_list):
+
+        if DATASET.endswith('A'):
+            rois_train = rois_train[:1]
+            rois_val = rois_val[:1]
+            rois_test = rois_test[:1]
+            tilenames = tilenames[:1]
+
         for tilename in tilenames:
             filelist = parse_filelist(PATH, tilename, top_10_list, loc=loc)
             if 'small' in DATASET:
@@ -101,6 +108,7 @@ def get_dataset(DATASET, is_mounted=False):
         PATH_TRAIN = '/cluster/scratch/andresro'
     if 'palmcoco' in DATASET:
         OBJECT = 'palmcoco'
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
         dset_config['is_upsample_LR'] = False
         # PALM DATA
 
@@ -109,41 +117,39 @@ def get_dataset(DATASET, is_mounted=False):
         rois_test = ['101.45,0.53,101.62,0.55']
         tilenames = ['R018_T47NQA','R018_T47MQV']
 
-        GT = PATH + '/barry_palm/data/labels/palm/kml_geoproposals'
 
-        top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/palmcountries_2017/Indonesia_all_8410.txt'
-        loc = 'palmcountries_2017'
-
-        add_datasets_intile(tilenames, rois_train, rois_val, rois_test, GT, loc, top_10_list)
+        add_datasets_intile(tilenames, rois_train, rois_val, rois_test,
+                            GT=PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
 
         # COCO DATA
 
         # OBJECT = 'coco'
-        dset_config['is_upsample_LR'] = False
 
         rois_train = ['117.86,8.82,117.92,8.9', '117.7,8.92,117.77,8.95', '117.57,8.85,117.61,8.83']
         rois_val = ['117.84,8.82,117.86,8.88', '117.7,8.90,117.77,8.92', '117.57,8.865,117.61,8.85']
         rois_test = ['117.81,8.82,117.84,8.88']
         tilenames = ['T50PNQ']
-        top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/phillipines_2017/Phillipines_all_1840.txt'
-        GT = PATH + '/barry_palm/data/labels/coco/points_detections.kml'
-        loc = 'phillipines_2017'
 
-        add_datasets_intile(tilenames, rois_train, rois_val, rois_test, GT, loc, top_10_list)
+        add_datasets_intile(tilenames, rois_train, rois_val, rois_test,
+                            GT=PATH + '/barry_palm/data/labels/coco/points_detections.kml',
+                            loc='phillipines_2017',
+                            top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
 
         # West Kalimantan DATA
-        if 'palmcoco1' in DATASET:
+        if 'kalim' in DATASET:
             rois_train = ['109.23,-0.85,109.63,-0.6']
             rois_val = ['109.24,-0.85,109.63,-0.93']
-
             rois_test = ['109.2,-1.0,109.8,-0.6']
             tilenames = ['R132_T49MCV']
 
 
-            GT = PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp'
-            top_10_list = PATH + '/barry_palm/data/1C/dataframes_download/palmcountries_2017/Indonesia_all_8410.txt'
+            add_datasets_intile(tilenames, rois_train, rois_val, rois_test,
+                                GT=PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
+                                loc='palmcountries_2017',
+                                top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
 
-            add_datasets_intile(tilenames, rois_train, rois_val, rois_test, GT, loc, top_10_list)
 
     elif 'cococomplete' in DATASET:
 
