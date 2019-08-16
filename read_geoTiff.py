@@ -107,7 +107,7 @@ def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False):
     if not os.path.isfile(dsREFfile):
         raise ValueError('{} does not exist..'.format(dsREFfile))
 
-    print(' [*] Reading S2 Data {}'.format(os.path.dirname(os.path.basename(dsREFfile))))
+    print(' [*] Reading S2 Data {}'.format(folder))
 
     dsREF = gdal.Open(dsREFfile)
 

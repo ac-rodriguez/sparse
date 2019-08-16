@@ -118,7 +118,7 @@ def get_dataset(DATASET, is_mounted=False):
 
         # COCO DATA
 
-        OBJECT = 'coco'
+        # OBJECT = 'coco'
         dset_config['is_upsample_LR'] = False
 
         rois_train = ['117.86,8.82,117.92,8.9', '117.7,8.92,117.77,8.95', '117.57,8.85,117.61,8.83']
