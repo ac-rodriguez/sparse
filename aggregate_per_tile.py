@@ -3,7 +3,7 @@ import gdal
 import argparse
 import numpy as np
 import glob
-
+from scipy import stats
 import gdal_processing as gp
 
 
@@ -17,11 +17,12 @@ parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="overwrite predictions already in folder")
 parser.add_argument("--is-avgprobs", default=False, action="store_true",
                     help="if true: average probabilities and then compute argmax, else mayority voting of classes")
-
+parser.add_argument("--nan-class", default=99, type=int,
+                    help="Value of output pixels with nan values in all the input datasets")
 args = parser.parse_args()
 
 
-def nanargmax(data, nanclass=99):
+def nanargmax(data, nanclass=args.nan_class):
     # nanargmax does not handle properly pixels with all Nan values
     mask = np.isnan(data)
     mask = np.all(mask, axis=-1)
@@ -54,6 +55,7 @@ if not os.path.isfile(reg_filename) or args.is_overwrite:
     arrays = np.stack(arrays, axis=-1)
     print('computing median value')
     arrays = np.nanmedian(arrays, axis=-1)
+    arrays[np.isnan(arrays)] = args.nan_class
 
     gp.rasterize_numpy(arrays,reg_dirs[0],filename=reg_filename,type='float32')
 
@@ -96,11 +98,13 @@ if is_compute_class or is_compute_sem:
         print('computing argmax and then majority voting')
         arrays = [nanargmax(x) for x in arrays]
         arrays = np.stack(arrays,axis=-1)
-        arrays = np.percentile(arrays, 50, axis=-1, interpolation='nearest')
-
+        mask = arrays == args.nan_class
+        # arrays = np.float16(arrays)
+        # arrays[mask] = np.nan
+        # arrays = np.nanpercentile(arrays, 50, axis=-1, interpolation='nearest')
+        arrays = np.ma.masked_array(data=arrays,mask=mask)
+        arrays, _ = stats.mstats.mode(arrays,axis=-1)
+        arrays[np.all(mask,axis=-1)] = args.nan_class
+        # arrays = np.int32(arrays)
         gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
-
-
-
-
 
