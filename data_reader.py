@@ -71,6 +71,10 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None):
             elif 'SCL' == key:
                 for item in val:
                     mask = np.logical_or(mask, data20[..., -1] == item)
+            elif '20m' == key:
+                missing = (data20[..., 0:6] == val).any(axis=-1)
+                mask = np.logical_or(mask, missing)
+
         mask = interpPatches(mask, data10.shape[0:2], squeeze=True, mode='edge') > 0.5
         data20 = data20[...,0:-1]  # Dropping the SCL band
 
@@ -317,7 +321,9 @@ class DataReader(object):
         self.labels_val = []
         self.lims_labels_val = []
         is_valid = []
-        maskout = {'CLD':10,'SCL':[3,11]}
+        maskout = {'CLD':10, # if Cloud prob is higher than 10%
+                   'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
+                   '20m':0} # if all 20m bands are 0
         for val_ in self.args.val:
             val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, mask_out_dict=maskout)
             is_valid.append(val is not None)
@@ -450,7 +456,9 @@ class DataReader(object):
         self.labels_test = []
         self.lims_labels_test = []
         is_valid = []
-        maskout = {'CLD':10,'SCL':[3,11]}
+        maskout = {'CLD':10, # if Cloud prob is higher than 10%
+                   'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
+                   '20m':0} # if all 20m bands are 0
 
         for test_ in self.args.test:
 

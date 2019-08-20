@@ -35,10 +35,14 @@ def nanargmax(data, nanclass=args.nan_class):
 
 if args.save_dir is None:
     args.save_dir = os.path.dirname(args.data_dir)
+tilename = os.path.basename(args.data_dir)
+if tilename.startswith('T'):
+    # Add all the orbits in the tile
+    path = os.path.dirname(args.data_dir)
+    reg_dirs = glob.glob(f'{path}/*{tilename}/*preds_reg.tif')
+else:
+    reg_dirs = glob.glob(args.data_dir+'/*preds_reg.tif')
 
-reg_dirs = glob.glob(args.data_dir+'/*preds_reg.tif')
-tilename = reg_dirs[0].split('/')[-1].split('_')[4:6]
-tilename = '_'.join(tilename)
 
 
 reg_filename = f'{args.save_dir}/{tilename}_preds_reg.tif'
@@ -72,7 +76,12 @@ if args.is_avgprobs:
 is_compute_sem = not os.path.isfile(sem_filename) or args.is_overwrite
 
 if is_compute_class or is_compute_sem:
-    sem_dirs = glob.glob(args.data_dir + '/*preds_classprob.tif')
+    if tilename.startswith('T'):
+        # Add all the orbits in the tile
+        path = os.path.dirname(args.data_dir)
+        sem_dirs = glob.glob(f'{path}/*{tilename}/*preds_classprob.tif')
+    else:
+        sem_dirs = glob.glob(args.data_dir + '/*preds_classprob.tif')
 
     arrays = []
     for file in sem_dirs:

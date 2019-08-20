@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 parser.add_argument("--dataset", default='palm')
-parser.add_argument("--save-dir", default='.')
+parser.add_argument("--save-dir", default='/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/datasets/')
 
 
 def untar(file_pattern, save_dir=None):
