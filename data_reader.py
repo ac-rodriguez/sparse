@@ -457,7 +457,7 @@ class DataReader(object):
         self.lims_labels_test = []
         is_valid = []
         maskout = {'CLD':10, # if Cloud prob is higher than 10%
-                   'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
+                   'SCL':[3,11,6], # if SCL is equal to cloud shadow, snow or water
                    '20m':0} # if all 20m bands are 0
 
         for test_ in self.args.test:
