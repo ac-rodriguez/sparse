@@ -106,14 +106,9 @@ class PatchExtractor:
 
             cloud_threshold = 50
             if self.label is not None:
-                if self.label.shape[-1] == 1:
-                    valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1), axis=2)
-                else:
-                    valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1),
-                                                         axis=2)
+                valid_pixels = np.logical_and.reduce(~np.equal(self.label, -1), axis=2)
             else:
                 valid_pixels = True
-            assert np.any(valid_pixels),'no pixel is valid in the dataset'
             if self.is_HR_label:
                 valid_input = np.logical_and.reduce(~np.equal(self.d_h, 0), axis=2)
             else:
@@ -124,6 +119,7 @@ class PatchExtractor:
                     valid_input = np.logical_and.reduce(~np.equal(self.d_l, 0), axis=2)
 
             valid_pixels = valid_pixels & valid_input
+            assert np.any(valid_pixels),'no pixel is valid in the dataset'
             buffer_size = self.patch_lab
 
             valid_coords = np.argwhere(valid_pixels[buffer_size:-buffer_size, buffer_size:-buffer_size])

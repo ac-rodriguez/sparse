@@ -207,8 +207,9 @@ def rasterize_points_pos_neg_folder(folder,refDataset, lims, lims_with_labels, u
 
 
     points[~mask] = -1 # remove points outside of positive area
-    points[mask_neg] = -1 # mask points inside negative areas
-
+    if mask_neg is not None:
+        points[mask_neg] = -1 # mask points inside negative areas
+    assert not np.all(points == -1),'all negative points in '+folder
     return points
 
 
