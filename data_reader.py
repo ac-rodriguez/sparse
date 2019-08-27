@@ -239,7 +239,7 @@ class DataReader(object):
             #
             # print('done')
 
-    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None):
+    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None, is_load_lab = True):
 
         if is_vaihingen:
             train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=None, scale=self.scale)
@@ -263,29 +263,30 @@ class DataReader(object):
             if train_h is None and upsample_lr:
                 train_h = interpPatches(train, scale=self.scale)
                 train_h = np.clip(train_h[..., (2, 3, 1)] / 4000, 0, 1).squeeze()
+            if is_load_lab:
+                labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
+                                               is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
+                if labels is not None:
+                    if 'age' in self.args.dataset:
+                        print(f' Ages: {np.unique(labels)}')
+                    else:
+                        labels_masked = labels.copy()
+                        labels_masked[labels == -1] = np.nan
+                        print(f' Densities percentiles 10,20,50,70,90 \n {np.nanpercentile(labels_masked, q=[0.1,0.2,0.5,0.7,0.9])}')
+                        if 'palmcoco' in self.args.dataset:
+                            if 'labels/palm' in path_dict['gt']:
+                                labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
 
-            labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
-                                           is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
-            if labels is not None:
-                if 'age' in self.args.dataset:
-                    print(f' Ages: {np.unique(labels)}')
-                else:
-                    labels_masked = labels.copy()
-                    labels_masked[labels == -1] = np.nan
-                    print(f' Densities percentiles 10,20,50,70,90 \n {np.nanpercentile(labels_masked, q=[0.1,0.2,0.5,0.7,0.9])}')
-                    if 'palmcoco' in self.args.dataset:
-                        if 'labels/palm' in path_dict['gt']:
-                            labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
-
-                            print('Palm Object - class 1')
-                        elif 'labels/coco/' in path_dict['gt']:
-                            labels = np.concatenate((np.zeros_like(labels),labels),axis=-1)
-                            print('Coco Object - class 2')
-                        elif 'labels/coconutSHP/' in path_dict['gt']:
-                            labels = np.concatenate((labels == 6, labels == 2), axis=-1) ## Palm is code 6 and coco code 2
-                            labels = np.int32(labels) * 0.8 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
-                            print('Coco and Palm Object')
-
+                                print('Palm Object - class 1')
+                            elif 'labels/coco/' in path_dict['gt']:
+                                labels = np.concatenate((np.zeros_like(labels),labels),axis=-1)
+                                print('Coco Object - class 2')
+                            elif 'labels/coconutSHP/' in path_dict['gt']:
+                                labels = np.concatenate((labels == 6, labels == 2), axis=-1) ## Palm is code 6 and coco code 2
+                                labels = np.int32(labels) * 0.8 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
+                                print('Coco and Palm Object')
+            else:
+                labels,lim_labels = None, None
 
         return train, train_h, labels, lim_labels
 
@@ -303,9 +304,21 @@ class DataReader(object):
         self.labels = []
         self.lims_labels = []
         is_valid = []
+        get_id_lab = lambda x: '_'.join((x[i] for i in ['gt','roi']))
+        dict_id_lab = {get_id_lab(x) for x in self.args.tr}
+        dict_id_lab = {x:[False,-1,None,None] for x in dict_id_lab}
 
         for tr_ in self.args.tr:
-            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample)
+            id_lab = get_id_lab(tr_)
+            is_load_lab = not dict_id_lab[id_lab][0]
+            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, is_load_lab=is_load_lab)
+
+            if is_load_lab:
+                dict_id_lab[id_lab] = [True,self.args.tr.index(tr_),labels,lim_labels]
+            else:
+                labels = dict_id_lab[id_lab][2]
+                lim_labels = dict_id_lab[id_lab][3]
+
             is_valid.append(train is not None)
             if is_valid[-1]:
                 self.train.append(train)
@@ -329,8 +342,20 @@ class DataReader(object):
         maskout = {'CLD':10, # if Cloud prob is higher than 10%
                    'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
                    '20m':0} # if all 20m bands are 0
+        dict_id_lab_val = {get_id_lab(x) for x in self.args.val}
+        dict_id_lab_val = {x: [False, -1, None, None] for x in dict_id_lab_val}
+
         for val_ in self.args.val:
-            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, mask_out_dict=maskout)
+            id_lab = get_id_lab(val_)
+            is_load_lab = not dict_id_lab_val[id_lab][0]
+            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, mask_out_dict=maskout,is_load_lab=is_load_lab)
+
+            if is_load_lab:
+                dict_id_lab_val[id_lab] = [True,self.args.val.index(val_),labels_val,lim_labels_val]
+            else:
+                labels_val = dict_id_lab_val[id_lab][2]
+                lim_labels_val = dict_id_lab_val[id_lab][3]
+
             is_valid.append(val is not None)
             if is_valid[-1]:
                 # mask out clouds
