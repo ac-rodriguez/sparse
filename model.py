@@ -78,8 +78,8 @@ class Model:
             lab = tf.concat((zeros_background,lab),axis=-1) # adding background class for argmax
             label_sem = tf.argmax(int_(tf.greater(lab, self.sem_threshold)), axis=3, output_type=tf.int32)
             w_ = tf.reduce_any(tf.greater(w, 0),-1)
-            label_sem = tf.compat.v1.where(w_, label_sem,
-                                 tf.ones_like(label_sem, dtype=tf.int32) * -1)
+            # label_sem = tf.compat.v1.where(w_, label_sem,
+            #                      tf.ones_like(label_sem, dtype=tf.int32) * -1)
         if return_w:
             return label_sem,w
         else:

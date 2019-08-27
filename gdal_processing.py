@@ -11,7 +11,7 @@ from functools import partial
 import pyproj
 from scipy import ndimage
 from skimage.measure import block_reduce
-
+from ast import literal_eval as make_tuple
 driver = ogr.GetDriverByName('ESRI Shapefile')
 
 def reproject_layer(InputVector,inSpatialRef = None,outSpatialRef = None):
@@ -74,6 +74,65 @@ def reproject_layer(InputVector,inSpatialRef = None,outSpatialRef = None):
     # outDataSet = None
 
 
+def get_positive_area_folder(folder):
+
+    filelist = glob.glob(folder+'**/*.shp')
+
+    results = {}
+
+    for file in filelist:
+        dict_ = get_name_extent(file)
+        results = {**results,**dict_}
+
+    positive_keys = [x for x in results.keys() if 'pos' in x]
+    assert len(positive_keys) == 1,f'{len(positive_keys)} positive areas in folder, split folder:\n {folder}'
+
+    for key, val in results.items():
+        if 'pos' in key:
+            return val
+
+
+
+def get_name_extent(file):
+    data = ogr.Open(file)
+
+    out = {}
+    for layer in data:
+        layer.ResetReading()
+        for feature in layer:
+            items_ = feature.items()
+            geom = feature.geometry()
+            if geom.GetGeometryName() == 'POLYGON':
+                ring = geom.GetGeometryRef(0)
+                numpoints = ring.GetPointCount()
+                pointsX = []; pointsY = []
+                for p in range(numpoints):
+                    lon, lat, z = ring.GetPoint(p)
+                    pointsX.append(lon)
+                    pointsY.append(lat)
+
+                xmin = min(pointsX)
+                xmax = max(pointsX)
+                ymin = min(pointsY)
+                ymax = max(pointsY)
+
+                out[items_['Name'].lower()] = (xmin,ymin,xmax,ymax)
+    return out
+
+def get_featname(file, is_assert=False):
+    data = ogr.Open(file)
+    out = []
+    for layer in data:
+        layer.ResetReading()
+        for feature in layer:
+            items_ = feature.items()
+            geom = feature.geometry()
+            geomtype = geom.GetGeometryName()
+            out.append((items_['Name'],geomtype))
+    if is_assert:
+        assert len(out) <=1,'file has more than one geom feature,'
+    return out
+
 def get_points(Input):
     # Open Shapefile
     Shapefile = ogr.Open(Input)
@@ -108,7 +167,8 @@ def read_coords(Input):
             points = np.load(filename)
             print('GT Points loaded from {}'.format(filename))
     else:
-        filename = Input.replace(".kml", ".npy")
+        suffix = Input.split('.')[-1]
+        filename = Input.replace('.'+suffix, ".npy")
 
         if not os.path.isfile(filename):
             points = get_points(Input)
@@ -118,6 +178,41 @@ def read_coords(Input):
             print('GT Points loaded from {}'.format(filename))
 
     return points
+def rasterize_points_pos_neg_folder(folder,refDataset, lims, lims_with_labels, up_scale=10, sigma=None, sq_kernel=False):
+
+    filelist = glob.glob(folder+'/*.shp')
+
+    featnames = [get_featname(file, is_assert=True)[0] for file in filelist] # TODO fix if there is more than 1 feature in .shp
+
+    pos_shp = [x for x,names in zip(filelist,featnames) if 'pos' in names[0] and 'POLYGON' in names[1]]
+
+    mask = None
+    for file in pos_shp:
+        mask_ = rasterize_polygons(file,refDataset,lims, as_bool=True)
+        mask = mask_ if mask is None else np.logical_or(mask_,mask)
+
+    neg_shp = [x for x,names in zip(filelist,featnames) if 'neg' in names[0] and 'POLYGON' in names[1]]
+
+    mask_neg = None
+    for file in neg_shp:
+        mask_ = rasterize_polygons(file,refDataset,lims, as_bool=True)
+        mask_neg = mask_ if mask_neg is None else np.logical_or(mask_,mask_neg)
+
+    points_shp = [x for x, names in zip(filelist, featnames) if not 'POLYGON' in names[1]]
+
+    points = None
+    for file in points_shp:
+        points_ = rasterize_points_constrained(file,refDataset,lims, lims_with_labels,up_scale,sigma,sq_kernel)
+        points = points_ if points is None else points_+points
+
+
+    points[~mask] = -1 # remove points outside of positive area
+    points[mask_neg] = -1 # mask points inside negative areas
+
+    return points
+
+
+
 
 def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_scale=10, sigma=None, sq_kernel=False):
 
@@ -374,7 +469,7 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
     print('{} saved!'.format(filename))
 
 
-def rasterize_polygons(InputVector, refDataset, lims=None, offset=None, attribute=None, NoDataValue=0):
+def rasterize_polygons(InputVector, refDataset, lims=None, offset=None, attribute=None, NoDataValue=0, as_bool=False):
     Image = gdal.Open(refDataset)
 
     burnVal = 1  # value for the output image pixels
@@ -415,7 +510,8 @@ def rasterize_polygons(InputVector, refDataset, lims=None, offset=None, attribut
         return None
     if mask.max() == 0:
         print(f' [!] Empty mask in the ROI {InputVector}...')
-
+    if as_bool:
+        mask = mask == 1
     return mask
 
 def to_xy(lon, lat, ds, is_int = True):
@@ -442,7 +538,10 @@ def to_xy(lon, lat, ds, is_int = True):
 
 def split_roi_string(roi_lon_lat):
     if isinstance(roi_lon_lat,str):
-        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
+        if roi_lon_lat.startswith('(') and roi_lon_lat.endswith(')'):
+            roi_lon1, roi_lat1, roi_lon2, roi_lat2 = make_tuple(roi_lon_lat)
+        else:
+            roi_lon1, roi_lat1, roi_lon2, roi_lat2 = [float(x) for x in re.split(',', roi_lon_lat)]
     else:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = roi_lon_lat
     return max(roi_lon1,roi_lon2), max(roi_lat1,roi_lat2), min(roi_lon1,roi_lon2), min(roi_lat1,roi_lat2)

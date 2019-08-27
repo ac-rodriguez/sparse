@@ -465,6 +465,12 @@ def read_labels(args,shp_file, roi, roi_with_labels, ref_hr=None, ref_lr=None, i
         labels = gp.rasterize_polygons(InputVector=shp_file,refDataset=ds_file,lims=lims_with_labels,attribute=args.attr)
     elif shp_file.endswith('.tif'):
         labels = readHR(data_file=shp_file, roi_lon_lat=roi_with_labels, scale=args.scale)
+    elif 'annotations' in shp_file: # for GT annotated by students
+        labels = gp.rasterize_points_pos_neg_folder(folder=shp_file, refDataset=ds_file, lims=lims_H,
+                                                 lims_with_labels=lims_with_labels, up_scale=ref_scale,
+                                                 sigma=sigma, sq_kernel=args.sq_kernel)
+
+
     else:
         labels = gp.rasterize_points_constrained(Input=shp_file, refDataset=ds_file, lims=lims_H,
                                                  lims_with_labels=lims_with_labels, up_scale=ref_scale,

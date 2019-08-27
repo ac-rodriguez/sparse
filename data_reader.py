@@ -267,7 +267,9 @@ class DataReader(object):
                 if 'age' in self.args.dataset:
                     print(f' Ages: {np.unique(labels)}')
                 else:
-                    print(f' Densities percentiles 10,20,50,70,90 \n {np.percentile(labels, q=[0.1,0.2,0.5,0.7,0.9])}')
+                    labels_masked = labels.copy()
+                    labels_masked[labels == -1] = np.nan
+                    print(f' Densities percentiles 10,20,50,70,90 \n {np.nanpercentile(labels_masked, q=[0.1,0.2,0.5,0.7,0.9])}')
                     if 'palmcoco' in self.args.dataset:
                         if 'labels/palm' in path_dict['gt']:
                             labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
