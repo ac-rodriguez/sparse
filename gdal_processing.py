@@ -128,7 +128,7 @@ def get_featname(file, is_assert=False):
             items_ = feature.items()
             geom = feature.geometry()
             geomtype = geom.GetGeometryName()
-            out.append((items_['Name'],geomtype))
+            out.append((items_['Name'].lower(),geomtype))
     if is_assert:
         assert len(out) <=1,'file has more than one geom feature,'
     return out
