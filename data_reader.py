@@ -89,9 +89,14 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None):
         data[mask.squeeze()] = np.nan
     size = np.prod(data.shape) * data.itemsize
 
-    print('{:.2f} GB loaded in memory'.format(size / 1e9))
+    print('{:.2f} MB loaded in memory'.format(size / 1e6))
     return data
 
+
+def get_id_lab(x):
+    if isinstance(x['roi'], tuple):
+        x['roi'] = ','.join([str(i) for i in x['roi']])
+    return '_'.join([x['gt'], x['roi']])
 
 class DataReader(object):
     '''Generic ImageReader which reads images and corresponding segmentation
@@ -304,7 +309,7 @@ class DataReader(object):
         self.labels = []
         self.lims_labels = []
         is_valid = []
-        get_id_lab = lambda x: '_'.join((x[i] for i in ['gt','roi']))
+
         dict_id_lab = {get_id_lab(x) for x in self.args.tr}
         dict_id_lab = {x:[False,-1,None,None] for x in dict_id_lab}
 

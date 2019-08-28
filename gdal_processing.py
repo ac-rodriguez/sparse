@@ -200,10 +200,10 @@ def rasterize_points_pos_neg_folder(folder,refDataset, lims, lims_with_labels, u
 
     points_shp = [x for x, names in zip(filelist, featnames) if not 'POLYGON' in names[1]]
 
-    points = None
+    points = np.zeros_like(mask, dtype=np.float32)
     for file in points_shp:
         points_ = rasterize_points_constrained(file,refDataset,lims, lims_with_labels,up_scale,sigma,sq_kernel)
-        points = points_ if points is None else points_+points
+        points = points_+points
 
 
     points[~mask] = -1 # remove points outside of positive area
