@@ -69,7 +69,10 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
             gtfile = gtfile.replace('*',tilename_)
 
         if roi_ == 'geom':
-            roi_ = gp.get_positive_area_folder(gtfile)
+            if os.path.exists(gtfile):
+                roi_ = gp.get_positive_area_folder(gtfile)
+            else:
+                return None
 
         if not isinstance(files, list):
             files = [files]
@@ -204,24 +207,32 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         dset_config['is_upsample_LR'] = False
 
         rois = ['geom']
-        tilenames = ['T49NCB','T49NDB','T49NEB']
+        if 'palmtiles' == DATASET:
+            tilenames = ['T49NCB','T49NDB','T49NEB']
+        elif 'palmtiles1' == DATASET:
+            tilenames = ['T49NCB','T49NDB','T49NEB','T49NFC','T49NGB']
+        elif 'palmtiles2' == DATASET:
+            tilenames = ['T49NFC','T49NFD','T49NGD']
+        elif 'palmtiles3' == DATASET:
+            tilenames = ['T49NGE','T49NHE','T49NHD','50NKL']
+
         GT_train = PATH+'/barry_palm/data/labels/palm_annotations/*/group2'
         add_datasets_intile(tilenames, rois_train=rois, rois_val=[], rois_test=[],
                             GT=GT_train,
                             loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
 
         GT_val = PATH+'/barry_palm/data/labels/palm_annotations/*/group1'
         add_datasets_intile(tilenames, rois_train=[], rois_val=rois, rois_test=[],
                             GT=GT_val,
                             loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
 
-        tilenames = ['T49NEC']
+        tilenames = ['T49NEC','T49NHD']
         add_datasets_intile(tilenames, rois_train=[], rois_val=[], rois_test=[None],
                             GT=None,
                             loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
 
     elif 'cococomplete' in DATASET:
 
