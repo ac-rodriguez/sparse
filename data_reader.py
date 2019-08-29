@@ -279,17 +279,20 @@ class DataReader(object):
                         labels_masked[labels == -1] = np.nan
                         print(f' Densities percentiles 10,20,50,70,90 \n {np.nanpercentile(labels_masked, q=[0.1,0.2,0.5,0.7,0.9])}')
                         if 'palmcoco' in self.args.dataset:
-                            if 'labels/palm' in path_dict['gt']:
+                            if 'labels/palm' in path_dict['gt'] or 'palm_annotations' in path_dict['gt']:
                                 labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
 
                                 print('Palm Object - class 1')
-                            elif 'labels/coco/' in path_dict['gt']:
+                            elif 'labels/coco/' in path_dict['gt'] or 'coco_annotations' in path_dict['gt']:
                                 labels = np.concatenate((np.zeros_like(labels),labels),axis=-1)
                                 print('Coco Object - class 2')
                             elif 'labels/coconutSHP/' in path_dict['gt']:
                                 labels = np.concatenate((labels == 6, labels == 2), axis=-1) ## Palm is code 6 and coco code 2
                                 labels = np.int32(labels) * 0.8 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
                                 print('Coco and Palm Object')
+                            else:
+                                raise ValueError('Label type cannot be inferred from path:\n'+path_dict['gt'])
+
             else:
                 labels,lim_labels = None, None
 

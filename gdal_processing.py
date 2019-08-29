@@ -128,9 +128,15 @@ def get_featname(file, is_assert=False):
             items_ = feature.items()
             geom = feature.geometry()
             geomtype = geom.GetGeometryName()
-            out.append((items_['Name'].lower(),geomtype))
+            out.append({'Name':items_['Name'].lower(),
+                        'geom':geomtype,
+                       'file':file})
     if is_assert:
-        assert len(out) <=1,'file has more than one geom feature,'
+        geom_types = set([x['geom'] for x in out])
+        assert len(geom_types) <=1,f'{file} has more than one geom type: {geom_types}'
+        pos_names = set([x for x in out if 'pos' in x['Name'] and 'GEOM' in x['geom']])
+        neg_names = set([x for x in out if 'neg' in x['Name'] and 'GEOM' in x['geom']])
+        assert len(pos_names)+len(neg_names) <=1,f'{file} has both positive and negative geometries'
     return out
 
 def get_points(Input):
@@ -182,23 +188,24 @@ def rasterize_points_pos_neg_folder(folder,refDataset, lims, lims_with_labels, u
 
     filelist = glob.glob(folder+'/*.shp')
 
-    featnames = [get_featname(file, is_assert=True)[0] for file in filelist] # TODO fix if there is more than 1 feature in .shp
+    featnames = [get_featname(file, is_assert=True)[0] for file in filelist]
 
-    pos_shp = [x for x,names in zip(filelist,featnames) if 'pos' in names[0] and 'POLYGON' in names[1]]
+    pos_shp = [x['file'] for x in featnames if 'pos' in x['Name'] and 'POLYGON' in x['geom']]
 
     mask = None
     for file in pos_shp:
         mask_ = rasterize_polygons(file,refDataset,lims, as_bool=True)
         mask = mask_ if mask is None else np.logical_or(mask_,mask)
 
-    neg_shp = [x for x,names in zip(filelist,featnames) if 'neg' in names[0] and 'POLYGON' in names[1]]
+    neg_shp = [x['file'] for x in featnames if 'neg' in x['Name'] and 'POLYGON' in x['geom']]
 
     mask_neg = None
     for file in neg_shp:
         mask_ = rasterize_polygons(file,refDataset,lims, as_bool=True)
         mask_neg = mask_ if mask_neg is None else np.logical_or(mask_,mask_neg)
 
-    points_shp = [x for x, names in zip(filelist, featnames) if not 'POLYGON' in names[1]]
+    points_shp = [x['file'] for x in featnames if not 'POLYGON' in x['geom']]
+
 
     points = np.zeros_like(mask, dtype=np.float32)
     for file in points_shp:
