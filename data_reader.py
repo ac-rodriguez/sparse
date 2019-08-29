@@ -75,8 +75,8 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None):
             elif '20m' == key:
                 missing = (data20[..., 0:6] == val).any(axis=-1)
                 mask = np.logical_or(mask, missing)
-        if np.all(mask):
-            print(" [!] All data is masked, skipping it...")
+        if np.mean(mask) > 0.5:
+            print(f" [!] {np.mean(mask)*100:.2f}% of data is masked, skipping it...")
             return None
 
         mask = interpPatches(mask, data10.shape[0:2], squeeze=True, mode='edge') > 0.5
