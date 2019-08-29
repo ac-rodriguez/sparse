@@ -6,6 +6,7 @@ from scipy import ndimage
 from skimage.transform import resize, downscale_local_mean
 from itertools import compress
 from functools import partial
+import ray
 
 import plots
 import read_geoTiff as geotif
@@ -244,7 +245,7 @@ class DataReader(object):
             #
             # print('done')
 
-    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None, is_load_lab = True):
+    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None, is_load_lab=True,is_load_input=True):
 
         if is_vaihingen:
             train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=None, scale=self.scale)
@@ -256,18 +257,20 @@ class DataReader(object):
                                                            dsm_file=path_dict['dsm'],
                                                            is_HR=self.is_HR_labels, ref_scale=ref_scale)
         else:
+            if is_load_input:
+                train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=path_dict['roi'],
+                                        scale=self.scale)
+                if self.args.is_noS2:
+                    assert train_h is not None
+                    train = downscale(train_h.copy(), scale=self.scale)
+                else:
+                    train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict)
 
-            train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=path_dict['roi'],
-                                    scale=self.scale)
-            if self.args.is_noS2:
-                assert train_h is not None
-                train = downscale(train_h.copy(), scale=self.scale)
+                if train_h is None and upsample_lr:
+                    train_h = interpPatches(train, scale=self.scale)
+                    train_h = np.clip(train_h[..., (2, 3, 1)] / 4000, 0, 1).squeeze()
             else:
-                train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict)
-
-            if train_h is None and upsample_lr:
-                train_h = interpPatches(train, scale=self.scale)
-                train_h = np.clip(train_h[..., (2, 3, 1)] / 4000, 0, 1).squeeze()
+                train,train_h = None, None
             if is_load_lab:
                 labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
                                                is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
@@ -307,33 +310,39 @@ class DataReader(object):
 
         ref_scale = self.scale if is_vaihingen else 16
 
-        self.train_h = []
-        self.train = []
-        self.labels = []
-        self.lims_labels = []
-        is_valid = []
 
-        dict_id_lab = {get_id_lab(x) for x in self.args.tr}
-        dict_id_lab = {x:[False,-1,None,None] for x in dict_id_lab}
+        list_id_lab = [get_id_lab(x) for x in self.args.tr]
+        dict_id_lab = {x:[False,list_id_lab.index(x),None,None] for x in set(list_id_lab)}
+        # Load first labels
+        for key,val in dict_id_lab.items():
+            _,_,labels,lim_labels = self.read_data_pairs(self.args.tr[val[1]], is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, is_load_lab=True,is_load_input=False)
+            val[2] = labels
+            val[3] = lim_labels
+        ray.init()
 
-        for tr_ in self.args.tr:
+        @ray.remote
+        def f(tr_,dict_id, mask_dict):
             id_lab = get_id_lab(tr_)
-            is_load_lab = not dict_id_lab[id_lab][0]
-            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, is_load_lab=is_load_lab)
 
-            if is_load_lab:
-                dict_id_lab[id_lab] = [True,self.args.tr.index(tr_),labels,lim_labels]
-            else:
-                labels = dict_id_lab[id_lab][2]
-                lim_labels = dict_id_lab[id_lab][3]
+            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,
+                                                                      ref_scale=ref_scale, upsample_lr=self.is_upsample,
+                                                                      is_load_lab=False, mask_out_dict=mask_dict)
 
-            is_valid.append(train is not None)
-            if is_valid[-1]:
-                self.train.append(train)
-                self.train_h.append(train_h)
-                self.labels.append(labels)
-                self.lims_labels.append(lim_labels)
-        self.train_info = list(compress(self.args.tr,is_valid))
+            labels = dict_id[id_lab][2]
+            lim_labels = dict_id[id_lab][3]
+            is_valid_ = train is not None
+            return (train,train_h, labels,lim_labels,is_valid_)
+
+        data_tr = [f.remote(i,dict_id=dict_id_lab,mask_dict=None) for i in self.args.tr]
+        self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
+
+
+        self.train = list(compress(self.train, is_valid))
+        self.train_h = list(compress(self.train_h, is_valid))
+        self.labels = list(compress(self.labels, is_valid))
+        self.lims_labels = list(compress(self.lims_labels, is_valid))
+
+        self.train_info = list(compress(self.args.tr, is_valid))
 
         if self.args.unlabeled_data is not None:
             self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
@@ -342,37 +351,26 @@ class DataReader(object):
 
         print('\n [*] Loading VALIDATION data \n')
 
-        self.val_h = []
-        self.val = []
-        self.labels_val = []
-        self.lims_labels_val = []
-        is_valid = []
         maskout = {'CLD':10, # if Cloud prob is higher than 10%
                    'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
                    '20m':0} # if all 20m bands are 0
-        dict_id_lab_val = {get_id_lab(x) for x in self.args.val}
-        dict_id_lab_val = {x: [False, -1, None, None] for x in dict_id_lab_val}
+        list_id_lab_val = [get_id_lab(x) for x in self.args.val]
+        dict_id_lab_val = {x:[False,list_id_lab_val.index(x),None,None] for x in set(list_id_lab_val)}
 
-        for val_ in self.args.val:
-            id_lab = get_id_lab(val_)
-            is_load_lab = not dict_id_lab_val[id_lab][0]
-            val, val_h, labels_val, lim_labels_val = self.read_data_pairs(val_, is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, mask_out_dict=maskout,is_load_lab=is_load_lab)
+        for key,val in dict_id_lab_val.items():
+            _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, is_load_lab=True,is_load_input=False)
+            val[2] = labels
+            val[3] = lim_labels
 
-            if is_load_lab:
-                dict_id_lab_val[id_lab] = [True,self.args.val.index(val_),labels_val,lim_labels_val]
-            else:
-                labels_val = dict_id_lab_val[id_lab][2]
-                lim_labels_val = dict_id_lab_val[id_lab][3]
+        data_val = [f.remote(i,dict_id=dict_id_lab_val,mask_dict=maskout) for i in self.args.val]
 
-            is_valid.append(val is not None)
-            if is_valid[-1]:
-                # mask out clouds
-                # val[val[..., -1] > 50] = np.nan
+        self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
+        ray.shutdown()
+        self.val = list(compress(self.val, is_valid))
+        self.val_h = list(compress(self.val_h, is_valid))
+        self.labels_val = list(compress(self.labels_val, is_valid))
+        self.lims_labels_val = list(compress(self.lims_labels_val, is_valid))
 
-                self.val.append(val)
-                self.val_h.append(val_h)
-                self.labels_val.append(labels_val)
-                self.lims_labels_val.append(lim_labels_val)
         self.val_info = list(compress(self.args.val,is_valid))
         self.val_tilenames = [x['tilename'] for x in self.val_info]
 
