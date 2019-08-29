@@ -7,7 +7,8 @@ IS_DEBUG = True
 
 class PatchWraper:
     def __init__(self, extractors,max_queue_size=4,n_workers=1):
-        self.extractors = extractors
+        self.extractors = [x for x in extractors if x.any_valid_pixels]
+
         self.max_queue_size=max_queue_size
         self.n_workers = n_workers
 
@@ -16,7 +17,7 @@ class PatchWraper:
         self.is_onlyLR = all([x.is_onlyLR for x in self.extractors])
         self.weights = self.n_pixels / np.sum(self.n_pixels)
         print(f' Fetch Prob. {self.weights}')
-        self.indices1 = np.random.choice(len(extractors),size=100,p=self.weights)
+        self.indices1 = np.random.choice(len(self.extractors),size=100,p=self.weights)
         self.rand_ind = 0
         self.define_queues()
     def define_queues(self):
@@ -85,7 +86,7 @@ class PatchExtractor:
 
         self.patch_h = patch_l * scale
         self.patch_lab = self.patch_h if self.is_HR_label else self.patch_l
-
+        self.any_valid_pixels = True
 
         if self.border is not None:
             assert self.patch_l > self.border * 2
@@ -119,46 +120,50 @@ class PatchExtractor:
                     valid_input = np.logical_and.reduce(~np.equal(self.d_l, 0), axis=2)
 
             valid_pixels = valid_pixels & valid_input
-            assert np.any(valid_pixels),'no pixel is valid in the dataset'
-            buffer_size = self.patch_lab
-
-            valid_coords = np.argwhere(valid_pixels[buffer_size:-buffer_size, buffer_size:-buffer_size])
-            # add patch//2 to y and x coordinates to correct the cropping
-            valid_coords += (buffer_size)
-
-            if self.is_HR_label:
-                valid_coords = np.array([x // self.scale for x in valid_coords])
-
-
-            rand_sample = np.random.choice(len(valid_coords),min(size_label_ind,len(valid_coords)),replace=False)
-            indices = valid_coords[rand_sample]
-
-            if self.two_ds:
-                self.indices1 = indices
-                if self.unlab is None:
-                    self.indices2 = np.random.choice(len(valid_coords), size=len(self.indices1),replace=False)
-                    self.indices2 = valid_coords[self.indices2]
-                else:
-                    valid_coords_unlab = np.less(self.unlab[...,-1], 90)
-
-                    buffer_size_unlab = self.patch_lab
-
-                    valid_coords_unlab = np.argwhere(valid_coords_unlab[buffer_size_unlab:-buffer_size_unlab, buffer_size_unlab:-buffer_size_unlab])
-                    # add patch//2 to y and x coordinates to correct the cropping
-                    valid_coords_unlab += (buffer_size_unlab)
-
-                    self.indices2 = np.random.choice(len(valid_coords_unlab), size=len(self.indices1),replace=False)
-                    self.indices2 = valid_coords_unlab[self.indices2]
-                # self.indices2 = np.random.choice(n_x * self.n_y, size=len(self.indices1), replace=False)
-                print(' labeled and unlabeled data are always fed within a batch')
-
+            self.any_valid_pixels = np.any(valid_pixels)
+            if not self.any_valid_pixels:
+                print(f'no pixel is valid in the dataset with shape {valid_pixels.shape}, will skip in training')
             else:
-                self.indices1 = indices
-                self.indices2 = None
+                buffer_size = self.patch_lab
+
+                valid_coords = np.argwhere(valid_pixels[buffer_size:-buffer_size, buffer_size:-buffer_size])
+                # add patch//2 to y and x coordinates to correct the cropping
+                valid_coords += (buffer_size)
+
+                if self.is_HR_label:
+                    valid_coords = np.array([x // self.scale for x in valid_coords])
 
 
-            self.rand_ind = 0
-        self.define_queues()
+                rand_sample = np.random.choice(len(valid_coords),min(size_label_ind,len(valid_coords)),replace=False)
+                indices = valid_coords[rand_sample]
+
+                if self.two_ds:
+                    self.indices1 = indices
+                    if self.unlab is None:
+                        self.indices2 = np.random.choice(len(valid_coords), size=len(self.indices1),replace=False)
+                        self.indices2 = valid_coords[self.indices2]
+                    else:
+                        valid_coords_unlab = np.less(self.unlab[...,-1], 90)
+
+                        buffer_size_unlab = self.patch_lab
+
+                        valid_coords_unlab = np.argwhere(valid_coords_unlab[buffer_size_unlab:-buffer_size_unlab, buffer_size_unlab:-buffer_size_unlab])
+                        # add patch//2 to y and x coordinates to correct the cropping
+                        valid_coords_unlab += (buffer_size_unlab)
+
+                        self.indices2 = np.random.choice(len(valid_coords_unlab), size=len(self.indices1),replace=False)
+                        self.indices2 = valid_coords_unlab[self.indices2]
+                    # self.indices2 = np.random.choice(n_x * self.n_y, size=len(self.indices1), replace=False)
+                    print(' labeled and unlabeled data are always fed within a batch')
+
+                else:
+                    self.indices1 = indices
+                    self.indices2 = None
+
+
+                self.rand_ind = 0
+        if self.any_valid_pixels:
+            self.define_queues()
 
     def define_queues(self):
         self.lock = Lock()
