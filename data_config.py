@@ -156,7 +156,58 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
 
         return dset_config
 
-    if 'palmcoco' in DATASET:
+    if 'palmcocotiles' in DATASET:
+        OBJECT = 'palmcoco'
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+        dset_config['is_upsample_LR'] = False
+        # PALM DATA
+
+        rois = ['geom']
+
+        tilenames_tr = ['T49NCB', 'T49NDB']
+        tilenames_val = ['T49MCV']
+
+        GT_train = PATH + '/barry_palm/data/labels/palm_annotations/*/group2'
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=GT_train,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+        GT_train = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=GT_train,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+
+        GT_val = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=GT_val,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+
+        # COCO DATA
+
+        tilenames_tr = ['T50NMP', 'T50PNQ']
+        tilenames_val = ['T49MCV']
+
+        GT_train = PATH + '/barry_palm/data/labels/coco_annotations/*/group2'
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=GT_train,
+                            loc='phillipines_2017',
+                            top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
+        GT_train = PATH + '/barry_palm/data/labels/coco_annotations/*/group1'
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=GT_train,
+                            loc='phillipines_2017',
+                            top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
+
+        GT_val = PATH + '/barry_palm/data/labels/coco_annotations/*/group1'
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=GT_val,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+
+
+    elif 'palmcoco' in DATASET:
         OBJECT = 'palmcoco'
         top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
         dset_config['is_upsample_LR'] = False
@@ -233,7 +284,50 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             GT=None,
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+    elif 'palmsarawak' in DATASET:
 
+        OBJECT = 'palm'
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+        dset_config['is_upsample_LR'] = False
+
+        rois = ['geom']
+        if 'palmsarawak' == DATASET:
+            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB', 'T49NGE', 'T49NHE', 'T49NHD', 'T50NKL']
+            tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+        elif 'palmsarawak1' == DATASET:
+            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB','T49NGB'] # TODO check which one is giving only black pixels after masking out
+            tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+        elif 'palmsarawak2' == DATASET:
+            tilenames_tr = ['T49NGE', 'T49NHE', 'T49NHD', 'T50NKL']
+            tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+        else:
+            raise ValueError(DATASET+' not defined')
+
+
+        GT_ = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=GT_,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=GT_,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+        GT_ = PATH + '/barry_palm/data/labels/palm_annotations/*/group2'
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=GT_,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=GT_,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+
+        tilenames = ['T49NEC', 'T49NHD']
+        add_datasets_intile(tilenames, rois_train=[], rois_val=[], rois_test=[None],
+                            GT=None,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
     elif 'cococomplete' in DATASET:
 
         OBJECT = 'coco'
@@ -586,9 +680,10 @@ if __name__ == '__main__':
     ds = pd.concat((ds_train,ds_val,ds_test),axis=0)
 
     ds['base_path'] = ds['lr'].map(lambda x: x.split('/barry_palm/',1)[0]+'/barry_palm/')
-    ds['lr'] = ds['lr'].map(lambda x: x.split('/barry_palm/',1)[-1] if isinstance(x,str) else x)
-    ds['hr'] = ds['hr'].map(lambda x: x.split('/barry_palm/',1)[-1] if isinstance(x,str) else x)
-    ds['gt'] = ds['gt'].map(lambda x: x.split('/barry_palm/',1)[-1] if isinstance(x,str) else x)
+    f_parse = lambda x: x.split('/barry_palm/',1)[-1] if isinstance(x,str) else x
+    ds['lr'] = ds['lr'].map(f_parse)
+    ds['hr'] = ds['hr'].map(f_parse)
+    ds['gt'] = ds['gt'].map(f_parse)
 
     filename = f"{args.save_dir}/{args.dataset}.csv"
     ds.to_csv(filename)
