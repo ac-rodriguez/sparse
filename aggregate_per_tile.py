@@ -1,6 +1,7 @@
 import os
 import gdal
 import argparse
+import socket
 import numpy as np
 import glob
 from scipy import stats
@@ -15,6 +16,8 @@ parser.add_argument("data_dir", type=str, default="",
 parser.add_argument("--save_dir", default=None)
 parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="overwrite predictions already in folder")
+parser.add_argument("--is-clip-to-countries", default=False, action="store_true",
+                    help="clip values outside landdefined areas")
 parser.add_argument("--is-avgprobs", default=False, action="store_true",
                     help="if true: average probabilities and then compute argmax, else mayority voting of classes")
 parser.add_argument("--nan-class", default=99, type=int,
@@ -32,6 +35,19 @@ def nanargmax(data, nanclass=args.nan_class):
     classes = np.nanargmax(data, axis=-1)
     classes[mask] = nanclass
     return classes
+
+
+def clipcountries(arrays, ref_data):
+    if 'pf-pc' in socket.gethostname():
+        PATH = '/scratch/andresro/leon_igp'
+    else:
+        PATH = '/cluster/work/igp_psr/andresro'
+    shpfile = PATH + '/barry_palm/data/labels/countries/3countries.shp'
+    shp_raster = gp.rasterize_polygons(shpfile, ref_data, as_bool=True)
+    arrays[~shp_raster] = args.nan_class
+
+    return arrays
+
 
 if args.save_dir is None:
     args.save_dir = os.path.dirname(args.data_dir)
@@ -61,6 +77,8 @@ if not os.path.isfile(reg_filename) or args.is_overwrite:
     arrays = np.nanmedian(arrays, axis=-1)
     arrays[np.isnan(arrays)] = args.nan_class
 
+    if args.is_clip_to_countries:
+        arrays = clipcountries(arrays,ref_data=reg_dirs[0])
     gp.rasterize_numpy(arrays,reg_dirs[0],filename=reg_filename,type='float32')
 
 
@@ -98,10 +116,14 @@ if is_compute_class or is_compute_sem:
         arrays = np.nanmedian(arrays, axis=-1)
 
         if is_compute_class:
+            if args.is_clip_to_countries:
+                arrays = clipcountries(arrays, ref_data=sem_dirs[0])
             gp.rasterize_numpy(arrays, sem_dirs[0], filename=classprob_filename, type='float32')
 
         if is_compute_sem:
             arrays = nanargmax(arrays)
+            if args.is_clip_to_countries:
+                arrays = clipcountries(arrays, ref_data=reg_dirs[0])
             gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
     else:
         print('computing argmax and then majority voting')
@@ -115,5 +137,7 @@ if is_compute_class or is_compute_sem:
         arrays, _ = stats.mstats.mode(arrays,axis=-1)
         arrays[np.all(mask,axis=-1)] = args.nan_class
         # arrays = np.int32(arrays)
+        if args.is_clip_to_countries:
+            arrays = clipcountries(arrays, ref_data=reg_dirs[0])
         gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
 
