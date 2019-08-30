@@ -12,6 +12,7 @@ import pandas as pd
 import json
 import gdal_processing as gp
 
+
 parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -126,35 +127,38 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
     if is_load_file:
 
         filename = f'{PATH}/barry_palm/data/2A/datasets/{DATASET}.csv'
-        ds = pd.read_csv(filename)
+        if os.path.exists(filename):
+            ds = pd.read_csv(filename)
 
-        ds = ds.where((pd.notnull(ds)), None)
-        ds['base_path'] = ds['lr'].map(lambda x: x.split('/barry_palm/', 1)[0] + '/barry_palm/')
-        add_path = lambda x: PATH+'/barry_palm/'+x if isinstance(x, str) else x
-        ds['lr'] = ds['lr'].map(add_path)
-        ds['hr'] = ds['hr'].map(add_path)
-        ds['gt'] = ds['gt'].map(add_path)
+            ds = ds.where((pd.notnull(ds)), None)
+            ds['base_path'] = ds['lr'].map(lambda x: x.split('/barry_palm/', 1)[0] + '/barry_palm/')
+            add_path = lambda x: PATH+'/barry_palm/'+x if isinstance(x, str) else x
+            ds['lr'] = ds['lr'].map(add_path)
+            ds['hr'] = ds['hr'].map(add_path)
+            ds['gt'] = ds['gt'].map(add_path)
 
 
-        ds_ =ds[ds.type == 'tr'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
-        dset_config['tr'] = [row.to_dict() for index, row in ds_.iterrows()]
+            ds_ =ds[ds.type == 'tr'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
+            dset_config['tr'] = [row.to_dict() for index, row in ds_.iterrows()]
 
-        ds_ = ds[ds.type == 'val'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
-        dset_config['val'] = [row.to_dict() for index, row in ds_.iterrows()]
+            ds_ = ds[ds.type == 'val'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
+            dset_config['val'] = [row.to_dict() for index, row in ds_.iterrows()]
 
-        ds_ = ds[ds.type == 'test'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
-        dset_config['test'] = [row.to_dict() for index, row in ds_.iterrows()]
+            ds_ = ds[ds.type == 'test'][['gt', 'hr', 'lr', 'roi', 'roi_lb', 'tilename']]
+            dset_config['test'] = [row.to_dict() for index, row in ds_.iterrows()]
 
-        with open(filename.replace('.csv','.json'), 'r') as fp:
-            data = json.load(fp)
-        print('loaded dataconfig from', filename)
+            with open(filename.replace('.csv','.json'), 'r') as fp:
+                data = json.load(fp)
+            print('loaded dataconfig from', filename)
 
-        dset_config = {**dset_config, **data}
+            dset_config = {**dset_config, **data}
 
-        save_dir = dset_config['save_dir'].split('/sparse/training/snapshots/')[-1]
-        dset_config['save_dir'] = PATH_TRAIN+'/sparse/training/snapshots/'+ save_dir
+            save_dir = dset_config['save_dir'].split('/sparse/training/snapshots/')[-1]
+            dset_config['save_dir'] = PATH_TRAIN+'/sparse/training/snapshots/'+ save_dir
 
-        return dset_config
+            return dset_config
+        else:
+            print(f'{filename} not found...')
 
     if 'palmcocotiles' in DATASET:
         OBJECT = 'palmcoco'
@@ -164,47 +168,68 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
 
         rois = ['geom']
 
-        tilenames_tr = ['T49NCB', 'T49NDB']
-        tilenames_val = ['T49MCV']
+
+        if 'palmcocotiles1' in DATASET:
+            tilenames_tr = ['T49MCV']
+            tilenames_val = ['T49NEB']
+        elif 'palmcocotiles2' in DATASET:
+            tilenames_tr = ['T49NCB', 'T49NDB','T49NEB','T49NEC']
+            tilenames_val = ['T49MCV']
+        else:
+            tilenames_tr = ['T49NCB', 'T49NDB']
+            tilenames_val = ['T49MCV']
 
         GT_train = PATH + '/barry_palm/data/labels/palm_annotations/*/group2'
         add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
                             GT=GT_train,
                             loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
         GT_train = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
         add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
                             GT=GT_train,
                             loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
         GT_val = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
         add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
                             GT=GT_val,
                             loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
         # COCO DATA
+        if 'palmcocotiles1' in DATASET:
+            tilenames_tr = ['T49MCV']
+            tilenames_val = ['T50NMP']
+        elif 'palmcocotiles2' in DATASET:
+            tilenames_tr = ['T50PNQ']
+            tilenames_val = ['T49MCV']
 
-        tilenames_tr = ['T50NMP', 'T50PNQ']
-        tilenames_val = ['T49MCV']
+            add_datasets_intile('T50PNQ', rois_train=['117.86,8.82,117.92,8.9'], rois_val=[], rois_test=[],
+                                GT=PATH + '/barry_palm/data/labels/coco/points_detections.kml',
+                                loc='phillipines_2017',
+                                top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
+
+        else:
+            tilenames_tr = ['T50NMP', 'T50PNQ']
+            tilenames_val = ['T49MCV']
+
 
         GT_train = PATH + '/barry_palm/data/labels/coco_annotations/*/group2'
         add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
                             GT=GT_train,
                             loc='phillipines_2017',
-                            top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
         GT_train = PATH + '/barry_palm/data/labels/coco_annotations/*/group1'
         add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
                             GT=GT_train,
                             loc='phillipines_2017',
-                            top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
         GT_val = PATH + '/barry_palm/data/labels/coco_annotations/*/group1'
         add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
                             GT=GT_val,
                             loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
 
     elif 'palmcoco' in DATASET:
