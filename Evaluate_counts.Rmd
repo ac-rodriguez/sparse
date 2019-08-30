@@ -1,0 +1,482 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.1.7
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+from osgeo import gdal, ogr, osr
+import os
+import glob
+import simplekml
+import numpy as np
+
+```
+
+```{python jupyter={'source_hidden': True}}
+
+def zonal_stats_old(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints = False, refband=1):
+
+    # Open data
+    raster = gdal.Open(input_value_raster)
+    shp = ogr.Open(input_zone_polygon)
+    lyr = shp.GetLayer()
+
+    # Get raster georeference info
+    transform = raster.GetGeoTransform()
+    xOrigin = transform[0]
+    yOrigin = transform[3]
+    pixelWidth = transform[1]
+    pixelHeight = transform[5]
+
+    # Reproject vector geometry to same projection as raster
+    sourceSR = lyr.GetSpatialRef()
+    targetSR = osr.SpatialReference()
+    targetSR.ImportFromWkt(raster.GetProjectionRef())
+    coordTrans = osr.CoordinateTransformation(sourceSR,targetSR)
+    feat = lyr.GetFeature(FID)
+    geom = feat.GetGeometryRef()
+    geom.Transform(coordTrans)
+
+    # Get extent of feat
+    geom = feat.GetGeometryRef()
+
+    if geom.GetGeometryName() == 'MULTIPOLYGON' :
+        count = 0
+        pointsX = []; pointsY = []
+        for polygon in geom:
+            geomInner = geom.GetGeometryRef(count)
+            ring = geomInner.GetGeometryRef(0)
+            numpoints = ring.GetPointCount()
+            for p in range(numpoints):
+                    lon, lat, z = ring.GetPoint(p)
+                    pointsX.append(lon)
+                    pointsY.append(lat)
+            count += 1
+    elif geom.GetGeometryName() == 'POLYGON':
+        ring = geom.GetGeometryRef(0)
+        numpoints = ring.GetPointCount()
+        pointsX = []; pointsY = []
+        for p in range(numpoints):
+                lon, lat, z = ring.GetPoint(p)
+                pointsX.append(lon)
+                pointsY.append(lat)
+    elif (geom.GetGeometryName() == 'LINESTRING'):
+        numpoints = geom.GetPointCount()
+        pointsX = []
+        pointsY = []
+        for p in range(numpoints):
+            lon, lat, z = geom.GetPoint(p)
+            pointsX.append(lon)
+            pointsY.append(lat)
+    else:
+        sys.exit("ERROR: Geometry needs to be either Polygon or Multipolygon")
+
+    xmin = min(pointsX)
+    xmax = max(pointsX)
+    ymin = min(pointsY)
+    ymax = max(pointsY)
+
+    # Specify offset and rows and columns to read
+    xoff = int((xmin - xOrigin)/pixelWidth)
+    yoff = int((yOrigin - ymax)/pixelWidth)
+    if xoff < 0 or yoff < 0:
+        return np.nan
+    xcount = int((xmax - xmin)/pixelWidth)+1
+    ycount = int((ymax - ymin)/pixelWidth)+1
+
+    if is_return_numpoints:
+        # TODO check that all the points are inside the region of interest
+        return geom.GetPointCount()
+
+    # Create memory target raster
+    target_ds = gdal.GetDriverByName('MEM').Create('', xcount, ycount, 1, gdal.GDT_Byte)
+    target_ds.SetGeoTransform((
+        xmin, pixelWidth, 0,
+        ymax, 0, pixelHeight,
+    ))
+
+    # Create for target raster the same projection as for the value raster
+    raster_srs = osr.SpatialReference()
+    raster_srs.ImportFromWkt(raster.GetProjectionRef())
+    target_ds.SetProjection(raster_srs.ExportToWkt())
+
+    # Rasterize zone polygon to raster
+    gdal.RasterizeLayer(target_ds, [1], lyr, burn_values=[1])
+
+    # Read raster as arrays
+    banddataraster = raster.GetRasterBand(refband)
+    try:
+        dataraster = banddataraster.ReadAsArray(xoff, yoff, xcount, ycount).astype(np.float)
+    except AttributeError:
+        return np.nan
+    bandmask = target_ds.GetRasterBand(1)
+    datamask = bandmask.ReadAsArray(0, 0, xcount, ycount).astype(np.float)
+    print(datamask.mean())
+    clip = True
+    if clip:
+        dataraster = np.clip(dataraster,0.01,1e9)
+    if not np.any(datamask):
+        print('datamask empty')
+        return np.nan
+    # Mask zone of raster
+#     zoneraster = np.ma.masked_array(dataraster,  np.logical_not(datamask))
+    dataraster[np.logical_not(datamask)] = np.nan
+
+    # Calculate statistics of zonal raster
+    # return numpy.average(zoneraster),numpy.mean(zoneraster),numpy.median(zoneraster),numpy.std(zoneraster),numpy.var(zoneraster)
+    try:
+        return fn(dataraster)
+    except ValueError:
+        print('fix')
+        return np.nan
+    
+def loop_zonal_stats_update_old(input_zone_polygon, input_value_raster, fieldname, fn, is_update=True, refband=1, is_pos_only=False):
+
+    shp = ogr.Open(input_zone_polygon, update=1)
+    lyr = shp.GetLayer()
+    lyrdf =lyr.GetLayerDefn()
+
+    # TreeFieldName = 'TreePredAd1'
+    if is_update:
+        id_ = lyrdf.GetFieldIndex(fieldname)
+        if id_ == -1:
+            field_defn = ogr.FieldDefn(fieldname, ogr.OFTReal)
+            lyr.CreateField(field_defn)
+            id_ = lyrdf.GetFieldIndex(fieldname)
+        else:
+            print('Field {} already exists, may overwrite'.format(fieldname))
+    outVals = []
+    id_Name = lyrdf.GetFieldIndex('Name')
+    for FID in range(lyr.GetFeatureCount()):
+        feat = lyr.GetFeature(FID)
+        if feat is not None:
+            # compute sum
+            name_ = feat.GetField(id_Name)
+            if 'pos' in name_ or not is_pos_only:
+                meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, refband=refband)
+                print(f' {meanValue:.2f} Trees in {name_}')
+
+            else:
+                meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints=True, refband=refband)
+                print(f' {meanValue:.2f} Ref points in {name_}')
+            outVals.append(meanValue)
+            if np.isnan(meanValue):
+                print(meanValue,FID)
+            if is_update:
+                lyr.SetFeature(feat)
+                feat.SetField(id_,meanValue)
+                lyr.SetFeature(feat)
+    return np.sum(outVals)
+
+```
+
+```{python}
+def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, fn, is_update=True, refband=1, is_pos_only=False):
+
+    shp = ogr.Open(input_zone_polygon, update=1)
+    lyr = shp.GetLayer()
+    lyrdf =lyr.GetLayerDefn()
+
+    
+    id_ = lyrdf.GetFieldIndex(fieldname)
+    if id_ == -1:
+        field_defn = ogr.FieldDefn(fieldname, ogr.OFTReal)
+        lyr.CreateField(field_defn)
+        id_ = lyrdf.GetFieldIndex(fieldname)
+    else:
+        print('Field {} already exists, may overwrite'.format(fieldname))
+    outVals = []
+    id_Name = lyrdf.GetFieldIndex('Name')
+    for FID in range(lyr.GetFeatureCount()):
+        feat = lyr.GetFeature(FID)
+        if feat is not None:
+            # compute sum
+            name_ = feat.GetField(id_Name)
+            meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, refband=refband)
+#             print(f' {meanValue:.2f} Trees in {name_}')
+            outVals.append(meanValue)
+#             if np.isnan(meanValue):
+#                 print(name_,FID,'is all nan')
+            lyr.SetFeature(feat)
+            feat.SetField(id_,meanValue)
+            lyr.SetFeature(feat)
+    return np.sum(outVals)
+
+def zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints = False, refband=1):
+
+    # Open data
+    raster = gdal.Open(input_value_raster)
+    shp = ogr.Open(input_zone_polygon)
+    lyr = shp.GetLayer()
+
+    # Get raster georeference info
+    transform = raster.GetGeoTransform()
+    xOrigin = transform[0]
+    yOrigin = transform[3]
+    pixelWidth = transform[1]
+    pixelHeight = transform[5]
+
+    # Reproject vector geometry to same projection as raster
+    sourceSR = lyr.GetSpatialRef()
+    targetSR = osr.SpatialReference()
+    targetSR.ImportFromWkt(raster.GetProjectionRef())
+    coordTrans = osr.CoordinateTransformation(sourceSR,targetSR)
+    feat = lyr.GetFeature(FID)
+    geom = feat.GetGeometryRef()
+    geom.Transform(coordTrans)
+
+    # Get extent of feat
+    geom = feat.GetGeometryRef()
+
+    if geom.GetGeometryName() == 'POLYGON':
+        ring = geom.GetGeometryRef(0)
+        numpoints = ring.GetPointCount()
+        pointsX = []; pointsY = []
+        for p in range(numpoints):
+                lon, lat, z = ring.GetPoint(p)
+                pointsX.append(lon)
+                pointsY.append(lat)
+    else:
+        sys.exit("ERROR: Geometry needs to be a Polygon")
+    xmin = min(pointsX)
+    xmax = max(pointsX)
+    ymin = min(pointsY)
+    ymax = max(pointsY)
+
+    # Specify offset and rows and columns to read
+    xoff = int((xmin - xOrigin)/pixelWidth)
+    yoff = int((yOrigin - ymax)/pixelWidth)
+   
+    xcount = int((xmax - xmin)/pixelWidth)+1
+    ycount = int((ymax - ymin)/pixelWidth)+1
+
+
+    xoff = min(xoff,raster.RasterXSize -1)
+    xoff = max(xoff,1)
+    
+    xcount = min(xcount,raster.RasterXSize -1 - xoff)
+    ycount = min(ycount,raster.RasterYSize -1 - yoff)
+      
+
+    # Create memory target raster
+    target_ds = gdal.GetDriverByName('MEM').Create('', xcount, ycount, 1, gdal.GDT_Byte)
+    target_ds.SetGeoTransform((
+        xmin, pixelWidth, 0,
+        ymax, 0, pixelHeight,
+    ))
+
+    # Create for target raster the same projection as for the value raster
+    raster_srs = osr.SpatialReference()
+    raster_srs.ImportFromWkt(raster.GetProjectionRef())
+    target_ds.SetProjection(raster_srs.ExportToWkt())
+
+    # Rasterize zone polygon to raster
+    gdal.RasterizeLayer(target_ds, [1], lyr, burn_values=[1])
+
+    # Read raster as arrays
+    banddataraster = raster.GetRasterBand(refband)
+    try:
+        dataraster = banddataraster.ReadAsArray(xoff, yoff, xcount, ycount).astype(np.float)
+    except AttributeError:
+        print('dataraster wrong')
+#         print('geotransform',transform)
+        print(xoff,yoff,xcount,ycount)
+        print(raster.RasterXSize,raster.RasterYSize, 'xmax,ymax:',xoff+xcount,yoff+xcount)
+        return np.nan
+    
+    bandmask = target_ds.GetRasterBand(1)
+    datamask = bandmask.ReadAsArray(0, 0, xcount, ycount).astype(np.float)
+#     print(datamask.mean())
+    clip = True
+    if clip:
+#         dataraster = np.clip(dataraster,0.01,1e9)
+        dataraster[dataraster < 0.01] = np.nan
+    dataraster[dataraster == 99] = np.nan
+    if not np.any(datamask):
+        print('datamask empty')
+        return np.nan
+    # Mask zone of raster
+#     zoneraster = np.ma.masked_array(dataraster,  np.logical_not(datamask))
+    dataraster[np.logical_not(datamask)] = np.nan
+
+    # Calculate statistics of zonal raster
+    # return numpy.average(zoneraster),numpy.mean(zoneraster),numpy.median(zoneraster),numpy.std(zoneraster),numpy.var(zoneraster)
+    try:
+        return fn(dataraster)
+    except ValueError:
+        print('fix')
+        return np.nan
+    
+```
+
+```{python}
+obj='palm'
+
+
+object_dict= {'palm':0,'coco':1}
+
+ref_band = object_dict[obj]
+
+
+
+points ='/home/pf/pfstud/andresro/tree_annotationsAug2019/annotations/Jan/palm/49MCV/Palm_Jan_1.kml'
+
+```
+
+```{python}
+def convert_to_shp(points):
+    if points.endswith('.kml'):
+        new_points=points.replace('.kml','.shp')
+        srcDS = gdal.OpenEx(points)
+        ds = gdal.VectorTranslate(new_points, srcDS, format='ESRI Shapefile')
+        ds = None
+        points = new_points
+    return points 
+
+
+def drop_all_butName(points):
+    dataSource = ogr.Open(points, 1) 
+
+    layer = dataSource.GetLayer()
+
+    lyrdf = layer.GetLayerDefn()
+
+    id_Name = lyrdf.GetFieldIndex('Name')
+    attr_N = lyrdf.GetFieldCount()
+    print(attr_N, id_Name)
+    for i in range(attr_N):
+        if not i == id_Name:
+            layer.DeleteField(i)   
+    attr_N = lyrdf.GetFieldCount()
+    print(attr_N)
+    dataSource = None
+
+```
+
+```{python}
+ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5/R132_T49MCV_preds_reg.tif'
+for i in range(3):
+    points = f'/home/pf/pfstud/andresro/tree_annotationsAug2019/annotations/Jan/palm/49MCV/Palm_Jan_{i+1}.kml'
+    points = convert_to_shp(points)
+    print(points)
+    loop_zonal_stats_update(input_zone_polygon=points,input_value_raster=ref_raster,fieldname='pred1',fn=np.ma.sum, is_update=False, is_pos_only=True)
+```
+
+```{python jupyter={'outputs_hidden': True}}
+ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5/R018_T47NQA_preds_reg.tif'
+points = '/home/pf/pfstud/andresro/tree_annotationsAug2019/annotations/Andres/palm/points_manual_2019.kml'
+points = convert_to_shp(points)
+print(points)
+if os.path.isdir(points):
+    pointsList = glob.glob(points+"/*.shp")
+    print(f'processing {len(pointsList)} layers')
+else:
+    pointsList = [points]
+
+for points in pointsList:
+    
+    out_val = loop_zonal_stats_update(input_zone_polygon=points,input_value_raster=ref_raster,fieldname='pred1',fn=np.ma.sum, is_update=False)
+    print(f"TOTAL {out_val:.2f}", os.path.basename(points))
+```
+
+```{python}
+import gdal_processing as gp
+```
+
+```{python jupyter={'source_hidden': True}}
+import math
+EARTH_RADIUS = 6371000  # Radius in meters of Earth
+
+
+# Compute the shortest path curved distance between 2 points (lat1,lon1) and (lat2,lon2) using the Haversine formula.
+def haversine_distance(lon1, lat1, lon2, lat2):
+
+    a = math.sin(math.radians((lat2 - lat1) / 2.0)) ** 2 + math.cos(math.radians(lat1)) * math.cos(
+        math.radians(lat2)) * math.sin(math.radians((lon2 - lon1) / 2.0)) ** 2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return EARTH_RADIUS * c
+
+def split_roi_to_rois(lon1_, lat1_, lon2_, lat2_, meters_split = 1500):
+
+    lon1, lat1, lon2, lat2 = min(lon1_, lon2_), min(lat1_,lat2_), max(lon1_, lon2_), max(lat1_, lat2_)
+
+    delta_lon_m = haversine_distance(lon1=lon1,lat1=lat1,lon2=lon2,lat2=lat1)
+    delta_lat_m = haversine_distance(lon1=lon1,lat1=lat1,lon2=lon1,lat2=lat2)
+    rois = []
+
+    N_lon, N_lat = map(lambda x: int(math.ceil(x / meters_split)), [delta_lon_m,delta_lat_m])
+
+    delta_lon, delta_lat = (lon2-lon1, lat2 - lat1)
+    for i in range(N_lat):
+        for j in range(N_lon):
+            ind = i * N_lon + j
+            rois.append({"roi": (
+                                lat1 + (delta_lat) * i / N_lat,
+                                lon1 + (delta_lon) * j / N_lon,
+                                lat1 + (delta_lat) * (i + 1) / N_lat,
+                                lon1 + (delta_lon) * (j + 1) / N_lon),
+                        "name": "ROI{}".format(ind + 1)})
+
+    return rois
+
+def to_bbox(roi_lon_lat):
+    if isinstance(roi_lon_lat, str):
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = map(float, re.split(',', roi_lon_lat))
+    else:
+        roi_lon1, roi_lat1, roi_lon2, roi_lat2 = roi_lon_lat
+
+    geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
+    return geo_pts_ref
+
+
+
+```
+
+```{python}
+ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5/T49MCV_preds_reg.tif'
+save_dir = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5'
+ds = gdal.Open(ref_raster)
+
+geo_pts_ref = gp.get_lonlat(ds)
+lon1_, lat1_, lon2_, lat2_ = min([x[0] for x in geo_pts_ref]), min([x[1] for x in geo_pts_ref]),max([x[0] for x in geo_pts_ref]), max([x[1] for x in geo_pts_ref])
+
+roi_ = split_roi_to_rois(lon1_, lat1_, lon2_, lat2_,2000)
+print(len(roi_))
+```
+
+```{python}
+kmlfile_name = save_dir+"/rois_{}.kml".format(len(roi_))
+kml = simplekml.Kml()
+for roi in roi_:
+    lat1, lon1, lat2, lon2 = roi["roi"]
+    # print roi
+
+    geo_pts_ref = to_bbox([lon1, lat1, lon2, lat2])
+    pol = kml.newpolygon(name=roi['name'])
+    pol.outerboundaryis = geo_pts_ref
+    pol.style.polystyle.color = simplekml.Color.changealphaint(100, simplekml.Color.white)
+
+kml.save(kmlfile_name)
+```
+
+```{python}
+points = convert_to_shp(kmlfile_name)
+# drop_all_butName(points)
+```
+
+```{python}
+loop_zonal_stats_update(input_zone_polygon=points,input_value_raster=ref_raster,fieldname='pred_palm',fn=np.nansum, is_update=True, refband=1)
+```
+
+```{python}
+
+```
