@@ -45,7 +45,7 @@ def downscale(img, scale):
     return imout
 
 
-def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None):
+def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_skip_if_masked=True):
     if data_file is None:
         return None
         # if 'LR_file' in args:
@@ -77,7 +77,8 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None):
                 mask = np.logical_or(mask, missing)
         if np.mean(mask) > 0.5:
             print(f" [!] {np.mean(mask)*100:.2f}% of data is masked, skipping it...")
-            return None
+            if is_skip_if_masked:
+                return None
 
         mask = interpPatches(mask, data10.shape[0:2], squeeze=True, mode='edge') > 0.5
         data20 = data20[...,0:-1]  # Dropping the SCL band
@@ -245,7 +246,7 @@ class DataReader(object):
             #
             # print('done')
 
-    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None, is_load_lab=True,is_load_input=True):
+    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None, is_load_lab=True,is_load_input=True, is_skip_if_masked=True):
 
         if is_vaihingen:
             train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=None, scale=self.scale)
@@ -264,7 +265,7 @@ class DataReader(object):
                     assert train_h is not None
                     train = downscale(train_h.copy(), scale=self.scale)
                 else:
-                    train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict)
+                    train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict,is_skip_if_masked=is_skip_if_masked)
 
                 if train_h is None and upsample_lr:
                     train_h = interpPatches(train, scale=self.scale)
@@ -319,6 +320,7 @@ class DataReader(object):
             val[2] = labels
             val[3] = lim_labels
         ray.init()
+        print(ray.nodes()[0]['Resources'])
 
         @ray.remote
         def f(tr_,dict_id, mask_dict):
@@ -501,7 +503,8 @@ class DataReader(object):
             test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_,
                                                                               upsample_lr=self.is_upsample,
                                                                               is_vaihingen=is_vaihingen,
-                                                                              ref_scale=ref_scale, mask_out_dict=maskout)
+                                                                              ref_scale=ref_scale, mask_out_dict=maskout,
+                                                                              is_skip_if_masked=False)
             is_valid.append(test is not None)
             if is_valid[-1]:
                 # test[test[..., -2] > 50] = np.nan
