@@ -169,67 +169,45 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         rois = ['geom']
 
 
-        if 'palmcocotiles1' in DATASET:
-            tilenames_tr = ['T49MCV']
-            tilenames_val = ['T49NEB']
-        elif 'palmcocotiles2' in DATASET:
-            tilenames_tr = ['T49NCB', 'T49NDB','T49NEB','T49NEC']
-            tilenames_val = ['T49MCV']
-        else:
-            tilenames_tr = ['T49NCB', 'T49NDB']
-            tilenames_val = ['T49MCV']
-
-        GT_train = PATH + '/barry_palm/data/labels/palm_annotations/*/group2'
-        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
-                            GT=GT_train,
+        # TRAIN
+        add_datasets_intile(['T49MCV'], rois_train=rois, rois_val=[], rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group1',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
-        GT_train = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
-        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
-                            GT=GT_train,
+        add_datasets_intile(['T49MCV'], rois_train=rois, rois_val=[], rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/coco_annotations/*/group1',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
-        GT_val = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
-        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
-                            GT=GT_val,
+        # VAL
+        add_datasets_intile(['T49MCV'], rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group2',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+        add_datasets_intile(['T49MCV'], rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/coco_annotations/*/group2',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
-        # COCO DATA
-        if 'palmcocotiles1' in DATASET:
-            tilenames_tr = ['T49MCV']
-            tilenames_val = ['T50NMP']
-        elif 'palmcocotiles2' in DATASET:
-            tilenames_tr = ['T50PNQ']
-            tilenames_val = ['T49MCV']
-
+        if 'palmcocotiles21' in DATASET or 'palmcocotiles1' in DATASET:
             add_datasets_intile('T50PNQ', rois_train=['117.86,8.82,117.92,8.9'], rois_val=[], rois_test=[],
                                 GT=PATH + '/barry_palm/data/labels/coco/points_detections.kml',
                                 loc='phillipines_2017',
-                                top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
+                                top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
-        else:
-            tilenames_tr = ['T50NMP', 'T50PNQ']
-            tilenames_val = ['T49MCV']
+        if 'palmcocotiles2' in DATASET:
+            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB']
+
+            add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                                GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group1',
+                                loc='palmcountries_2017',
+                                top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+            add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                                GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group2',
+                                loc='palmcountries_2017',
+                                top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
 
-        GT_train = PATH + '/barry_palm/data/labels/coco_annotations/*/group2'
-        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
-                            GT=GT_train,
-                            loc='phillipines_2017',
-                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
-        GT_train = PATH + '/barry_palm/data/labels/coco_annotations/*/group1'
-        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
-                            GT=GT_train,
-                            loc='phillipines_2017',
-                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
-
-        GT_val = PATH + '/barry_palm/data/labels/coco_annotations/*/group1'
-        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
-                            GT=GT_val,
-                            loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
 
     elif 'palmcoco' in DATASET:
@@ -318,36 +296,36 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         rois = ['geom']
         if 'palmsarawak' == DATASET:
             tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB', 'T49NGE', 'T49NHE', 'T49NHD', 'T50NKL']
-            tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
         elif 'palmsarawak1' == DATASET:
-            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB','T49NGB'] # TODO check which one is giving only black pixels after masking out
-            tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB','T49NGB']
         elif 'palmsarawak2' == DATASET:
             tilenames_tr = ['T49NGE', 'T49NHE', 'T49NHD', 'T50NKL']
-            tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+
         else:
             raise ValueError(DATASET+' not defined')
 
-
-        GT_ = PATH + '/barry_palm/data/labels/palm_annotations/*/group1'
+        # TRAIN
         add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
-                            GT=GT_,
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group1',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
-        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
-                            GT=GT_,
-                            loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
-        GT_ = PATH + '/barry_palm/data/labels/palm_annotations/*/group2'
         add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
-                            GT=GT_,
-                            loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
-        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
-                            GT=GT_,
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group2',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
 
+        # VAL
+        tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group1',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group2',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+
+        # TEST
         tilenames = ['T49NEC', 'T49NHD']
         add_datasets_intile(tilenames, rois_train=[], rois_val=[], rois_test=[None],
                             GT=None,
