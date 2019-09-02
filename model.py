@@ -372,14 +372,26 @@ class Model:
             if self.args.lambda_reg > 0.0:
                 loss_reg = tf.compat.v1.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
                 self.losses.append(loss_reg)
-                self.scale_losses.append(self.args.lambda_reg * loss_reg * lam_evol)
+                self.scale_losses.append(self.args.lambda_reg * lam_evol)
                 # self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
                 tf.compat.v1.summary.scalar('loss/reg', loss_reg)
+                if self.args.combinatorial_loss is not None:
+                    for i in range(self.args.combinatorial_loss):
+                        y_ = tools.sum_pool(self.y_hat['reg'], (i + 1) * 2)
+                        gt_ = self.compute_labels_ls(self.labels, (i + 1) * 2)
+                        w_ = self.get_w(gt_)
+                        loss_ = tf.compat.v1.losses.mean_squared_error(labels=gt_, predictions=y_, weights=w_)
+                        self.losses.append(loss_)
+                        self.scale_losses.append(self.args.lambda_reg / self.args.combinatorial_loss)
+                    norm_cross_corr = tools.pair_distance(self.y_hat['reg'],self.labels)
+                    self.losses.append(tf.reduce_sum(input_tensor=tf.square(tf.maximum(0., 1.0 - norm_cross_corr))))
+                    self.scale_losses.append(self.args.lambda_reg *1)
+
             if self.args.lambda_reg < 1.0:
                 w_ = self.float_(tf.reduce_any(tf.greater(w, 0), -1))
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hat['sem'], weights=w_)
                 self.losses.append(loss_sem)
-                self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
+                self.scale_losses.append((1.0 - self.args.lambda_reg) * lam_evol)
                 # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
                 tf.compat.v1.summary.scalar('loss/sem', loss_sem)
 
@@ -396,7 +408,7 @@ class Model:
                 w_ = self.float_(tf.reduce_any(tf.greater(w, 0), -1))
                 loss_sem = cross_entropy(labels=label_sem, logits=self.y_hath['sem'], weights=w_)
                 self.losses.append(loss_sem)
-                self.scale_losses.append((1.0 - self.args.lambda_reg) * loss_sem * lam_evol)
+                self.scale_losses.append((1.0 - self.args.lambda_reg) * lam_evol)
                 # self.lossTasks+= (1.0 - self.args.lambda_reg) * loss_sem * lam_evol
                 tf.compat.v1.summary.scalar('loss/semH', loss_sem)
         # SR loss

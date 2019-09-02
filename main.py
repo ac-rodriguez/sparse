@@ -87,6 +87,7 @@ parser.add_argument("--is-slim-eval", default=False, action="store_true",
                     help="at eval do not add DA, and feat_h architectures in the graph to speed up evaluation")
 parser.add_argument("--model", default="simple",
                     help="Model Architecture to be used [deep_sentinel2, ...]")
+parser.add_argument("--combinatorial-loss", default=None, type=np.int64, help="Add combinatorial loss at n levels of sum pooling")
 parser.add_argument("--sigma-smooth", type=int, default=None,
                     help="Sigma smooth to apply to the GT points data.")
 parser.add_argument("--sq-kernel", type=int, default=2,
@@ -173,6 +174,7 @@ def main(unused_args):
     if args.domain == 'None' or args.domain == 'none': args.domain = None
     if args.domain is not None: args.tag = '_'+args.domain + args.tag
     if args.degraded_hr: args.tag = '_degHR' + args.tag
+    if args.combinatorial_loss is not None: args.tag = f'_combl{args.combinatorial_loss}' + args.tag
     if args.distill_from is not None:
         tag_ = 'distilled'
         if args.is_hard_distill:
