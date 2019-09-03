@@ -436,6 +436,7 @@ def getrefDataset(refds,is_use_gtiff =False):
 def get_jp2(path, band, res=10):
     if path.endswith('.xml'):
         path = os.path.dirname(path)
+    assert os.path.exists(path), f' {path} does not exist'
     if band == 'CLD':
         cld = glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2") + glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLDPRB_{res}m.jp2")
         return cld[0]

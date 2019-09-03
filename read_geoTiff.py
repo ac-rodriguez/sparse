@@ -15,7 +15,7 @@ import gdal_processing as gp
 
 run_60 = False
 
-def readHR(roi_lon_lat, data_file, scale, as_float=True):
+def readHR(roi_lon_lat, data_file, scale, as_float=True, is_assert_blank=True):
     if data_file is None:
         return None
     print(' [*] Reading HR Data {}'.format(os.path.basename(data_file)))
@@ -73,7 +73,7 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True):
         id_ = 0
         chan3 = data10
     vis = (chan3 < 1).astype(np.int)
-    if np.all(chan3 < 1):
+    if np.all(chan3 < 1) and is_assert_blank:
         print(" [!] All data is blank on Band {}".format(id_+1))
         sys.exit(0)
     elif np.sum(vis) > 0:
