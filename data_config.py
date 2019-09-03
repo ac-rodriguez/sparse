@@ -64,7 +64,7 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
     dset_config['test'] = []
     dset_config['is_upsample_LR'] = True  # if needed
 
-    def add_datasets(files, gtfile, roi_, datatype='tr', tilename_=''):
+    def add_datasets(files, gtfile, roi, datatype='tr', tilename_=''):
 
         if gtfile is not None and '*' in gtfile:
             gtfile = gtfile.replace('*',tilename_,1)
@@ -74,11 +74,13 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
             gtfile = [gtfile]
 
         for gt_ in gtfile:
-            if roi_ == 'geom':
+            if roi == 'geom':
                 if os.path.exists(gt_):
                     roi_ = gp.get_positive_area_folder(gt_)
                 else:
                     return None
+            else:
+                roi_ = roi
 
             if not isinstance(files, list):
                 files = [files]
@@ -95,7 +97,8 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                         'roi_lb': roi_,
                         'tilename': tilename_})
                 else:
-                    print(f'dataset for {datatype} in tile {tilename_} does not intersect with roi {roi_} in {gt_}, skipping it')
+                    print(
+                        f'dataset for {datatype} in tile {tilename_} does not intersect with roi {roi_} in {gt_}, skipping it')
     def add_datasets_intile(tilenames,rois_train, rois_val,rois_test, GT=None, loc=None,top_10_list=None):
 
         if not isinstance(tilenames, list):
@@ -113,13 +116,13 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                 filelist = filelist[:1]
             print('Adding Train datasets')
             for roi in rois_train:
-                add_datasets(files=filelist, gtfile=GT, roi_=roi, datatype='tr', tilename_=tilename)
+                add_datasets(files=filelist, gtfile=GT, roi=roi, datatype='tr', tilename_=tilename)
             print('Adding Val datasets')
             for roi in rois_val:
-                add_datasets(files=filelist, gtfile=GT, roi_=roi, datatype='val', tilename_=tilename)
+                add_datasets(files=filelist, gtfile=GT, roi=roi, datatype='val', tilename_=tilename)
             print('Adding Test datasets')
             for roi in rois_test:
-                add_datasets(files=filelist, gtfile=GT, roi_=roi, datatype='test', tilename_=tilename)
+                add_datasets(files=filelist, gtfile=GT, roi=roi, datatype='test', tilename_=tilename)
 
     if 'pf-pc' in socket.gethostname():
         PATH = '/scratch/andresro/leon_igp'
