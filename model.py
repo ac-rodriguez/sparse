@@ -60,10 +60,12 @@ class Model:
         if ('HR' in self.model or 'SR' in self.model or 'DA_h' in self.model or 'B_h' in self.model) and not '_l' in self.model and self.is_hr_label:
             self.hr_emb = True
 
-    def get_w(self, lab):
+    def get_w(self, lab, is_99=False):
         if self.not_s2:
             lab = tf.expand_dims(lab[...,0],-1)
         w = tf.greater_equal(lab,0.0)
+        if is_99:
+            w = tf.math.logical_and(w, tf.less(lab, 99.0))  # added for cases where we have sem label but no density codes as 99
         return self.float_(w)
 
     def get_sem(self,lab, return_w = False):
@@ -370,7 +372,8 @@ class Model:
             # lam_evol = 1.0
             lam_evol = tools.evolving_lambda(self.args, height=self.args.low_task_evol) if self.args.low_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
-                loss_reg = tf.compat.v1.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w)
+                w_reg = self.get_w(labels,is_99=True)
+                loss_reg = tf.compat.v1.losses.mean_squared_error(labels=labels, predictions=self.y_hat['reg'], weights=w_reg)
                 self.losses.append(loss_reg)
                 self.scale_losses.append(self.args.lambda_reg * lam_evol)
                 # self.lossTasks+= self.args.lambda_reg * loss_reg * lam_evol
@@ -379,7 +382,7 @@ class Model:
                     for i in range(self.args.combinatorial_loss):
                         y_ = tools.sum_pool(self.y_hat['reg'], (i + 1) * 2)
                         gt_ = self.compute_labels_ls(self.labels, (i + 1) * 2)
-                        w_ = self.get_w(gt_)
+                        w_ = self.get_w(gt_, is_99=True)
                         loss_ = tf.compat.v1.losses.mean_squared_error(labels=gt_, predictions=y_, weights=w_)
                         self.losses.append(loss_)
                         self.scale_losses.append(self.args.lambda_reg / self.args.combinatorial_loss)
@@ -399,7 +402,8 @@ class Model:
 
             lam_evol = tools.evolving_lambda(self.args, height=self.args.high_task_evol) if self.args.high_task_evol is not None else 1.0
             if self.args.lambda_reg > 0.0:
-                loss_reg = tf.compat.v1.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w)
+                w_reg = self.get_w(labels,is_99=True)
+                loss_reg = tf.compat.v1.losses.mean_squared_error(labels=labels, predictions=self.y_hath['reg'], weights=w_reg)
                 self.losses.append(loss_reg)
                 self.scale_losses.append(self.args.lambda_reg * lam_evol)
                 # self.lossTasks += self.args.lambda_reg * loss_reg * lam_evol

@@ -292,7 +292,7 @@ class DataReader(object):
                                 print('Coco Object - class 2')
                             elif 'labels/coconutSHP/' in path_dict['gt']:
                                 labels = np.concatenate((labels == 6, labels == 2), axis=-1) ## Palm is code 6 and coco code 2
-                                labels = np.int32(labels) * 0.8 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
+                                labels = np.int32(labels) * 99 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
                                 print('Coco and Palm Object')
                             else:
                                 raise ValueError('Label type cannot be inferred from path:\n'+path_dict['gt'])

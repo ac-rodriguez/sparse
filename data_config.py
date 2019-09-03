@@ -226,12 +226,12 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         # PALM DATA
 
         rois_train = ['101.45,0.48,101.62,0.53','100.95,0.15,101.0,0.2', '101.05,-0.3,101.1,-0.25']  # was 0.52
-        rois_val = ['101.45,0.52,101.62,0.53']
-        rois_test = ['101.45,0.53,101.62,0.55']
+        # rois_val = ['101.45,0.52,101.62,0.53']
+        # rois_test = ['101.45,0.53,101.62,0.55']
         tilenames = ['R018_T47NQA','R018_T47MQV']
 
 
-        add_datasets_intile(tilenames, rois_train, rois_val, rois_test,
+        add_datasets_intile(tilenames, rois_train, [], [],
                             GT=PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
@@ -241,28 +241,43 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         # OBJECT = 'coco'
 
         rois_train = ['117.86,8.82,117.92,8.9', '117.7,8.92,117.77,8.95', '117.57,8.85,117.61,8.83']
-        rois_val = ['117.84,8.82,117.86,8.88', '117.7,8.90,117.77,8.92', '117.57,8.865,117.61,8.85']
-        rois_test = ['117.81,8.82,117.84,8.88']
+        # rois_val = ['117.84,8.82,117.86,8.88', '117.7,8.90,117.77,8.92', '117.57,8.865,117.61,8.85']
+        # rois_test = ['117.81,8.82,117.84,8.88']
         tilenames = ['T50PNQ']
 
-        add_datasets_intile(tilenames, rois_train, rois_val, rois_test,
+        add_datasets_intile(tilenames, rois_train, [], [],
                             GT=PATH + '/barry_palm/data/labels/coco/points_detections.kml',
                             loc='phillipines_2017',
                             top_10_list=top_10_path + '/phillipines_2017/Phillipines_all_1840.txt')
 
         # West Kalimantan DATA
         if 'kalim' in DATASET:
-            rois_train = ['109.23,-0.85,109.63,-0.6']
-            rois_val = ['109.24,-0.85,109.63,-0.93']
-            rois_test = ['109.2,-1.0,109.8,-0.6']
-            tilenames = ['R132_T49MCV']
+            # rois_train = ['109.23,-0.85,109.63,-0.6']
+            rois_train = ['109.255,-0.8913,109.3103,-0.8439',
+                          '109.572,-0.845,109.5926,-0.826']
+            # rois_val = ['109.24,-0.85,109.63,-0.93']
+            # rois_test = ['109.2,-1.0,109.8,-0.6']
+            tilenames = ['T49MCV']
 
 
-            add_datasets_intile(tilenames, rois_train, rois_val, rois_test,
+            add_datasets_intile(tilenames, rois_train, [], [],
                                 GT=PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
                                 loc='palmcountries_2017',
                                 top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
             dset_config['attr'] = 'ID'
+
+        rois = ['geom']
+        # VAL
+        add_datasets_intile(['T49MCV'], rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group2',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+        add_datasets_intile(['T49MCV'], rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/coco_annotations/*/group2',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+
     elif 'palmtiles' in DATASET:
 
         OBJECT = 'palm'
