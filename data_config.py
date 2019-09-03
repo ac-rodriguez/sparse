@@ -67,30 +67,35 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
     def add_datasets(files, gtfile, roi_, datatype='tr', tilename_=''):
 
         if gtfile is not None and '*' in gtfile:
-            gtfile = gtfile.replace('*',tilename_)
+            gtfile = gtfile.replace('*',tilename_,1)
+            if '*' in gtfile:
+                gtfile = glob.glob(gtfile)
+        if not isinstance(gtfile,list):
+            gtfile = [gtfile]
 
-        if roi_ == 'geom':
-            if os.path.exists(gtfile):
-                roi_ = gp.get_positive_area_folder(gtfile)
-            else:
-                return None
+        for gt_ in gtfile:
+            if roi_ == 'geom':
+                if os.path.exists(gt_):
+                    roi_ = gp.get_positive_area_folder(gt_)
+                else:
+                    return None
 
-        if not isinstance(files, list):
-            files = [files]
-        for file_ in files:
-            dsREFfile = gp.get_jp2(file_, 'B03', res=10)
-            dsREF = gdal.Open(dsREFfile)
+            if not isinstance(files, list):
+                files = [files]
+            for file_ in files:
+                dsREFfile = gp.get_jp2(file_, 'B03', res=10)
+                dsREF = gdal.Open(dsREFfile)
 
-            if gp.roi_intersection(dsREF, roi_):
-                dset_config[datatype].append({
-                    'lr': file_,
-                    'hr': None,
-                    'gt': gtfile,
-                    'roi': roi_,
-                    'roi_lb': roi_,
-                    'tilename': tilename_})
-            else:
-                print(f'dataset for {datatype} in tile {tilename_} does not intersect with roi {roi_}, skipping it')
+                if gp.roi_intersection(dsREF, roi_):
+                    dset_config[datatype].append({
+                        'lr': file_,
+                        'hr': None,
+                        'gt': gt_,
+                        'roi': roi_,
+                        'roi_lb': roi_,
+                        'tilename': tilename_})
+                else:
+                    print(f'dataset for {datatype} in tile {tilename_} does not intersect with roi {roi_} in {gt_}, skipping it')
     def add_datasets_intile(tilenames,rois_train, rois_val,rois_test, GT=None, loc=None,top_10_list=None):
 
         if not isinstance(tilenames, list):
@@ -117,8 +122,9 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                 add_datasets(files=filelist, gtfile=GT, roi_=roi, datatype='test', tilename_=tilename)
 
     if 'pf-pc' in socket.gethostname():
-        # PATH='/home/pf/pfstaff/projects/andresro'
         PATH = '/scratch/andresro/leon_igp'
+        if not os.path.exists(PATH):
+            PATH = '/home/pf/pfstaff/projects/andresro'
         PATH_TRAIN = '/home/pf/pfstaff/projects/andresro'
     else:
         PATH = '/cluster/work/igp_psr/andresro'
@@ -171,7 +177,7 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
 
         # TRAIN
         add_datasets_intile(['T49MCV'], rois_train=rois, rois_val=[], rois_test=[],
-                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group1',
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group*',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
         add_datasets_intile(['T49MCV'], rois_train=rois, rois_val=[], rois_test=[],
@@ -294,13 +300,75 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         dset_config['is_upsample_LR'] = False
 
         rois = ['geom']
-        if 'palmsarawak' == DATASET:
-            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB', 'T49NGE', 'T49NHE', 'T49NHD', 'T50NKL']
-        elif 'palmsarawak1' == DATASET:
+        if 'palmsarawak' == DATASET: #  Almost all sarawak (north & south)
+            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB',
+                            'T49NHD',
+                            'T49NGE', 'T49NHE',
+                            'T50NKL']
+        elif 'palmsarawak1' == DATASET: # south of val set
             tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB','T49NGB']
-        elif 'palmsarawak2' == DATASET:
-            tilenames_tr = ['T49NGE', 'T49NHE', 'T49NHD', 'T50NKL']
+        elif 'palmsarawak2' == DATASET:  # north of val set
+            tilenames_tr = ['T49NHD',
+                            'T49NGE', 'T49NHE',
+                            'T50NKL']
+        elif 'palmsarawak3' == DATASET: # all gt available in sarawak (north & south)
+            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB',
+                            'T49NEC',
+                            'T49NED','T49NHD',
+                            'T49NGE', 'T49NHE','T49NKK'
+                            'T50NKL']
+        elif 'palmsarawaksabah' == DATASET: # all gt available in sarawak (north & south) + sabah (train only)
+            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB',
+                            'T49NEC',
+                            'T49NED','T49NHD',
+                            'T49NGE', 'T49NHE','T50NKK', 'T50NMK',
+                             'T50NKL', 'T50NLL', 'T50NML', 'T50NQL',
+                             'T50NMM', 'T50NPM',
+                             'T50NMN', '50NNN']
+        else:
+            raise ValueError(DATASET+' not defined')
 
+        # TRAIN
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group*',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+        # add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+        #                     GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group2',
+        #                     loc='palmcountries_2017',
+        #                     top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+
+        # VAL
+        tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group*',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+
+        # TEST
+        tilenames = ['T49NEC', 'T49NHD']
+        add_datasets_intile(tilenames, rois_train=[], rois_val=[], rois_test=[None],
+                            GT=None,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+    elif 'palmsabah' in DATASET:
+
+        OBJECT = 'palm'
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+        dset_config['is_upsample_LR'] = False
+
+        rois = ['geom']
+        if 'palmsabah' == DATASET: # all gt available in sabah
+            tilenames_tr = ['T50NMK',
+                            'T50NKL', 'T50NLL', 'T50NML', 'T50NQL',
+                            'T50NMM', 'T50NPM',
+                            'T50NMN', '50NNN']
+        elif 'palmsabah1' == DATASET: # all gt sabah + sarawak (north)
+            tilenames_tr = ['T49NHD',
+                            'T49NGE', 'T49NHE','T50NKK','T50NMK',
+                            'T50NKL', 'T50NLL', 'T50NML', 'T50NQL',
+                            'T50NMM', 'T50NPM',
+                            'T50NMN', '50NNN']
         else:
             raise ValueError(DATASET+' not defined')
 
@@ -315,7 +383,7 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
 
         # VAL
-        tilenames_val = ['T49NFC', 'T49NFD', 'T49NGD']
+        tilenames_val = ['T50NNM', 'T50NNL']
         add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
                             GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group1',
                             loc='palmcountries_2017',
@@ -325,12 +393,6 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
 
-        # TEST
-        tilenames = ['T49NEC', 'T49NHD']
-        add_datasets_intile(tilenames, rois_train=[], rois_val=[], rois_test=[None],
-                            GT=None,
-                            loc='palmcountries_2017',
-                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
     elif 'cococomplete' in DATASET:
 
         OBJECT = 'coco'
