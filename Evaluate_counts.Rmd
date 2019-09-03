@@ -21,7 +21,7 @@ import simplekml
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+from plots import plot_heatmap
 import gdal_processing as gp
 from read_geoTiff import readHR
 ```
@@ -339,7 +339,7 @@ points ='/home/pf/pfstud/andresro/tree_annotationsAug2019/annotations/Jan/palm/4
 ```
 
 ```{python}
-def plot_counts(folder_inference, tile, folder_annotations, group='group1'):
+def plot_counts(folder_inference, tile, folder_annotations, group='group1', preds_axis=0):
     
     ref_folder = f'{folder_annotations}/{tile}/{group}' 
     ref_raster = f'{folder_inference}/{tile}_preds_reg.tif'
@@ -353,7 +353,9 @@ def plot_counts(folder_inference, tile, folder_annotations, group='group1'):
     raster = gp.rasterize_points_pos_neg_folder(folder=ref_folder,refDataset=ref_raster,lims=lims,lims_with_labels=lims,sq_kernel=2)
     raster[raster == -1] = np.nan
 
-    preds = readHR(data_file=ref_raster,roi_lon_lat=roi_,scale=10, as_float=False)
+    preds = readHR(data_file=ref_raster,roi_lon_lat=roi_,scale=10, as_float=False, is_assert_blank=False)
+    if preds.shape[-1] == 2:
+        preds = preds[...,preds_axis]
     preds[preds <0.0] = 0
     preds[preds==99] = np.nan
     preds = preds
@@ -398,6 +400,25 @@ def plot_counts(folder_inference, tile, folder_annotations, group='group1'):
 ```
 
 ```{python}
+plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+            tile='T49MCV',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/coco_annotations',
+            group='group1',preds_axis=1)
+plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+            tile='T49MCV',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/coco_annotations',
+            group='group2',preds_axis=1)
+plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+            tile='T49MCV',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group1',preds_axis=0)
+plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+            tile='T49MCV',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group2',preds_axis=0)
+```
+
+```{python}
 plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9',
             tile='T49NFC',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
@@ -415,7 +436,10 @@ plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palms
             tile='T49NFD',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
             group='group1')
-
+plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9',
+            tile='T50NKL',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group1')
 
 ```
 
@@ -451,18 +475,6 @@ plt.title(f'diff {np.nansum(diff):.2f},   {-np.nansum(diff)/np.nansum(raster):.2
 ```{python}
 preds1[preds1 > 0.1].mean(), raster[raster > 0.1].mean()
 
-
-```
-
-```{python}
-from plots import plot_heatmap
-
-
-im = plot_heatmap(data=raster,min=0,max=2)
-plt.imshow(im)
-```
-
-```{python active="", eval=FALSE}
 
 ```
 
