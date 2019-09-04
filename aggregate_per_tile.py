@@ -18,6 +18,8 @@ parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="overwrite predictions already in folder")
 parser.add_argument("--is-clip-to-countries", default=False, action="store_true",
                     help="clip values outside landdefined areas")
+parser.add_argument("--is-reg-only", default=False, action="store_true",
+                    help=" compute regression output only (omit semantic mask)")
 parser.add_argument("--is-avgprobs", default=False, action="store_true",
                     help="if true: average probabilities and then compute argmax, else mayority voting of classes")
 parser.add_argument("--nan-class", default=99, type=int,
@@ -91,7 +93,7 @@ if args.is_avgprobs:
     sem_filename = sem_filename.replace('sem.tif','semA.tif')
     is_compute_class = False
 
-is_compute_sem = not os.path.isfile(sem_filename) or args.is_overwrite
+is_compute_sem = (not os.path.isfile(sem_filename) or args.is_overwrite) and not args.is_reg_only
 
 if is_compute_class or is_compute_sem:
     if tilename.startswith('T'):
