@@ -87,7 +87,7 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
             for file_ in files:
                 dsREFfile = gp.get_jp2(file_, 'B03', res=10)
                 dsREF = gdal.Open(dsREFfile)
-
+                print(gt_)
                 if gp.roi_intersection(dsREF, roi_):
                     dset_config[datatype].append({
                         'lr': file_,
@@ -221,6 +221,17 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                                 GT=PATH + '/barry_palm/data/labels/palm/kml_geoproposals',
                                 loc='palmcountries_2017',
                                 top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+        # West Kalimantan DATA
+        if '_kalim' in DATASET:
+            rois_train = ['109.23,-0.85,109.63,-0.6']
+            tilenames = ['R132_T49MCV']
+
+
+            add_datasets_intile(tilenames, rois_train, [], [],
+                                GT=PATH + '/barry_palm/data/labels/coconutSHP/Shapefile (shp)/Land Cov BPPT 2017.shp',
+                                loc='palmcountries_2017',
+                                top_10_list=top_10_path + '/palmcountries_2017/Indonesia_all_8410.txt')
+            dset_config['attr'] = 'ID'
 
         if 'palmcocotiles2' in DATASET:
             tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB']
@@ -317,31 +328,22 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         dset_config['is_upsample_LR'] = False
 
         rois = ['geom']
+        south = ['T49NCB', 'T49NDB', 'T49NEB','T49NGB']
+        north = ['T49NHD', 'T49NGE', 'T49NHE','T50NKL']
+        others = ['T49NDA','T49NEC','49NED','50NKK']
+        sabah = ['T50NMK', 'T50NLL', 'T50NML', 'T50NQL',
+                           'T50NLM' 'T50NMM', 'T50NPM',
+                            'T50NMN', '50NNN']
         if 'palmsarawak' == DATASET: #  Almost all sarawak (north & south)
-            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB',
-                            'T49NHD',
-                            'T49NGE', 'T49NHE',
-                            'T50NKL']
+            tilenames_tr = south + north
         elif 'palmsarawak1' == DATASET: # south of val set
-            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB','T49NGB']
+            tilenames_tr = south
         elif 'palmsarawak2' == DATASET:  # north of val set
-            tilenames_tr = ['T49NHD',
-                            'T49NGE', 'T49NHE',
-                            'T50NKL']
+            tilenames_tr = north
         elif 'palmsarawak3' == DATASET: # all gt available in sarawak (north & south)
-            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB',
-                            'T49NEC',
-                            'T49NED','T49NHD',
-                            'T49NGE', 'T49NHE','T49NKK'
-                            'T50NKL']
+            tilenames_tr = south + north + others
         elif 'palmsarawaksabah' == DATASET: # all gt available in sarawak (north & south) + sabah (train only)
-            tilenames_tr = ['T49NCB', 'T49NDB', 'T49NEB', 'T49NGB',
-                            'T49NEC',
-                            'T49NED','T49NHD',
-                            'T49NGE', 'T49NHE','T50NKK', 'T50NMK',
-                             'T50NKL', 'T50NLL', 'T50NML', 'T50NQL',
-                             'T50NMM', 'T50NPM',
-                             'T50NMN', '50NNN']
+            tilenames_tr = south + north + others + sabah
         else:
             raise ValueError(DATASET+' not defined')
 
@@ -409,7 +411,43 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group2',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+    elif 'palmpeninsula' in DATASET:
 
+        OBJECT = 'palm'
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+        dset_config['is_upsample_LR'] = False
+
+        rois = ['geom']
+        if 'palmpeninsula' == DATASET: # all gt available in the peninsula
+            tilenames_tr = ['T47NRG',
+                            'T47NRF',
+                            'T47NQE',
+                            'T47NQD', 'T48NTJ',
+                            'T48NTH', 'T48NUH',
+                            'T48NUG']
+        elif 'palmpeninsula1' == DATASET: # NORTH gt available in the peninsula
+            tilenames_tr = ['T47NRG',
+                            'T47NRF',
+                            'T47NQE']
+        elif 'palmpeninsula2' == DATASET: # SOUTH gt available in the peninsula
+            tilenames_tr = ['T47NQD', 'T48NTJ',
+                            'T48NTH', 'T48NUH',
+                            'T48NUG']
+        else:
+            raise ValueError(DATASET+' not defined')
+
+        # TRAIN
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group*',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+
+        # VAL
+        tilenames_val = ['T47NRE', 'T48NTJ']
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group*',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
     elif 'cococomplete' in DATASET:
 
         OBJECT = 'coco'
