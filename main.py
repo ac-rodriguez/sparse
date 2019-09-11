@@ -69,6 +69,7 @@ parser.add_argument("--numpy-seed", default=None, type=int, help="Random seed fo
 
 # Training args
 parser.add_argument("--patch-size", default=16, type=int, help="size of the patches to be created (low-res).")
+parser.add_argument("--border", default=4, type=int, help="Border overlap between patches. N/A for random samples")
 parser.add_argument("--patch-size-eval", default=16, type=int, help="size of the patches to be created (low-res).")
 parser.add_argument("--scale", default=2, type=int, help="Upsampling scale to train")
 parser.add_argument("--batch-size", default=32, type=int, help="Batch size for training")

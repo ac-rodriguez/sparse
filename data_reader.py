@@ -337,7 +337,8 @@ class DataReader(object):
 
         data_tr = [f.remote(i,dict_id=dict_id_lab,mask_dict=None) for i in self.args.tr]
         self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
-
+        # data_tr = [f(i, dict_id=dict_id_lab, mask_dict=None) for i in self.args.tr]
+        # self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
 
         self.train = list(compress(self.train, is_valid))
         self.train_h = list(compress(self.train_h, is_valid))
@@ -365,8 +366,10 @@ class DataReader(object):
             val[3] = lim_labels
 
         data_val = [f.remote(i,dict_id=dict_id_lab_val,mask_dict=maskout) for i in self.args.val]
-
         self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
+
+        # data_val = [f(i, dict_id=dict_id_lab_val, mask_dict=maskout) for i in self.args.val]
+        # self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
         ray.shutdown()
         self.val = list(compress(self.val, is_valid))
         self.val_h = list(compress(self.val_h, is_valid))
@@ -597,7 +600,7 @@ class DataReader(object):
                 PatchExtractor(dataset_low=self.test[test_dset_], dataset_high=self.test_h[test_dset_],
                                label=self.labels_test[test_dset_],
                                patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
-                               is_random=False, border=4,
+                               is_random=False, border=self.args.border,
                                scale=self.scale, lims_with_labels=self.lims_labels_test[test_dset_],
                                patches_with_labels=self.args.patches_with_labels,
                                two_ds=self.two_ds))
