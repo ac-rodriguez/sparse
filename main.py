@@ -243,17 +243,17 @@ def main(unused_args):
         vars_to_warm_start = ["countception.*"] # with a change of sensor, encoder has different channel dimensions
 
     if args.warm_start_from is not None:
-        if args.warm_start_from == 'LOWER':
-            assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
-            warm_dir = model_dir.replace(lambdas,lambdas+'LOWER')
-        else:
-            warm_dir = os.path.join(args.save_dir,args.warm_start_from)
-            if not os.path.isdir(warm_dir):
-                warm_dir = args.warm_start_from
-            if best_ckpt:
-                warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
+        # if args.warm_start_from == 'LOWER':
+        #     assert not args.is_lower_bound, 'warm-start only works from an already trained LOWER bound'
+        #     warm_dir = model_dir.replace(lambdas,lambdas+'LOWER')
+        # else:
+        # warm_dir = os.path.join(args.save_dir,args.warm_start_from)
+        # if not os.path.isdir(warm_dir):
+        warm_dir = args.warm_start_from
+        if best_ckpt:
+            warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
 
-        warm_dir = tf.estimator.WarmStartSettings(warm_dir,vars_to_warm_start=vars_to_warm_start) #,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
+        warm_dir = tf.estimator.WarmStartSettings(warm_dir) #,vars_to_warm_start=vars_to_warm_start) #,vars_to_warm_start=[".*encode_same.*",".*counception.*"])
     elif args.distill_from is not None:
         warm_dir = args.distill_from
         if best_ckpt:
