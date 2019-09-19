@@ -5,6 +5,8 @@ import socket
 import numpy as np
 import glob
 from scipy import stats
+from skimage.transform import resize
+
 import gdal_processing as gp
 
 
@@ -20,6 +22,8 @@ parser.add_argument("--is-clip-to-countries", default=False, action="store_true"
                     help="clip values outside landdefined areas")
 parser.add_argument("--is-reg-only", default=False, action="store_true",
                     help=" compute regression output only (omit semantic mask)")
+parser.add_argument("--is-remove-water", default=False, action="store_true",
+                    help=" if any SCL in the tile is water set the prediction to 0")
 parser.add_argument("--is-avgprobs", default=False, action="store_true",
                     help="if true: average probabilities and then compute argmax, else mayority voting of classes")
 parser.add_argument("--nan-class", default=99, type=int,
@@ -38,12 +42,12 @@ def nanargmax(data, nanclass=args.nan_class):
     classes[mask] = nanclass
     return classes
 
+if 'pf-pc' in socket.gethostname():
+    PATH = '/scratch/andresro/leon_igp'
+else:
+    PATH = '/cluster/work/igp_psr/andresro'
 
 def clipcountries(arrays, ref_data):
-    if 'pf-pc' in socket.gethostname():
-        PATH = '/scratch/andresro/leon_igp'
-    else:
-        PATH = '/cluster/work/igp_psr/andresro'
     shpfile = PATH + '/barry_palm/data/labels/countries/3countries.shp'
     shp_raster = gp.rasterize_polygons(shpfile, ref_data, as_bool=True)
     arrays[~shp_raster] = args.nan_class
@@ -54,6 +58,29 @@ def clipcountries(arrays, ref_data):
 if args.save_dir is None:
     args.save_dir = os.path.dirname(args.data_dir)
 tilename = os.path.basename(args.data_dir)
+
+if args.is_remove_water:
+    path1 = PATH+'/barry_palm/data/2A/palmcountries_2017/'
+    list1 = glob.glob(f'{path1}/*{tilename}*2017*.SAFE')
+
+    is_water = []
+    # valid_pixels = []
+    for count, file in enumerate(list1):
+        #     if len(id_) > 0:
+        scl_name = glob.glob(file + "/GRANULE/*/IMG_DATA/R20m/*_SCL_20m.jp2")
+        if len(scl_name) > 0:
+            ds = gdal.Open(scl_name[0])
+            array_cld = ds.ReadAsArray()
+            array_cld = array_cld.transpose().swapaxes(0, 1)
+            array_cld = array_cld == 6
+
+            is_water.append(array_cld)
+    is_water = np.stack(is_water, axis=-1)
+
+    is_water = np.nansum(is_water, axis=-1) > 0
+    is_water = resize(is_water, output_shape=[x*2 for x in is_water.shape[0:2]], mode='edge') > 0.5
+
+
 if tilename.startswith('T'):
     # Add all the orbits in the tile
     path = os.path.dirname(args.data_dir)
@@ -78,6 +105,8 @@ if not os.path.isfile(reg_filename) or args.is_overwrite:
     print('computing median value')
     arrays = np.nanmedian(arrays, axis=-1)
     arrays[np.isnan(arrays)] = args.nan_class
+    if args.is_remove_water:
+        arrays[is_water] = 0
 
     if args.is_clip_to_countries:
         arrays = clipcountries(arrays,ref_data=reg_dirs[0])
@@ -124,6 +153,8 @@ if is_compute_class or is_compute_sem:
 
         if is_compute_sem:
             arrays = nanargmax(arrays)
+            if args.is_remove_water:
+                arrays[is_water] = 0
             if args.is_clip_to_countries:
                 arrays = clipcountries(arrays, ref_data=reg_dirs[0])
             gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
@@ -139,6 +170,8 @@ if is_compute_class or is_compute_sem:
         arrays, _ = stats.mstats.mode(arrays,axis=-1)
         arrays[np.all(mask,axis=-1)] = args.nan_class
         # arrays = np.int32(arrays)
+        if args.is_remove_water:
+            arrays[is_water] = 0 # TODO check if 0 is really background class
         if args.is_clip_to_countries:
             arrays = clipcountries(arrays, ref_data=reg_dirs[0])
         gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
