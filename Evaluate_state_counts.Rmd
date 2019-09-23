@@ -1,0 +1,301 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .Rmd
+      format_name: rmarkdown
+      format_version: '1.1'
+      jupytext_version: 1.1.7
+  kernelspec:
+    display_name: Python 3
+    language: python
+    name: python3
+---
+
+```{python}
+# %matplotlib inline
+from osgeo import gdal, ogr, osr
+import os, sys
+import glob
+import simplekml
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import seaborn as sns
+import pandas as pd
+from tqdm import tqdm_notebook as tqdm
+
+
+from plots import plot_heatmap
+import gdal_processing as gp
+from read_geoTiff import readHR
+
+p2ha = lambda x: (x/10)**2
+```
+
+## Evaluate state-wide predictions
+
+```{python}
+scale = 10
+scale_plot = 20
+input_zone_pol = '/scratch2/Dropbox/Dropbox/0_phd/tree_annotationsAug2019/countries/malaysia/MYS_adm1.shp'
+# districts = ['Johor',
+#                 'Kedah',
+#                 'Kelantan',
+#                 'Melaka',
+#                 'Negeri Sembilan',
+#                 'Pahang',
+#                 'Perak',
+#                 'Perlis',
+#                 'Pulau Pinang',
+#                 'Sabah',
+#                 'Sarawak',
+#                 'Selangor',
+#                 'Trengganu']
+```
+
+```{python}
+path = '/scratch2/Dropbox/Dropbox/0_phd/yield/mpob/'
+
+ds = pd.read_csv(path+'Areas_2017_2018.csv',dtype={'is_peninsula':bool})
+ds['Area2017pred'] = np.nan
+ds['Trees2017pred'] = np.nan
+ds = ds.set_index('STATE')
+ds
+```
+
+```{python}
+ds.columns
+```
+
+```{python}
+from skimage.measure import block_reduce
+
+```
+
+```{python}
+p2ha(scale)
+```
+
+```{python}
+import matplotlib.ticker as ticker
+import matplotlib.patches as mpatches
+```
+
+```{python}
+def compute_valid_extent(mask1,buffer = 0):
+    cols = np.sum(mask1,axis=0)
+    y1 = next( (id for id, val in enumerate(cols) if val>0), 0)
+    y2 = next( (id for id, val in reversed(list(enumerate(cols))) if val>0), 0)
+
+    rows = np.sum(mask1,axis=1)
+    x1 = next( (id for id, val in enumerate(rows) if val>0), 0)
+    x2 = next( (id for id, val in reversed(list(enumerate(rows))) if val>0), 0)
+    
+    return (x1-buffer,x2+buffer,y1-buffer,y2+buffer)
+
+
+def plot(state,raster,img, bias = 1.4, min_tree_ha=30, is_update_pd=True, is_indo=False):
+    if not is_indo:
+        id_state =  int(ds.loc[ds.index == state].Index_shp)
+    else:
+        id_state = 25
+    raster = raster.copy()
+    raster[img!=id_state] = np.nan
+    raster *=(scale**2) # computing sum instead of average in down op 
+    raster*=bias # bias correction
+
+    is_palm = raster  > min_tree_ha*p2ha(scale)
+    r1 = np.ma.array(data=is_palm,mask=np.isnan(raster))
+    area = np.ma.sum(is_palm)*p2ha(scale)
+    raster[np.logical_and(~np.isnan(raster),~is_palm)] = 0
+    trees = np.nansum(raster)
+    
+    # compute valid coords inside state
+    s = int(scale_plot / scale)
+    print(s)
+    extent = compute_valid_extent(~np.isnan(raster),buffer=100)
+    
+    mask = block_reduce(np.isnan(raster),(s,s),np.all)
+    raster = block_reduce(raster,(s,s),np.nansum)
+    raster[mask] = np.nan
+
+    r1 = block_reduce(r1,(s,s),np.any)
+    r1 = np.ma.array(data=r1,mask=mask)
+    
+    extent = [int(np.ceil(x/s)) for x in extent]
+    print(raster.shape,extent)
+    fig = plt.figure(figsize=(18,5))
+
+    gs = gridspec.GridSpec(nrows=1,ncols=2,left=0.02, bottom=0.06, right=0.95, top=0.94, wspace=0.05)
+
+    ax = plt.subplot(gs[0])
+    im = ax.imshow(raster[extent[0]:extent[1],extent[2]:extent[3]] , vmin=min_tree_ha*p2ha(scale_plot))
+    cbar = fig.colorbar(im,ax=ax) #,orientation='horizontal')
+    cbar.ax.set_ylabel(f'Trees/ {p2ha(scale_plot)} blocks')
+    ax.set_title(f' Trees {trees/1e6:.3f} m, Tree/ha {trees/area:.3f} ')
+    # ax.colorbar()
+
+    ticks = ax.get_xticks()*10*scale_plot/1000
+    ax.set_xticklabels(ticks)
+    ax.set_xlabel('km')
+    
+    ticks = ax.get_yticks()*10*scale_plot/1000
+    delta = ticks[1] -ticks[0]
+    ax.set_yticklabels(ticks[::-1]+delta) #,rotation='vertical')
+    ax.set_ylabel('km')
+
+    # ref_ [np.isnan(raster)] = np.nan
+    ax = plt.subplot(gs[1])
+    cmap = matplotlib.cm.viridis
+    
+#     cmap.set_bad('white',1.)
+    ax.imshow(r1[extent[0]:extent[1],extent[2]:extent[3]]) #,cmap='brg')
+    if is_indo:
+        area_ref = np.nan
+    else:
+        area_ref = ds.Area2017MATURED[ds.index == state].squeeze()
+    ax.set_title(f' Planted {area/1e6:.3f}mha (Ref. GT {area_ref/1e6:.3f}mha)')
+    values = [0,255]
+    # get the colors of the values, according to the 
+    # colormap used by imshow
+    colors = [ im.cmap(value) for value in values]
+    # create a patch (proxy artist) for every color 
+    labels = ['Background', 'Palm']
+    patches = [ mpatches.Patch(color=colors[i], label=labels[i]) for i in range(len(values)) ]
+    # put those patched as legend-handles into the legend
+    ax.legend(handles=patches, bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0. )
+
+    
+    ticks = ax.get_xticks()*10*scale/1000
+    ax.set_xticklabels(ticks)
+    ax.set_xlabel('km')
+    
+    ticks = ax.get_yticks()*10*scale/1000
+    delta = ticks[1] -ticks[0]
+    ax.set_yticklabels(ticks[::-1]+delta) #,rotation='vertical')
+    ax.set_ylabel('km')
+
+    fig.suptitle(state,y=1.03)
+    if is_update_pd:
+        ds.loc[ds.index == state,ds.columns == 'Area2017pred'] = area
+        ds.loc[ds.index == state,ds.columns == 'Trees2017pred'] = trees
+    else:
+        return area, trees
+#     f' Planted {area/1e6:.3f}mha , Trees {trees/1e6:.3f}m, Tree/Ha {trees/area} '
+
+```
+
+```{python}
+ref_raster = f'/scratch/andresro/leon_igp/sparse/inference/palmsarawak3_simpleA20clean_all/0_EPSG_32649_down{scale}.tif'
+# ref_raster = f'/scratch/andresro/leon_igp/sparse/inference/palmsarawak_simpleA20_allsarawak/0_untiled_down{scale}.tif'
+
+img = gp.rasterize_polygons(InputVector=input_zone_pol,refDataset=ref_raster,attribute='ID_1')
+
+raster = readHR(roi_lon_lat = None,data_file=ref_raster,scale=1,as_float=False)
+```
+
+```{python}
+# ds = pd.DataFrame(columns=['State','Trees','P'])
+plot('SARAWAK',raster,img,min_tree_ha=20,bias=1.4)
+```
+
+```{python}
+ref_raster = f'/scratch/andresro/leon_igp/sparse/inference/palmsabah_simpleA9all/0_EPSG_32650_down{scale}.tif'
+
+img = gp.rasterize_polygons(InputVector=input_zone_pol,refDataset=ref_raster,attribute='ID_1')
+
+raster = readHR(roi_lon_lat = None,data_file=ref_raster,scale=1,as_float=False)
+```
+
+```{python}
+plot('SABAH',raster,img,bias=1.1,min_tree_ha=50)
+
+```
+
+```{python}
+ref_raster = f'/scratch/andresro/leon_igp/sparse/inference/palmpeninsulanew_simpleA9all/0_EPSG_32647_down{scale}.tif'
+
+img = gp.rasterize_polygons(InputVector=input_zone_pol,refDataset=ref_raster,attribute='ID_1')
+
+raster = readHR(roi_lon_lat = None,data_file=ref_raster,scale=1,as_float=False)
+```
+
+```{python}
+for state in ds.index[ds.is_peninsula]:
+    plot(state,raster,img,bias=1.1,min_tree_ha=50)
+
+```
+
+```{python}
+ds.loc[ds.index == "MALAYSIA", ds.columns == 'Area2017pred'] = 0
+ds.loc[ds.index == "MALAYSIA", ds.columns == 'Trees2017pred'] = 0
+ds.loc[ds.index == "PENINSULAR MALAYSIA", ds.columns == 'Area2017pred'] = 0
+ds.loc[ds.index == "PENINSULAR MALAYSIA", ds.columns == 'Trees2017pred'] = 0
+ds.loc[ds.index == "SABAH & SARAWAK", ds.columns == 'Area2017pred'] = 0
+ds.loc[ds.index == "SABAH & SARAWAK", ds.columns == 'Trees2017pred'] = 0
+
+
+ds.loc[ds.index == "MALAYSIA", ds.columns == 'Area2017pred'] = ds['Area2017pred'].sum()
+ds.loc[ds.index == "MALAYSIA", ds.columns == 'Trees2017pred'] = ds['Trees2017pred'].sum()
+
+ds.loc[ds.index == "PENINSULAR MALAYSIA", ds.columns == 'Area2017pred'] = ds[ds.is_peninsula]['Area2017pred'].sum()
+ds.loc[ds.index == "PENINSULAR MALAYSIA", ds.columns == 'Trees2017pred'] = ds[ds.is_peninsula]['Trees2017pred'].sum()
+
+ds.loc[ds.index == "SABAH & SARAWAK", ds.columns == 'Area2017pred'] = ds[[x in ['SABAH','SARAWAK'] for x in ds.index]]['Area2017pred'].sum()
+ds.loc[ds.index == "SABAH & SARAWAK", ds.columns == 'Trees2017pred'] = ds[[x in ['SABAH','SARAWAK'] for x in ds.index]]['Trees2017pred'].sum()
+
+ds['Error'] = 100*(ds.Area2017pred-ds.Area2017MATURED) / ds.Area2017MATURED
+```
+
+```{python}
+ds
+```
+
+```{python}
+ref_raster = f'/scratch/andresro/leon_igp/sparse/inference/palmriau_simpleA9all/0_EPSG_32647_down{scale}.tif'
+
+img = gp.rasterize_polygons(InputVector='/home/pf/pfstaff/projects/andresro/data/countries/indonesia/IDN_adm1.shp',refDataset=ref_raster,attribute='ID_1')
+
+raster = readHR(roi_lon_lat = None,data_file=ref_raster,scale=1,as_float=False)
+```
+
+```{python}
+ds = ds.append(pd.Series(name='RIAU'))
+a  =plot('RIAU',raster,img,bias=1.4,min_tree_ha=60,is_indo=True)
+```
+
+```{python}
+ds = ds.append(pd.Series(name='RIAU'))
+
+ds.loc[ds.index == "RIAU_INDO", ds.columns == 'Area2017pred'] = 0
+```
+
+```{python}
+ds.to_csv(path+'/areas_with_predictions.csv')
+```
+
+```{python}
+
+ax = ds[['Area2017MATURED', 'Area2017TOTAL','Area2017pred']].plot.barh(figsize=(8,8))
+
+ticks = ax.get_xticks()/1e6
+
+ax.set_xticklabels(ticks) #,rotation='vertical')
+ax.set_xlabel('million ha')
+
+```
+
+```{python}
+ax = ds.Error.plot.barh()
+ax.set_xlabel('Prediction Error[%]')
+```
+
+```{python}
+path
+```
+
+```{python}
+
+```

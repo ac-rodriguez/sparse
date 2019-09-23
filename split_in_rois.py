@@ -15,6 +15,7 @@ import re
 from plots import plot_heatmap
 import gdal_processing as gp
 from read_geoTiff import readHR
+from zonal_stats import loop_zonal_stats_update, save_csv
 # In[1]:
 
 # p2ha = lambda x: (x*10)**2 /100**2
@@ -260,23 +261,116 @@ def convert_to_shp(points, is_overwrite=False):
             points = new_points
     return points 
 
+
+def loop_add_state(input_zone_polygon, geometries_dict, fieldname):
+
+    shp = ogr.Open(input_zone_polygon, update=1)
+    lyr = shp.GetLayer()
+    lyrdf =lyr.GetLayerDefn()
+
+    # TreeFieldName = 'TreePredAd1'
+
+    id_ = lyrdf.GetFieldIndex(fieldname)
+    if id_ == -1:
+        field_defn = ogr.FieldDefn(fieldname, ogr.OFTString)
+        lyr.CreateField(field_defn)
+        id_ = lyrdf.GetFieldIndex(fieldname)
+    else:
+        print('Field {} already exists, may overwrite'.format(fieldname))
+
+    # id_Name = lyrdf.GetFieldIndex('Name')
+    for FID in range(lyr.GetFeatureCount()):
+        feat = lyr.GetFeature(FID)
+        if feat is not None:
+            geom = feat.geometry()
+            env_ = geom.GetEnvelope()
+            env_ = env_[0],env_[2],env_[1],env_[3] # convert to lon,lat,lon,lat format
+            areas = []
+            for key,val in geometries_dict.items():
+                area = gp.get_area_intersection(to_bbox(env_),val)
+                areas.append(area)
+            areas = np.array(areas)
+            if np.sum(areas) > 0:
+                id_max = np.argmax(areas)
+
+                state = list(geometries_dict.keys())[id_max]
+            else:
+                state = 'Nan'
+            # # compute sum
+            # name_ = feat.GetField(id_Name)
+            # if 'pos' in name_:
+            #     meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn)
+            #     print(f' {meanValue:.2f} Trees in positive area')
+            #
+            # else:
+            #     meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints=False)
+            #     print(f' {meanValue:.2f} Ref points')
+            # if np.isnan(meanValue):
+            #     print(meanValue,FID)
+            lyr.SetFeature(feat)
+            feat.SetField(id_,state)
+            lyr.SetFeature(feat)
+
+
 p2ha = lambda x: (x / 10) ** 2
 
-
+is_indo = False
 inference_folder = '/scratch/andresro/leon_igp/sparse/inference'
 
-folder_name = 'palmsabah_simpleA9all'
-min_tree_ha = 30
-scale = 400
-scale_count = 10
-bias = 1.1
+area = 'peninsula'
 
-is_overwrite = True
+if area == 'sabah':
+    folder_name = 'palmsabah_simpleA9all'
+    projection = '32650'
+    min_tree_ha = 30
+    scale = 400
+    scale_count = 10
+    bias = 1.1
+elif area == 'sarawak':
+    folder_name = 'palmsarawak3_simpleA20clean_all'
+    projection = '32649'
+    min_tree_ha = 20
+    scale = 400
+    scale_count = 10
+    bias = 1.4
+# elif area == 'peninsula':
+#     folder_name = 'palmpeninsula_simpleA9clean_all'
+#     projection = '32647'
+#     min_tree_ha = 50
+#     scale = 400
+#     scale_count = 10
+#     bias = 1.3
+elif area == 'peninsula':
+    folder_name = 'palmpeninsulanew_simpleA9all'
+    projection = '32647'
+    min_tree_ha = 20
+    scale = 400
+    scale_count = 10
+    bias = 1.1
+
+elif area == 'riau':
+    folder_name = 'palmriau_simpleA9all'
+    projection = '32647'
+    min_tree_ha = 60
+    scale = 400
+    scale_count = 10
+    bias = 1.4
+    is_indo = True
+
+is_overwrite = False
+is_update_count = True
 is_sample = True
 sample_per_bin = 20
-n_bins = 30
-ref_raster = f'{inference_folder}/{folder_name}/0_untiled_down{scale}.tif'
-ref_raster_count = f'{inference_folder}/{folder_name}/0_untiled_down{scale_count}.tif'
+n_bins = 40
+ref_raster = f'{inference_folder}/{folder_name}/0_EPSG_{projection}_down{scale}.tif'
+ref_raster_count = f'{inference_folder}/{folder_name}/0_EPSG_{projection}_down{scale_count}.tif'
+
+if is_indo:
+    states_shp = '/home/pf/pfstaff/projects/andresro/data/countries/indonesia/IDN_adm1.shp'
+else:
+    states_shp = '/scratch2/Dropbox/Dropbox/0_phd/tree_annotationsAug2019/countries/malaysia/MYS_adm1.shp'
+
+
 fname = os.path.basename(ref_raster).replace('.tif','')
 save_dir = f'{inference_folder}/{folder_name}/shp/'
 if not os.path.exists(save_dir):
@@ -353,27 +447,32 @@ if is_overwrite or not os.path.isfile(shp_file):
     shp_file = convert_to_shp(kmlfile_name, is_overwrite=True)
     print(shp_file, len(roi1))
 
+    geometries = gp.get_geometries(states_shp,'NAME_1')
+
+    loop_add_state(shp_file,geometries,fieldname='State')
+
+    is_update_count = True
     # Add tree count
-
-    fieldname = 'Trees'
-
-
-
+if is_update_count:
+    # fieldname = ['Trees','PalmArea']
 
     def func_(x):
         x *= (scale_count ** 2)
         x *= bias
         is_palm = x > min_tree_ha * p2ha(scale_count)
+        area = np.ma.sum(is_palm) * p2ha(scale_count)
         trees = np.nansum(x[is_palm])
-        return trees
+        return trees,area
 
-    from zonal_stats import loop_zonal_stats_update, save_csv
+    loop_zonal_stats_update(shp_file, ref_raster_count, fieldname='Trees',fieldname1='PalmArea', fn=func_)
 
-    loop_zonal_stats_update(shp_file, ref_raster_count, fieldname, fn=func_)
+
 
 csv_file = save_csv(shp_file)
+print(csv_file, 'saved!')
 
-
+#
+#
 
 
 

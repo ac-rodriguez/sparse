@@ -15,19 +15,23 @@ jupyter:
 ```{python}
 # %matplotlib inline
 from osgeo import gdal, ogr, osr
-import os
+import os, sys
 import glob
 import simplekml
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import seaborn as sns
+import pandas as pd
 
 from plots import plot_heatmap
 import gdal_processing as gp
 from read_geoTiff import readHR
+
+p2ha = lambda x: (x*10)**2 /100**2
 ```
 
-```{python jupyter={'source_hidden': True}}
-
+```{python}
 def zonal_stats_old(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints = False, refband=1):
 
     # Open data
@@ -184,8 +188,8 @@ def loop_zonal_stats_update_old(input_zone_polygon, input_value_raster, fieldnam
 
 ```
 
-```{python}
-def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, fn, is_update=True, refband=1, is_pos_only=False):
+```{python jupyter={'source_hidden': True}}
+def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, fn, is_update=True, refband=1, is_pos_only=False,bias=1, field_name = 'Name'):
 
     shp = ogr.Open(input_zone_polygon, update=1)
     lyr = shp.GetLayer()
@@ -200,13 +204,13 @@ def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, f
     else:
         print('Field {} already exists, may overwrite'.format(fieldname))
     outVals = []
-    id_Name = lyrdf.GetFieldIndex('Name')
+    id_Name = lyrdf.GetFieldIndex(field_name)
     for FID in range(lyr.GetFeatureCount()):
         feat = lyr.GetFeature(FID)
         if feat is not None:
             # compute sum
             name_ = feat.GetField(id_Name)
-            meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, refband=refband)
+            meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, refband=refband,bias=bias)
 #             print(f' {meanValue:.2f} Trees in {name_}')
             outVals.append(meanValue)
 #             if np.isnan(meanValue):
@@ -216,7 +220,7 @@ def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, f
             lyr.SetFeature(feat)
     return np.sum(outVals)
 
-def zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints = False, refband=1):
+def zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints = False, refband=1, bias = 1.0):
 
     # Open data
     raster = gdal.Open(input_value_raster)
@@ -241,8 +245,19 @@ def zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpo
 
     # Get extent of feat
     geom = feat.GetGeometryRef()
-
-    if geom.GetGeometryName() == 'POLYGON':
+    if (geom.GetGeometryName() == 'MULTIPOLYGON'):
+        count = 0
+        pointsX = []; pointsY = []
+        for polygon in geom:
+            geomInner = geom.GetGeometryRef(count)
+            ring = geomInner.GetGeometryRef(0)
+            numpoints = ring.GetPointCount()
+            for p in range(numpoints):
+                    lon, lat, z = ring.GetPoint(p)
+                    pointsX.append(lon)
+                    pointsY.append(lat)
+            count += 1
+    elif geom.GetGeometryName() == 'POLYGON':
         ring = geom.GetGeometryRef(0)
         numpoints = ring.GetPointCount()
         pointsX = []; pointsY = []
@@ -306,13 +321,14 @@ def zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpo
 #         dataraster = np.clip(dataraster,0.01,1e9)
         dataraster[dataraster < 0.01] = np.nan
     dataraster[dataraster == 99] = np.nan
+    
     if not np.any(datamask):
         print('datamask empty')
         return np.nan
     # Mask zone of raster
 #     zoneraster = np.ma.masked_array(dataraster,  np.logical_not(datamask))
     dataraster[np.logical_not(datamask)] = np.nan
-
+    dataraster *=bias
     # Calculate statistics of zonal raster
     # return numpy.average(zoneraster),numpy.mean(zoneraster),numpy.median(zoneraster),numpy.std(zoneraster),numpy.var(zoneraster)
     try:
@@ -324,13 +340,13 @@ def zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpo
 ```
 
 ```{python}
-obj='palm'
+# obj='palm'
 
 object_dict= {'palm':0,'coco':1}
 
-ref_band = object_dict[obj]
+# ref_band = object_dict[obj]
 
-points ='/home/pf/pfstud/andresro/tree_annotationsAug2019/annotations/Jan/palm/49MCV/Palm_Jan_1.kml'
+# points ='/home/pf/pfstud/andresro/tree_annotationsAug2019/annotations/Jan/palm/49MCV/Palm_Jan_1.kml'
 
 ```
 
@@ -339,143 +355,1049 @@ points ='/home/pf/pfstud/andresro/tree_annotationsAug2019/annotations/Jan/palm/4
 ```
 
 ```{python}
-def plot_counts(folder_inference, tile, folder_annotations, group='group1', preds_axis=0):
-    
-    ref_folder = f'{folder_annotations}/{tile}/{group}' 
-    ref_raster = f'{folder_inference}/{tile}_preds_reg.tif'
-    #     ref_folder = '/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations/T49NGD/group1' 
-    #     ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9/T49NGD_preds_reg.tif'
-    
-    ds = gdal.Open(ref_raster)
-    roi_ = gp.get_positive_area_folder(ref_folder)
-    lims = gp.to_xy_box(roi_, ds, enlarge=10)
+# ref_folder = '/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations/T49NGD/group1' 
+# ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9/T49NGD_preds_reg.tif'
 
-    raster = gp.rasterize_points_pos_neg_folder(folder=ref_folder,refDataset=ref_raster,lims=lims,lims_with_labels=lims,sq_kernel=2)
-    raster[raster == -1] = np.nan
+# dens_min, dens_max = 0,3
 
-    preds = readHR(data_file=ref_raster,roi_lon_lat=roi_,scale=10, as_float=False, is_assert_blank=False)
-    if preds.shape[-1] == 2:
-        preds = preds[...,preds_axis]
-    preds[preds <0.0] = 0
-    preds[preds==99] = np.nan
-    preds = preds
+# ds = gdal.Open(ref_raster)
+# roi_ = gp.get_positive_area_folder(ref_folder)
 
+# lims = gp.to_xy_box(roi_, ds, enlarge=10)
 
+# raster = gp.rasterize_points_pos_neg_folder(folder=ref_folder,refDataset=ref_raster,lims=lims,lims_with_labels=lims,sq_kernel=2)
+```
+
+```{python}
+# # raster.shape
+# raster[raster == -1] = np.nan
+# # plt.imshow(raster)
+# p2ha = lambda x: (x*10)**2 /100**2
+
+# scale = 50
+# print(p2ha(scale))
+# r1 = gp.block_reduce(raster,(scale,scale),np.nansum)
+# # plt.imshow(r1)
+# plt.imshow(r1-1,cmap = 'bwr',vmin=-1,vmax=1)
+
+```
+
+```{python}
+
+# tile = 'T47NQA'
+# sq_kernel=2
+# folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5'
+# ref_folder='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/palm/kml_geoproposals'
+# ref_raster = f'{folder_inference}/{tile}_preds_reg.tif'
+# assert os.path.isfile(ref_raster), f'file {ref_raster} not found'
+#         #     ref_folder = '/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations/T49NGD/group1' 
+#         #     ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9/T49NGD_preds_reg.tif'
+# dens_min, dens_max = 0,3
+
+# ds = gdal.Open(ref_raster)
+# #roi_ = '101.45,0.53,101.62,0.55'
+# #roi_ = gp.get_positive_area_folder(ref_folder)
+# lims = gp.to_xy_box(data_config[tile], ds, enlarge=10)
+# print(lims)
+
+# raster = gp.rasterize_points_constrained(Input=ref_folder,refDataset=ref_raster,lims=lims,lims_with_labels=lims,sq_kernel=2)
+```
+
+```{python}
+# imshow(raster)
+```
+
+```{python}
+# for automatic GT
+data_config = {'T47NQA':'101.45,0.53,101.62,0.55'} 
+
+```
+
+```{python}
+p2ha = lambda x: (x/10)**2
+def plot_preds(scale,raster,preds, tile, group,density = (0,3)):
+    dens_min,dens_max = density
     mask_out = np.isnan(raster) | np.isnan(preds)
-    gt_count = raster[~mask_out].sum()
+#         gt_count = raster[~mask_out].sum()
     preds1 = preds.copy()
     preds1[mask_out] = np.nan
+    raster1 = raster.copy()
+    raster1[mask_out] = np.nan
 
-    pred_count = preds[~mask_out].sum()
+    print(p2ha(scale))
+    r1 = gp.block_reduce(raster1,(scale,scale),np.nansum)
+    p1 = gp.block_reduce(preds1,(scale,scale),np.nansum)
+    diff = p1  - r1
+    diff1 = (p1 - r1 )/ r1
+    diff1[np.logical_and(r1 == 0, p1 == 0) ] = 0
+    diff1[np.logical_and(r1 == 0, p1 > 0) ] = np.nan
 
-    diff = raster  - preds1
-    diff1 = (raster - preds1 )/ raster
+    fig = plt.figure(figsize=(10,5))
+    n_col = 3
+    gs = gridspec.GridSpec(nrows=1,ncols=n_col,left=0.02, bottom=0.06, right=0.95, top=0.94, wspace=0.1)
 
-    fig = plt.figure(figsize=(15,5))
+    txt = f' {tile} {group} {p2ha(scale)}ha'
+    
+    # GT
+    ax = plt.subplot(gs[0])
+    im = ax.imshow(raster,vmin=dens_min,vmax=dens_max)
+    
+    cbar = fig.colorbar(im,ax=ax,orientation='horizontal')
+    cbar.ax.set_xlabel(f'Trees/ {p2ha(1):.2f}ha blocks')
+    ax.set_title(f'Trees GT {np.nansum(raster1):.2f} ({np.nanmax(raster):.2f})')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel(f' {preds1.shape[0]/100:.2f}km')
+    ax.set_ylabel(f' {preds1.shape[1]/100:.2f}km')
 
-    plt.subplot(1, 3, 1)
+    # PREDS
+    ax = plt.subplot(gs[1])
+    im = ax.imshow(preds,vmin=dens_min,vmax=dens_max)
+    cbar = fig.colorbar(im,ax=ax,orientation='horizontal')
+    cbar.ax.set_xlabel(f'Trees/ {p2ha(1):.2f}ha blocks')
+    ax.set_title(f'Trees Pred {np.nansum(preds1):.2f} ({np.nanmax(preds):.2f})')
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel(f' {preds1.shape[0]/100:.2f}km \n\n'+txt)
+    ax.set_ylabel(f' {preds1.shape[1]/100:.2f}km')
 
-    im = plot_heatmap(data=raster,min=0,max=2)
-    plt.imshow(im)
-    # plt.imshow(raster)
-    plt.title(f'GT {gt_count:.2f}')
+    # DIFSS
+    ax = plt.subplot(gs[2])
+    lim_ = dens_max * ((scale/2)**2)
+    im = ax.imshow(diff,cmap = 'bwr', vmin = -lim_,vmax=lim_ ) #,vmin=-dens_max*scale*3,vmax=dens_max*scale*3)
+    cbar = fig.colorbar(im,ax=ax,orientation='horizontal')
+    cbar.ax.set_xlabel(f'Trees/ {p2ha(scale)}ha blocks')
+    
+    
+    
+    ax.set_title(f'Error per {p2ha(scale)}ha blocks')
+    ax.set_xticks([])
+    ax.set_yticks([])
 
-    plt.subplot(1, 3, 2)
-    # plt.imshow(preds)
-    im = plot_heatmap(data=preds,min=0,max=2)
-    plt.imshow(im)
+    
+#     fig.suptitle(f' {tile} {group} {p2ha(scale)}ha', y=1.01)
+#     fig.text(.5, .06, txt, ha='center')
 
-    plt.title(f'pred {pred_count:.2f}')
-    plt.suptitle(f' {np.nansum(1.1*(preds1>0.1)):.2f}')
 
-    plt.subplot(1, 3, 3)
-    im = plot_heatmap(data=diff,min=-2,max=2,cmap='seismic')
-    plt.imshow(im)
-    # plt.imshow(preds1 -  raster,cmap='seismic')
+    # Scatter
+    zeros_ = np.logical_and(p1== 0,r1==0).ravel()
+    ds = pd.DataFrame({'GT':r1.ravel(),'Pred':p1.ravel()})
+    return ds
+def plot_counts(folder_inference, tile, folder_annotations, group='group1', preds_axis=0, sq_kernel=2, scale=10):
+    ds_out = pd.DataFrame(columns=['GT','Pred'])
+    
 
-    plt.title(f'diff {np.nansum(diff):.2f},   {-np.nansum(diff)/np.nansum(raster):.2f}% ')
+    ref_folders = glob.glob(f'{folder_annotations}/{tile}/{group}')
+    if not ref_folders:
+        ref_folders = [folder_annotations]
+        is_aut_gt = True
+    else:
+        is_aut_gt = False
+    for ref_folder in ref_folders:
+        group = ref_folder.split('/')[-1]
+        ref_raster = f'{folder_inference}/{tile}_preds_reg.tif'
+        assert os.path.isfile(ref_raster), f'file {ref_raster} not found'
+        #     ref_folder = '/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations/T49NGD/group1' 
+        #     ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9/T49NGD_preds_reg.tif'
+        sys.stdout = open(os.devnull, "w")
+#         dens_min, dens_max = 0,3
 
-    plt.suptitle(f' {tile} {group}')
+        ds = gdal.Open(ref_raster)
+        if is_aut_gt:
+            roi_ = data_config[tile]
+        else:
+            roi_ = gp.get_positive_area_folder(ref_folder)
+        lims = gp.to_xy_box(roi_, ds, enlarge=10)
+
+        if is_aut_gt:
+            raster = gp.rasterize_points_constrained(Input=ref_folder,refDataset=ref_raster,lims=lims,lims_with_labels=lims,sq_kernel=sq_kernel)
+        else:
+            raster = gp.rasterize_points_pos_neg_folder(folder=ref_folder,refDataset=ref_raster,lims=lims,lims_with_labels=lims,sq_kernel=sq_kernel)
+        raster[raster == -1] = np.nan
+
+        preds = readHR(data_file=ref_raster,roi_lon_lat=roi_,scale=10, as_float=False, is_assert_blank=False)
+        sys.stdout = sys.__stdout__
+        if preds.shape[-1] == 2:
+            preds = preds[...,preds_axis]
+        preds[preds <0.1] = 0
+        preds[preds==99] = np.nan
+    #     preds = np.clip(preds*1.3,0,2.5)
+
+        ref_raster_sem = ref_raster.replace('reg.tif','semA.tif')
+
+        if os.path.isfile(ref_raster_sem):
+            preds_sem = readHR(data_file=ref_raster.replace('reg.tif','semA.tif'),roi_lon_lat=roi_,scale=10, as_float=False, is_assert_blank=False)
+        else:
+            preds_sem = preds > 0.5
+#             n_col = 4
+
+        ds = plot_preds(scale,raster,preds, tile, group)
+        ds_out = ds_out.append(ds)
+#         ds = ds[~zeros_]
+#         sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+#         plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT)):.2f} Trees/ {p2ha(scale)} ha', y=1, fontsize = 12)
+    return ds_out
+        
 
 ```
 
+## Palmcoco Evaluation
+
 ```{python}
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmcocotiles2_simpleA'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+ds_ = plot_counts(folder_inference=folder_inference,
             tile='T49MCV',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/coco_annotations',
-            group='group1',preds_axis=1)
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+            group='group2',preds_axis=1, scale=scale)
+# ds_out_ = ds_out.append(ds_,ignore_index=True)
+ds_coco = ds_
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49MCV',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group2',preds_axis=0, scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT)):.2f} Trees/ {p2ha(scale)} ha  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+
+
+zeros_ = np.logical_and(ds_coco.GT== 0,ds_coco.Pred==0)
+ds = ds_coco[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT)):.2f} Trees/ {p2ha(scale)} ha  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmcocotiles2_coco_palm_kalim_simpleA'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+ds_ = plot_counts(folder_inference=folder_inference,
             tile='T49MCV',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/coco_annotations',
-            group='group2',preds_axis=1)
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+            group='group2',preds_axis=1, scale=scale)
+# ds_out_ = ds_out.append(ds_,ignore_index=True)
+ds_coco = ds_
+ds_ = plot_counts(folder_inference=folder_inference,
             tile='T49MCV',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
-            group='group1',preds_axis=0)
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5',
+            group='group*',preds_axis=0, scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f'PALM MAE {np.nanmean(np.abs(ds.Pred -ds.GT)):.2f} Trees/ {p2ha(scale)} ha  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+
+
+zeros_ = np.logical_and(ds_coco.GT== 0,ds_coco.Pred==0)
+ds = ds_coco[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f'COCO MAE {np.nanmean(np.abs(ds.Pred -ds.GT)):.2f} Trees/ {p2ha(scale)} ha  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9fix'
+scale = 20
+ds_out = plot_counts(folder_inference=folder_inference,
             tile='T49MCV',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
-            group='group2',preds_axis=0)
+            group='group*', scale=scale)
+
 ```
 
 ```{python}
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9',
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5'
+scale = 20
+ds_out = plot_counts(folder_inference=folder_inference,
+            tile='T49MCV',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5'
+scale = 20
+ds_out = plot_counts(folder_inference=folder_inference,
+            tile='T47NQA',
+            folder_annotations='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/palm/kml_geoproposals',
+            group='group*', scale=scale)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+#ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+## Palm SARAWAK
+
+```{python jupyter={'outputs_hidden': True}}
+folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9fix'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+
+ds_ = plot_counts(folder_inference=folder_inference,
             tile='T49NFC',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
-            group='group2')
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NFD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NGD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NEC',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NED',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.4
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmsarawak3_simpleA20clean_all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+
+ds_ = plot_counts(folder_inference=folder_inference,
             tile='T49NFC',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
-            group='group1')
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
 
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9',
+
+ds_ = plot_counts(folder_inference=folder_inference,
             tile='T49NFD',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
-            group='group2')
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9',
-            tile='T49NFD',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NGD',
             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
-            group='group1')
-plot_counts(folder_inference='/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA9',
-            tile='T50NKL',
-            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
-            group='group1')
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
 
-```
-
-```{python}
-fig = plt.figure(figsize=(15,5))
-
-plt.subplot(1, 3, 1)
-
-im = plot_heatmap(data=raster,min=0,max=2)
-plt.imshow(im)
-# plt.imshow(raster)
-plt.title(f'GT {gt_count:.2f}')
-
-
-plt.subplot(1, 3, 2)
-# plt.imshow(preds)
-im = plot_heatmap(data=preds,min=0,max=2)
-plt.imshow(im)
-
-plt.title(f'pred {pred_count:.2f}')
-plt.suptitle(f' {np.nansum(1.1*(preds1>0.1)):.2f}')
-
-plt.subplot(1, 3, 3)
-im = plot_heatmap(data=diff,min=-2,max=2,cmap='seismic')
-plt.imshow(im)
-# plt.imshow(preds1 -  raster,cmap='seismic')
-
-plt.title(f'diff {np.nansum(diff):.2f},   {-np.nansum(diff)/np.nansum(raster):.2f}% ')
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NEC',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NED',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
 
 
 ```
 
 ```{python}
-preds1[preds1 > 0.1].mean(), raster[raster > 0.1].mean()
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.4
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+ds1 = ds_out.copy()
+sys.stdout = sys.__stdout__
 
 
+ds1['GT_sem'] = ds1.GT > 0
+ds1['Pred_sem'] = ds1.Pred > 0
+
+
+TP = np.logical_and(ds1.GT_sem == True,ds1.Pred_sem == True).sum()
+TN = np.logical_and(ds1.GT_sem == False,ds1.Pred_sem == False).sum()
+FP = np.logical_and(ds1.GT_sem == False,ds1.Pred_sem == True).sum()
+FN = np.logical_and(ds1.GT_sem == True,ds1.Pred_sem == False).sum()
+
+
+f' TP {TP} TN{TN}  FP {FP} FN {FN} GT {ds1.GT_sem.sum()*p2ha(scale)} ha Pred {ds1.Pred_sem.sum()*p2ha(scale)} ha Acc {(TP + TN ) / (TP + TN + FP + FN):.2f} Prec {(TP) / (TP + FP):.2f} Rec {(TP) / (TP + FN):.2f}  Iou   {(TP) / (TP + FN + FP):.2f}'  
+
+```
+
+```{python}
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmsarawak3_simpleA9clean'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NFC',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NFD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NGD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NEC',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NED',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python jupyter={'outputs_hidden': True}}
+# folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmsarawak3_simpleA9clean'
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmsarawak3_simpleA9ft'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NFC',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NFD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NGD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NEC',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NED',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.5
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmsarawak3_simpleA20clean_all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NFC',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NFD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T49NGD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NEC',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T49NED',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.4
+
+plt.figure(figsize=(10,10))
+g = sns.jointplot(x='Pred',y='GT',data=ds) #, cmap="Reds") #, clip=(dens_min,dens_max))
+txt = f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f' Total Trees GT:{np.nansum(ds.GT):.2f}  Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)'
+plt.suptitle(txt,y = 1.05) #, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+txt
+```
+
+## Palm Sabah
+
+```{python}
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmsabah_simpleA9all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T50NNL',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T50NNM',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.1
+
+plt.figure(figsize=(10,10))
+g = sns.jointplot(x='Pred',y='GT',data=ds) #, cmap="Reds") #, clip=(dens_min,dens_max))
+txt = f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f' Total Trees GT:{np.nansum(ds.GT):.2f}  Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)'
+plt.suptitle(txt,y = 1.05) #, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+txt
+```
+
+## Palm Peninsula
+
+```{python jupyter={'source_hidden': True, 'outputs_hidden': True}}
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmpeninsula_simpleA9clean_all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NRE',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T48NTK',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T48NTJ',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+# NEW
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T47NQD',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T48NUH',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T48NTK',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+```
+
+```{python jupyter={'source_hidden': True, 'outputs_hidden': True}}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.3
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python jupyter={'outputs_hidden': True, 'source_hidden': True}}
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmpeninsula2_simpleAall'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T47NRE',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T48NTJ',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T48NTK',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NRG',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NPF',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NRF',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+```
+
+```{python jupyter={'outputs_hidden': True, 'source_hidden': True}}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.1
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python jupyter={'source_hidden': True, 'outputs_hidden': True}}
+# folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmpeninsula2_simpleA'
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmpeninsula_simpleA9clean_all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+ds_ = plot_counts(folder_inference=folder_inference,
+           tile='T47NRE',
+           folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+           group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T48NTJ',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T48NTK',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+```
+
+```{python jupyter={'source_hidden': True, 'outputs_hidden': True}}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.3
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+## Peninsulanew (all)
+
+```{python}
+# folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmpeninsula2_simpleA'
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmpeninsulanew_simpleA9all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NQD',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#            tile='T48NTK',
+#            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#            group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#            tile='T48NTJ',
+#            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#            group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T48NUH',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.1
+
+plt.figure(figsize=(10,10))
+g = sns.jointplot(x='Pred',y='GT',data=ds) #, cmap="Reds") #, clip=(dens_min,dens_max))
+txt = f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f' Total Trees GT:{np.nansum(ds.GT):.2f}  Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)'
+plt.suptitle(txt,y = 1.05) #, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+txt 
+```
+
+## Riau
+
+```{python}
+# folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmpeninsula2_simpleA'
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmriau_simpleA9all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NQA',
+            folder_annotations='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/palm/kml_geoproposals',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T47NQA',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T47MQV',
+#             folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+# ds['Pred'] = ds.Pred*1.4
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
+```
+
+```{python}
+# folder_inference = '/scratch/andresro/leon_work/sparse/inference/palmpeninsula2_simpleA'
+folder_inference = '/scratch/andresro/leon_igp/sparse/inference/palmriau_simpleA9all'
+scale=20
+ds_out = pd.DataFrame(columns=['GT','Pred'])
+
+
+# ds_ = plot_counts(folder_inference=folder_inference,
+#             tile='T47NQA',
+#             folder_annotations='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/palm/kml_geoproposals',
+#             group='group*', scale=scale)
+# ds_out = ds_out.append(ds_,ignore_index=True)
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NQA',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group1', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NQA',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group2', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47NQA',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group3', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+
+
+ds_ = plot_counts(folder_inference=folder_inference,
+            tile='T47MQV',
+            folder_annotations='/scratch/andresro/leon_igp/barry_palm/data/labels/palm_annotations',
+            group='group*', scale=scale)
+ds_out = ds_out.append(ds_,ignore_index=True)
+```
+
+```{python}
+zeros_ = np.logical_and(ds_out.GT== 0,ds_out.Pred==0)
+ds = ds_out[~zeros_].copy()
+
+ds['Pred'] = ds.Pred*1.4
+
+g = sns.jointplot(x='Pred',y='GT',data=ds, cmap="Reds") #, clip=(dens_min,dens_max))
+plt.title(f' MAE {np.nanmean(np.abs(ds.Pred -ds.GT))/p2ha(scale):.2f} Trees/ha in {p2ha(scale)}ha Blocks  \n ' \
+          f'total trees GT:{np.nansum(ds.GT):.2f} Pred:{np.nansum(ds.Pred):.2f} ({100*(np.nansum(ds.Pred)-np.nansum(ds.GT))/np.nansum(ds.GT):.2f}%)', y=1.1, fontsize = 12)
+
+lims = (0,np.nanmax(ds.GT))
+g.ax_marg_x.set_xlim(lims)
+g.ax_marg_y.set_ylim(lims)
+
+# lims = [max(x0, y0), min(x1, y1)]
+g.ax_joint.plot(lims, lims, ':k')    
 ```
 
 ```{python}
@@ -534,11 +1456,69 @@ for points in pointsList:
     print(f"TOTAL {out_val:.2f}", os.path.basename(points))
 ```
 
+## Evaluate state-wide predictions
+
 ```{python}
+scale = 2
+input_zone_pol = '/scratch2/Dropbox/Dropbox/0_phd/tree_annotationsAug2019/countries/malaysia/MYS_adm1.shp'
+ref_raster = f'/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA20_allsarawak/0_untiled_down{scale}.tif'
+```
+
+```{python}
+
+img = gp.rasterize_polygons(InputVector=input_zone_pol,refDataset=ref_raster,attribute='ID_1')
+
+raster = readHR(roi_lon_lat = None,data_file=ref_raster,scale=1,as_float=False)
+```
+
+```{python}
+# plt.imshow(img==11)
+raster[img!=11] = np.nan
+raster *=(scale**2) # computing sum instead of average in down op 
+raster*=1.4 # bias correction
+
+plt.imshow(raster)
+plt.colorbar()
+```
+
+```{python}
+p2ha(scale)
+```
+
+```{python}
+np.nanmin(raster),np.nanmax(raster)
+```
+
+#### Statistics
+
+```{python}
+# Total Ha
+ref_ = raster  > 30*p2ha(scale)
+plt.imshow(ref_)
+area = np.nansum(ref_)*p2ha(scale)
+trees = np.nansum(raster[ref_])
+f' Planted {area/1e6:.3f}mha , Trees {trees/1e6:.3f}m, Tree/Ha {trees/area} '
+```
+
+```{python}
+
+
+out_val = loop_zonal_stats_update(input_zone_polygon=input_zone_pol,input_value_raster=ref_raster,fieldname='pred1',fn=np.nansum, is_update=False,bias=14.0, field_name='NAME_1')
+
 
 ```
 
-```{python jupyter={'source_hidden': True}}
+```{python}
+shp = ogr.Open(input_zone_pol, update = 1)
+
+lyr = shp.GetLayer()
+
+lyr
+```
+
+### Split raster into blocks and save it as shapefile
+
+```{python}
 import math
 EARTH_RADIUS = 6371000  # Radius in meters of Earth
 
@@ -585,11 +1565,23 @@ def to_bbox(roi_lon_lat):
 
 
 
+def convert_to_shp(points, is_overwrite=False):
+    if points.endswith('.kml'):
+        new_points=points.replace('.kml','.shp')
+        if not os.path.exists(new_points) or is_overwrite:
+            srcDS = gdal.OpenEx(points)
+            ds = gdal.VectorTranslate(new_points, srcDS, format='ESRI Shapefile')
+            ds = None
+            points = new_points
+    return points 
+
 ```
 
 ```{python}
-ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5/T49MCV_preds_reg.tif'
-save_dir = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5'
+ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA20/T49MCV_preds_reg.tif'
+# ref_raster = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5/T49MCV_preds_reg.tif'
+# save_dir = '/scratch/andresro/leon_work/sparse/inference/palmcoco_kalimA_simpleA5'
+save_dir = '/scratch/andresro/leon_work/sparse/inference/palmsarawak_simpleA20/'
 ds = gdal.Open(ref_raster)
 
 geo_pts_ref = gp.get_lonlat(ds)
@@ -600,7 +1592,8 @@ print(len(roi_))
 ```
 
 ```{python}
-kmlfile_name = save_dir+"/rois_{}.kml".format(len(roi_))
+fname = os.path.basename(ref_raster).replace('.tif','')
+kmlfile_name = f"{save_dir}/{fname}_rois_{len(roi_)}.kml"
 kml = simplekml.Kml()
 for roi in roi_:
     lat1, lon1, lat2, lon2 = roi["roi"]
@@ -612,15 +1605,25 @@ for roi in roi_:
     pol.style.polystyle.color = simplekml.Color.changealphaint(100, simplekml.Color.white)
 
 kml.save(kmlfile_name)
+print(kmlfile_name)
 ```
 
 ```{python}
-points = convert_to_shp(kmlfile_name)
+points = convert_to_shp(kmlfile_name, is_overwrite=True)
+print(points)
 # drop_all_butName(points)
 ```
 
 ```{python}
-loop_zonal_stats_update(input_zone_polygon=points,input_value_raster=ref_raster,fieldname='pred_palm',fn=np.nansum, is_update=True, refband=1)
+loop_zonal_stats_update(input_zone_polygon=points,input_value_raster=ref_raster,fieldname='pred_palm',fn=np.nansum, is_update=True, refband=1,bias=1.5)
+```
+
+```{python}
+points
+```
+
+```{python}
+kmlfile_name
 ```
 
 ```{python}

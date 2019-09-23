@@ -5,7 +5,7 @@ import shutil
 from osgeo import ogr, gdal, osr
 import numpy as np
 from shapely.geometry import Polygon
-from shapely import ops
+from shapely import ops, wkb
 from shapely.wkt import loads
 from functools import partial
 import pyproj
@@ -155,6 +155,27 @@ def get_points(Input):
             points.extend(geom.GetPoints())
     print(Input, len(points))
     return np.array(points)
+import collections
+def get_geometries(Input, field_name):
+    # Open Shapefile
+    Shapefile = ogr.Open(Input)
+    n_layers = Shapefile.GetLayerCount()
+    points = collections.OrderedDict()
+    for j in range(n_layers):
+        lyr = Shapefile.GetLayer()
+        lyrdf = lyr.GetLayerDefn()
+        id_Name = lyrdf.GetFieldIndex(field_name)
+
+        n_points = lyr.GetFeatureCount()
+
+        for i in range(n_points):
+            feat = lyr.GetNextFeature()
+            name_ = feat.GetField(id_Name)
+            geom = feat.geometry()
+            points[name_] = geom.ExportToWkt()
+    print(Input, len(points.keys()))
+    return points
+
 
 def read_coords(Input):
     if os.path.isdir(Input):
@@ -696,6 +717,30 @@ def get_lonlat(ds, verbose= False):
             print(x, y, '->', geo_pt)
 
     return geo_pts
+
+
+def get_area_intersection(geo_pts1,geo_pts2):
+
+    p1 = loads(geo_pts1) if isinstance(geo_pts1, str) else Polygon(geo_pts1)
+    p2 = loads(geo_pts2) if isinstance(geo_pts2,str) else Polygon(geo_pts2)
+
+    intersection = p1.intersection(p2)
+    # print(intersection.area)
+
+    if p1.intersects(p2):
+        geom_area = ops.transform(
+            partial(
+                pyproj.transform,
+                pyproj.Proj(init='EPSG:4326'),
+                pyproj.Proj(
+                    proj='aea',
+                    lat_1=intersection.bounds[1],
+                    lat_2=intersection.bounds[3])),
+            intersection)
+        area = geom_area.area
+    else:
+        area = 0
+    return area
 
 
 def roi_intersection(ds, geo_pts_ref, return_polygon = False):

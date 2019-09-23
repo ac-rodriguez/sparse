@@ -175,7 +175,7 @@ def loop_zonal_stats_kml(input_zone_polygon, input_value_raster):
     kml.save(filename_all + "/Treecounts.kml")
     print('[*] kml saved!')
 
-def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, fn, is_update=True):
+def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, fn, fieldname1=None, is_update=True):
 
     shp = ogr.Open(input_zone_polygon, update=1)
     lyr = shp.GetLayer()
@@ -191,6 +191,18 @@ def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, f
         else:
             print('Field {} already exists, may overwrite'.format(fieldname))
 
+        if fieldname1 is not None:
+            id_1 = lyrdf.GetFieldIndex(fieldname1)
+            if id_1 == -1:
+                field_defn = ogr.FieldDefn(fieldname1, ogr.OFTReal)
+                lyr.CreateField(field_defn)
+                id_1 = lyrdf.GetFieldIndex(fieldname1)
+            else:
+                print('Field {} already exists, may overwrite'.format(fieldname1))
+        else:
+            id_1 = None
+
+
     id_Name = lyrdf.GetFieldIndex('Name')
     for FID in range(lyr.GetFeatureCount()):
         feat = lyr.GetFeature(FID)
@@ -198,17 +210,22 @@ def loop_zonal_stats_update(input_zone_polygon, input_value_raster, fieldname, f
             # compute sum
             name_ = feat.GetField(id_Name)
             if 'pos' in name_:
-                meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn)
-                print(f' {meanValue:.2f} Trees in positive area')
+                val = zonal_stats(FID, input_zone_polygon, input_value_raster, fn)
+                # print(f' {val:.2f} Trees in positive area')
 
             else:
-                meanValue = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints=False)
-                print(f' {meanValue:.2f} Ref points')
-            if np.isnan(meanValue):
-                print(meanValue,FID)
+                val = zonal_stats(FID, input_zone_polygon, input_value_raster, fn, is_return_numpoints=False)
+                # print(f' {val:.2f} Ref points')
+            # if np.isnan(meanValue):
+            #     print(meanValue,FID)
             if is_update:
+                if id_1 is not None:
+                    val, val1 = val
+                    lyr.SetFeature(feat)
+                    feat.SetField(id_1, val1)
+                    lyr.SetFeature(feat)
                 lyr.SetFeature(feat)
-                feat.SetField(id_,meanValue)
+                feat.SetField(id_,val)
                 lyr.SetFeature(feat)
 
 
@@ -250,7 +267,7 @@ def save_csv(shpfile,csvfile = None, with_geom = False):
     # clean up
     del csvwriter, lyr, ds
     csvfile.close()
-    return csvfile
+    return csvfile.name
 
 is_kml= False
 
