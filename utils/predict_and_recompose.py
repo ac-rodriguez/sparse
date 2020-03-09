@@ -4,12 +4,10 @@ from itertools import compress
 import numpy as np
 from tqdm import tqdm
 
-
-
-import plots
-import patches
-import gdal_processing as gp
-from tools_tf import copy_last_ckpt
+import utils.plots as plots
+import utils.patches as patches
+import utils.gdal_processing as gp
+from utils.tools_tf import copy_last_ckpt
 
 
 def save_m(name, m):
@@ -18,9 +16,6 @@ def save_m(name, m):
         for key in sorted_names:
             value = m[key]
             f.write('%s:%s\n' % (key, value))
-
-
-
 
 def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
                           prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None):
@@ -42,25 +37,15 @@ def predict_and_recompose(model, reader, input_fn, patch_generator, is_hr_pred, 
     predictions = {'reg':[],'sem':[]}
     for id_ in  range(len(patch_generator)):
 
-        if is_hr_pred:
-            patch = patch_generator[id_].patch_h
-            border = patch_generator[id_].border_lab
-            if 'val' in type_:
-                ref_data = reader.val_h[id_]
-            elif 'train' in type_:
-                ref_data = reader.train_h[id_]
-            else:
-                ref_data = reader.test_h[id_]
-        else:
-            patch = patch_generator[id_].patch_l
-            border = patch_generator[id_].border
+        patch = patch_generator[id_].patch_l
+        border = patch_generator[id_].border
 
-            if 'val' in type_:
-                ref_data = reader.val[id_]
-            elif 'train' in type_:
-                ref_data = reader.train[id_]
-            else:
-                ref_data = reader.test[id_]
+        if 'val' in type_:
+            ref_data = reader.val[id_]
+        elif 'train' in type_:
+            ref_data = reader.train[id_]
+        else:
+            ref_data = reader.test[id_]
 
         ref_size = (ref_data.shape[1], ref_data.shape[0])
         nr_patches = patch_generator[id_].nr_patches
@@ -200,25 +185,15 @@ def predict_and_recompose_individual(model, reader, input_fn, patch_generator, i
 
     for id_ in range(len(patch_generator)):
 
-        if is_hr_pred:
-            patch = patch_generator[id_].patch_h
-            border = patch_generator[id_].border_lab
-            if 'val' in type_:
-                ref_data = reader.val_h[id_]
-            elif 'train' in type_:
-                ref_data = reader.train_h[id_]
-            else:
-                ref_data = reader.test_h[id_]
-        else:
-            patch = patch_generator[id_].patch_l
-            border = patch_generator[id_].border
+        patch = patch_generator[id_].patch_l
+        border = patch_generator[id_].border
 
-            if 'val' in type_:
-                ref_data = reader.val[id_]
-            elif 'train' in type_:
-                ref_data = reader.train[id_]
-            else:
-                ref_data = reader.test[id_]
+        if 'val' in type_:
+            ref_data = reader.val[id_]
+        elif 'train' in type_:
+            ref_data = reader.train[id_]
+        else:
+            ref_data = reader.test[id_]
 
         if 'val' in type_:
             ref_info = reader.val_info[id_]
@@ -309,3 +284,4 @@ def predict_and_recompose_individual(model, reader, input_fn, patch_generator, i
         if return_array:
             print('Returning only fist array of dataset list')
             return data_r_recomposed, data_c_recomposed
+

@@ -9,12 +9,7 @@ from tensorflow.contrib.tensorboard.plugins import projector
 import tensorflow.contrib.slim as slim
 
 import numpy as np
-from tqdm import tqdm
 
-import plots
-
-import patches
-import gdal_processing as gp
 def analyze_model():
     slim.model_analyzer.analyze_vars(
         tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES), print_info=True)

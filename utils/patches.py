@@ -7,8 +7,7 @@ import json
 import pprint
 from math import ceil
 from scipy import ndimage
-from plots import plot_rgb, plot_labels, check_dims, plot_rgb_mask, plot_rgb_density
-# from utils.color_codes import EncodeLabels
+from utils.plots import plot_rgb, plot_labels, check_dims, plot_rgb_mask, plot_rgb_density
 
 
 def sampleRandom(size, path, ratio=.2, filename = None, seed = None):
@@ -253,7 +252,7 @@ def save_test_patches(d10, d20, file, filename = 'data', patch=128, border=4, in
     print(' [*] {}.npz saved!'.format(filename))
 
 
-def recompose_images(a, border= 4, size=None, show_image=False):
+def recompose_images(a, border=4, size=None, show_image=False):
 
     if len(a.shape) == 3:
         a = np.expand_dims(a,axis=-1)
@@ -335,19 +334,8 @@ def check_if_existing(args, folder):
         print('Data already exists.. skipping it...')
         sys.exit(0)
 def rename_dset_path(args):
-    # if args.data_type == 'raw':
-    #     dataset_type = args.data_type
-    # else:
-    #     dataset_type = args.data_type + str(args.patch_size)
-    # if args.data_type == 'test':
-    #     dataset_type = dataset_type + '_border{}'.format(args.border)
-    #
+
     dataset_type = args.data_type
-
-    # if True or args.scale_points != 1:
-    #
-    #     dataset_type = dataset_type + '_scale{:.1f}'.format(args.scale_points)
-
 
     return os.path.join(args.save_prefix, dataset_type)
     # return save_prefix
@@ -357,30 +345,13 @@ def save_numpy(data, args, folder, view, filename, is_save_png=True, points = No
     data = data.astype(np.float32)
 
 
-    # TODO scaling in original resolution
-
-    #     for i in range(data.shape[-1]):
-    #         data[...,i] = ndimage.gaussian_filter(data[...,i], sigma=sigma)
-    #
-    #     print('GT points were smoothed on Low resolution with a Gaussian \sigma = {}'.format(args.sigma_smooth))
-    #
     if args.roi_lon_lat:
         roi_lon_lat = args.roi_lon_lat.replace(',','-')
         save_prefix = os.path.join(save_prefix,roi_lon_lat)
     else:
         roi_lon_lat = ''
 
-    # cld_ind = select_bands20.index('CLD')
-    # not_cld = np.ones(len(select_bands20),dtype=bool)
-    # not_cld[cld_ind] = False
-    # rgb_ind = sorted([select_bands10.index(x) for x in ['B2','B3','B4']])
-
     data = data.astype(np.uint8)
-    # data20 = data20.astype(np.float32)
-
-    # cld20 = data20[:,:,cld_ind]
-    # data20 = data20[:,:,not_cld]
-    # cld10 = interpPatches(cld20, data10.shape[0:2], squeeze = True)
 
     if args.data_type == 'raw' or args.data_type == 'raw':
         if not os.path.exists(os.path.join(save_prefix,'rgb')):
@@ -399,60 +370,14 @@ def save_numpy(data, args, folder, view, filename, is_save_png=True, points = No
             os.makedirs(out_per_image)
         print('Writing files for {} dataset to:{}'.format(args.data_type,out_per_image))
 
-        # if args.num_patches > 0:
-        #     save_random_patches(label=labels, d10=data10, d20=data20, dCLD20=cld20, dPoints10=points, file=out_per_image, filename=filename,
-        #                         NR_CROP=args.num_patches, is_save_png=is_save_png, patch=args.patch_size)
-        # else:
+
         np.save(out_per_image + 'data_complete', data)
         print('Complete dataset saved as {} (No Patches)'.format(out_per_image+'data_complete'))
         filename_png =os.path.join(save_prefix, folder, '')
 
-        # with open(out_per_image + 'shapes.json', 'w') as f:
-        #     json.dump('data10 = {} data20 = {}, label = {}, cld = {}'.format(data10.shape, data20.shape, labels.shape,
-        #                                                                      cld20.shape), f)
-            # json.dump('Nr Patches = {} Patch size = {}'.format(args.num_patches, args.patch_size), f)
-    # elif args.data_type == 'test':
-    #     out_per_image = os.path.join(save_prefix, folder, '')
-    #
-    #     if not os.path.isdir(out_per_image):
-    #         os.makedirs(out_per_image)
-    #     print('Writing files for test to:{}'.format(out_per_image))
-    #
-    #     save_test_patches(d10=data10, d20=data20,dCLD20=cld20, file=out_per_image, patch=args.patch_size, border=args.border)
-    #     filename_png = os.path.join(save_prefix, folder, '')
     else:
         print(' [!] Dataset {} not recognized '.format(args.data_type))
         sys.exit(1)
 
     save_parameters(args, save_prefix, sysargv=sys.argv)
     plot_rgb(data, filename_png + 'RGB')
-    # plot_rgb(cld10, filename_png + 'CLD', max_luminance=100)
-
-    # Encoder = EncodeLabels()
-    # encoded_labels = Encoder.encode(labels, cld10.squeeze())
-    # plot_labels(encoded_labels, file=filename_png + 'GT', colors=Encoder.color_map)
-    # plot_rgb_mask(data=data10[:, :, rgb_ind], preds=encoded_labels, file=filename_png + 'RGBGT', colors = Encoder.color_map)
-
-    # plot_rgb(points, file=filename_png + 'GT_density', percentiles=(0, 100))
-    # plot_rgb_density(data=data10[...,rgb_ind], preds=points,file=filename_png + 'RGBGT_Dens')
-    #
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_spring', bw=True,cmap='spring')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_autumn', bw=True,
-    #                  cmap='autumn')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_cool', bw=True,
-    #                  cmap='cool')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_winter', bw=True,
-    #                  cmap='winter')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_coolwarm', bw=True,
-    #                  cmap='coolwarm')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_hot', bw=True,
-    #                  cmap='hot')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_YlOrRd', bw=True,
-    #                  cmap='YlOrRd')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_Wistia', bw=True,
-    #                  cmap='Wistia')
-    # plot_rgb_density(data=data10[..., rgb_ind], preds=points, file=filename_png + 'BW_GT_Dens_jet', bw=True,
-    #                  cmap='jet', pred_range=[0,2])
-
-    # if args.sigma_smooth:
-    #     plot_rgb(points, file=filename_png+'Points_sigma{}'.format(args.sigma_smooth), percentiles=(0, 100))

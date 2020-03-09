@@ -14,7 +14,7 @@ def check_dims(data):
         else:
             data = np.expand_dims(data, axis=0)
     elif ndims == 2:
-        data = np.expand_dims(data, axis=3)
+        data = np.expand_dims(data, axis=-1)
         data = np.expand_dims(data, axis=0)
     return data
 

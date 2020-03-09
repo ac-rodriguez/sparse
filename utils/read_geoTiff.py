@@ -9,9 +9,8 @@ import re
 import cv2
 from collections import defaultdict
 from skimage.measure import block_reduce
-import glob
 
-import gdal_processing as gp
+import utils.gdal_processing as gp
 
 run_60 = False
 

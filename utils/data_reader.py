@@ -8,10 +8,16 @@ from itertools import compress
 from functools import partial
 import ray
 
-import plots
-import read_geoTiff as geotif
-from patch_extractor import PatchExtractor, PatchWraper
+import utils.plots as plots
+import utils.read_geoTiff as geotif
+from utils.patch_extractor import PatchExtractor, PatchWraper
 
+def conditional_decorator(dec, condition):
+    def decorator(func):
+        if not condition:
+            return func
+        return dec(func)
+    return decorator
 
 def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None, mode='reflect'):
     image_20lr = plots.check_dims(image_20lr)
@@ -76,9 +82,11 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_s
                 missing = (data20[..., 0:6] == val).any(axis=-1)
                 mask = np.logical_or(mask, missing)
         if np.mean(mask) > 0.5:
-            print(f" [!] {np.mean(mask)*100:.2f}% of data is masked, skipping it...")
             if is_skip_if_masked:
+                print(f" [!] {np.mean(mask)*100:.2f}% of data is masked, skipping it...")
                 return None
+            else:
+                print(f" [!] {np.mean(mask)*100:.2f}% of data is masked")
 
         mask = interpPatches(mask, data10.shape[0:2], squeeze=True, mode='edge') > 0.5
         data20 = data20[...,0:-1]  # Dropping the SCL band
@@ -125,14 +133,10 @@ class DataReader(object):
         self.scale = self.args.scale
         self.gsd = str(10.0 / self.scale)
 
-        self.is_upsample = self.args.is_upsample_LR
-        if "HR_file" in self.args and not self.args.HR_file is None:
-            self.args.HR_file = os.path.join(self.args.HR_file, '3000_gsd{}.tif'.format(self.gsd))
-        else:
-            self.args.HR_file = None
-        for i in self.args.tr+self.args.val+self.args.test:
-            if i['hr'] is not None and not i['hr'].endswith('.tif'):
-                i['hr'] = os.path.join(i['hr'], '3000_gsd{}.tif'.format(self.gsd))
+        self.is_upsample = False
+
+        self.args.HR_file = None
+
         self.patch_h = self.args.patch_size * self.scale
 
         self.args.max_N = 1e5
@@ -144,7 +148,7 @@ class DataReader(object):
                 self.labels = ndimage.gaussian_filter(self.labels, sigma=args.sigma_smooth)
 
             self.n_channels = self.train[0].shape[-1]
-            d2_after = self.args.unlabeled_after * self.batch_tr
+            # d2_after = self.args.unlabeled_after * self.batch_tr
             self.single_gen = []
             if not args.is_total_patches_datasets:
                 train_patches = [args.train_patches] * len(self.train)
@@ -160,27 +164,11 @@ class DataReader(object):
                     PatchExtractor(dataset_low=self.train[id_], dataset_high=self.train_h[id_], label=self.labels[id_],
                                    patch_l=self.patch_l, n_workers=4, max_queue_size=10, is_random=is_random_patches,
                                    scale=args.scale, max_N=train_patches[id_], lims_with_labels=self.lims_labels[id_],
-                                   patches_with_labels=self.args.patches_with_labels, d2_after=d2_after,
+                                   patches_with_labels=self.args.patches_with_labels,
                                    two_ds=self.two_ds,
                                    unlab=self.unlab))
             self.patch_gen = PatchWraper(self.single_gen, n_workers=4, max_queue_size=10)
 
-            # featl,datah = self.patch_gen.get_inputs()
-            # plt.imshow(datah[...,0:3])
-            # plt.imshow(featl[...,-1])
-            # im = plot_rgb(featl, file='', return_img=True)
-            # im.show()
-            #
-            # im = plot_rgb(feath, file='', return_img=True)
-            # im.show()
-
-            # print('Done')
-
-            # self.patch_gen_val = PatchExtractor(dataset_low=self.val, dataset_high=self.val_h, label=self.labels_val,
-            #                                     patch_l=self.patch_l, n_workers=1, is_random=False, border=4,
-            #                                     scale=args.scale)
-            # val_random = True if self.args.dataset == 'vaihingen' else False
-            # if val_random:
             self.single_gen_val = []
             self.single_gen_rand_val = []
             # val_dset_ = -1 # TODO implement several datasets for val dset
@@ -209,136 +197,87 @@ class DataReader(object):
 
                     self.single_gen_rand_val.append(self.single_gen_val[-1])
 
-            # self.patch_gen_val_complete = PatchWraper(self.single_gen_val, n_workers=4, max_queue_size=10)
             self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=4, max_queue_size=10)
-            # featl,data_h = self.patch_gen_val.get_inputs()
-            # plt.imshow(data_h[...,0:3])
-            # im = plot_rgb(featl,file ='', return_img=True)
-            # im.show()
-
-            # value = self.input_fn(is_train=False)
-            # # value = iter.get_next()
-            # sess = tf.Session()
-            # for i in range(5):
-            #     val_ = sess.run(value)
-            #     print(val_[0].shape, val_[1].shape)
-            #
-            # self.iter_val = self.patch_gen_val.get_iter()
-
-
 
         else:
             self.prepare_test_data()
-            # self.read_test_data()
-            # self.two_ds = False
-            # self.patch_gen_test = PatchExtractor(dataset_low=self.test[0], dataset_high=self.test_h[0],
-            #                                      label=self.labels_test[0],
-            #                                      patch_l=self.patch_l_eval, n_workers=1, is_random=False, border=4,
-            #                                      scale=self.scale, lims_with_labels=self.lims_labels_test[0],
-            #                                      patches_with_labels=self.args.patches_with_labels, two_ds=self.two_ds)
 
-            # for _ in range(10):
-            #     feat,_ = self.patch_gen_test.get_inputs()
-            #
-            #     # # plt.imshow(label.squeeze())
-            #     im = plot_rgb(feat,file ='', return_img=True)
-            #     im.show()
-            #
-            # print('done')
+    def read_data_pairs(self, path_dict, mask_out_dict=None, is_load_lab=True, is_load_input=True,
+                        is_skip_if_masked=True):
 
-    def read_data_pairs(self, path_dict, upsample_lr=True, is_vaihingen=False, ref_scale=1, mask_out_dict=None, is_load_lab=True,is_load_input=True, is_skip_if_masked=True):
+        if is_load_input:
 
-        if is_vaihingen:
-            train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=None, scale=self.scale)
+            train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict,is_skip_if_masked=is_skip_if_masked)
 
-            train = downscale(train_h.copy(), ref_scale)
-            train_h = downscale(train_h, ref_scale // self.scale)
-
-            labels, lim_labels = geotif.read_labels_semseg(self.args, sem_file=path_dict['sem'],
-                                                           dsm_file=path_dict['dsm'],
-                                                           is_HR=self.is_HR_labels, ref_scale=ref_scale)
         else:
-            if is_load_input:
-                train_h = geotif.readHR(data_file=path_dict['hr'], roi_lon_lat=path_dict['roi'],
-                                        scale=self.scale)
-                if self.args.is_noS2:
-                    assert train_h is not None
-                    train = downscale(train_h.copy(), scale=self.scale)
+            train,train_h = None, None
+        if is_load_lab:
+            labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
+                                           is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
+            if labels is not None:
+                if 'age' in self.args.dataset:
+                    print(f' Ages: {np.unique(labels)}')
                 else:
-                    train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict,is_skip_if_masked=is_skip_if_masked)
+                    labels_masked = labels.copy()
+                    labels_masked[labels == -1] = np.nan
+                    print(f' Densities percentiles 10,20,50,70,90 \n {np.nanpercentile(labels_masked, q=[0.1,0.2,0.5,0.7,0.9])}')
+                    if 'palmcoco' in self.args.dataset:
+                        if 'labels/palm' in path_dict['gt'] or 'palm_annotations' in path_dict['gt']:
+                            labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
 
-                if train_h is None and upsample_lr:
-                    train_h = interpPatches(train, scale=self.scale)
-                    train_h = np.clip(train_h[..., (2, 3, 1)] / 4000, 0, 1).squeeze()
-            else:
-                train,train_h = None, None
-            if is_load_lab:
-                labels, lim_labels = geotif.read_labels(self.args, shp_file=path_dict['gt'], roi=path_dict['roi'], roi_with_labels=path_dict['roi_lb'],
-                                               is_HR=self.is_HR_labels, ref_lr=path_dict['lr'], ref_hr=path_dict['hr'])
-                if labels is not None:
-                    if 'age' in self.args.dataset:
-                        print(f' Ages: {np.unique(labels)}')
-                    else:
-                        labels_masked = labels.copy()
-                        labels_masked[labels == -1] = np.nan
-                        print(f' Densities percentiles 10,20,50,70,90 \n {np.nanpercentile(labels_masked, q=[0.1,0.2,0.5,0.7,0.9])}')
-                        if 'palmcoco' in self.args.dataset:
-                            if 'labels/palm' in path_dict['gt'] or 'palm_annotations' in path_dict['gt']:
-                                labels = np.concatenate((labels,np.zeros_like(labels)), axis=-1)
+                            print('Palm Object - class 1')
+                        elif 'labels/coco/' in path_dict['gt'] or 'coco_annotations' in path_dict['gt']:
+                            labels = np.concatenate((np.zeros_like(labels),labels),axis=-1)
+                            print('Coco Object - class 2')
+                        elif 'labels/coconutSHP/' in path_dict['gt']:
+                            labels = np.concatenate((labels == 6, labels == 2), axis=-1) ## Palm is code 6 and coco code 2
+                            labels = np.int32(labels) * 99 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
+                            print('Coco and Palm Object')
+                        else:
+                            raise ValueError('Label type cannot be inferred from path:\n'+path_dict['gt'])
 
-                                print('Palm Object - class 1')
-                            elif 'labels/coco/' in path_dict['gt'] or 'coco_annotations' in path_dict['gt']:
-                                labels = np.concatenate((np.zeros_like(labels),labels),axis=-1)
-                                print('Coco Object - class 2')
-                            elif 'labels/coconutSHP/' in path_dict['gt']:
-                                labels = np.concatenate((labels == 6, labels == 2), axis=-1) ## Palm is code 6 and coco code 2
-                                labels = np.int32(labels) * 99 # without density Gt we just define it as 0.8 trees/pixel if there is a tree
-                                print('Coco and Palm Object')
-                            else:
-                                raise ValueError('Label type cannot be inferred from path:\n'+path_dict['gt'])
+        else:
+            labels,lim_labels = None, None
 
-            else:
-                labels,lim_labels = None, None
-
-        return train, train_h, labels, lim_labels
+        return train, None, labels, lim_labels
 
     def read_train_data(self):
-        self.is_HR_labels = self.args.is_hr_label
+        self.is_HR_labels = False
         self.unlab = None
 
         print('\n [*] Loading TRAIN data \n')
-        is_vaihingen = 'vaihingen' in self.args.dataset
-
-        ref_scale = self.scale if is_vaihingen else 16
-
 
         list_id_lab = [get_id_lab(x) for x in self.args.tr]
         dict_id_lab = {x:[False,list_id_lab.index(x),None,None] for x in set(list_id_lab)}
         # Load first labels
         for key,val in dict_id_lab.items():
-            _,_,labels,lim_labels = self.read_data_pairs(self.args.tr[val[1]], is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, is_load_lab=True,is_load_input=False)
+            _,_,labels,lim_labels = self.read_data_pairs(self.args.tr[val[1]], is_load_lab=True, is_load_input=False)
             val[2] = labels
             val[3] = lim_labels
-        ray.init()
-        print(ray.nodes()[0]['Resources'])
 
-        @ray.remote
+        use_ray = True
+
+        if use_ray:
+            ray.init()
+            print(ray.nodes()[0]['Resources'])
+
+        @conditional_decorator(ray.remote, use_ray)
         def f(tr_,dict_id, mask_dict):
             id_lab = get_id_lab(tr_)
 
-            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, is_vaihingen=is_vaihingen,
-                                                                      ref_scale=ref_scale, upsample_lr=self.is_upsample,
-                                                                      is_load_lab=False, mask_out_dict=mask_dict)
+            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, mask_out_dict=mask_dict, is_load_lab=False)
 
             labels = dict_id[id_lab][2]
             lim_labels = dict_id[id_lab][3]
             is_valid_ = train is not None
             return (train,train_h, labels,lim_labels,is_valid_)
 
-        data_tr = [f.remote(i,dict_id=dict_id_lab,mask_dict=None) for i in self.args.tr]
-        self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
-        # data_tr = [f(i, dict_id=dict_id_lab, mask_dict=None) for i in self.args.tr]
-        # self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
+        if use_ray:
+            data_tr = [f.remote(i,dict_id=dict_id_lab,mask_dict=None) for i in self.args.tr]
+            self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
+        else:
+            data_tr = [f(i, dict_id=dict_id_lab, mask_dict=None) for i in self.args.tr]
+            self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
 
         self.train = list(compress(self.train, is_valid))
         self.train_h = list(compress(self.train_h, is_valid))
@@ -361,16 +300,18 @@ class DataReader(object):
         dict_id_lab_val = {x:[False,list_id_lab_val.index(x),None,None] for x in set(list_id_lab_val)}
 
         for key,val in dict_id_lab_val.items():
-            _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_vaihingen=is_vaihingen,ref_scale=ref_scale, upsample_lr=self.is_upsample, is_load_lab=True,is_load_input=False)
+            _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_load_lab=True, is_load_input=False)
             val[2] = labels
             val[3] = lim_labels
 
-        data_val = [f.remote(i,dict_id=dict_id_lab_val,mask_dict=maskout) for i in self.args.val]
-        self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
+        if use_ray:
+            data_val = [f.remote(i,dict_id=dict_id_lab_val,mask_dict=maskout) for i in self.args.val]
+            self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
+            ray.shutdown()
+        else:
+            data_val = [f(i, dict_id=dict_id_lab_val, mask_dict=maskout) for i in self.args.val]
+            self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
 
-        # data_val = [f(i, dict_id=dict_id_lab_val, mask_dict=maskout) for i in self.args.val]
-        # self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
-        ray.shutdown()
         self.val = list(compress(self.val, is_valid))
         self.val_h = list(compress(self.val_h, is_valid))
         self.labels_val = list(compress(self.labels_val, is_valid))
@@ -429,48 +370,16 @@ class DataReader(object):
 
             else:
                 for i_ in range(len(self.val)):
-                    if 'vaihingen' in self.args.dataset:
-                        plots.plot_heatmap(self.labels_val[i_][..., 1], file=self.args.model_dir + f'/val_reg_label{i_}', min=0,
-                                           percentiles=(0, 100))
-                        plots.plot_labels(self.labels_val[i_][..., 0], file=self.args.model_dir + f'/val_sem_label{i_}')
-                        plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}', reorder=False, normalize=False)
+                    for j in range(self.n_classes):
+                        plt_reg(self.labels_val[i_][...,j], self.args.model_dir + f'/val_reg_label{i_}_class{j}')
+                    plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}')
 
-                        plots.plot_rgb(self.val_h[i_], file=self.args.model_dir + f'/val_HR{i_}', reorder=False, normalize=False)
-                        np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
+                    if self.val_h[i_] is not None:
+                        plots.plot_rgb(self.val_h[i_], file=self.args.model_dir+f'/val_HR{i_}', reorder=False, normalize=False)
                         np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
-                        np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
-                    else:
-                        for j in range(self.n_classes):
-                            plt_reg(self.labels_val[i_][...,j], self.args.model_dir + f'/val_reg_label{i_}_class{j}')
-                        plots.plot_rgb(self.val[i_], file=self.args.model_dir + f'/val_LR{i_}')
 
-                        if self.val_h[i_] is not None:
-                            plots.plot_rgb(self.val_h[i_], file=self.args.model_dir+f'/val_HR{i_}', reorder=False, normalize=False)
-                            np.save(self.args.model_dir + f'/val_HR{i_}', self.val_h[i_])
-
-                        np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
-                        np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
-            # for i_ in range(len(self.train)):
-            #     if 'vaihingen' in self.args.dataset:
-            #         plots.plot_heatmap(self.labels[i_][..., 1], file=self.args.model_dir + f'/train_reg_label{i_}', min=0,
-            #                            percentiles=(0, 100))
-            #         plots.plot_labels(self.labels[i_][..., 0], file=self.args.model_dir + f'/train_sem_label{i_}')
-            #         plots.plot_rgb(self.train[i_], file=self.args.model_dir + f'/train_LR{i_}', reorder=False, normalize=False)
-            #
-            #         plots.plot_rgb(self.train_h[i_], file=self.args.model_dir + f'/train_HR{i_}', reorder=False, normalize=False)
-            #         np.save(self.args.model_dir + f'/train_LR{i_}', self.train[i_])
-            #         np.save(self.args.model_dir + f'/train_HR{i_}', self.train_h[i_])
-            #         np.save(self.args.model_dir + f'/train_reg_label{i_}', self.labels[i_])
-            #     else:
-            #
-            #         plt_reg(self.labels[i_], self.args.model_dir + f'/train_reg_label{i_}')
-            #         plots.plot_rgb(self.train[i_], file=self.args.model_dir + f'/train_LR{i_}')
-            #
-            #         plots.plot_rgb(self.train_h[i_], file=self.args.model_dir+f'/train_HR{i_}', reorder=False, normalize=False)
-            #         np.save(self.args.model_dir + f'/train_LR{i_}', self.train[i_])
-            #         np.save(self.args.model_dir + f'/train_HR{i_}', self.train_h[i_])
-            #         np.save(self.args.model_dir + f'/train_reg_label{i_}', self.labels[i_])
-            # sys.exit(0)
+                    np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
+                    np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
 
         if self.args.is_padding:
             a = self.patch_l - 1
@@ -487,10 +396,7 @@ class DataReader(object):
 
         print('\n [*] Loading TEST data \n')
 
-        self.is_HR_labels = self.args.is_hr_label
-        is_vaihingen = 'vaihingen' in self.args.dataset
-
-        ref_scale = self.scale if is_vaihingen else 16
+        self.is_HR_labels = False
 
         self.test_h = []
         self.test = []
@@ -503,10 +409,7 @@ class DataReader(object):
 
         for test_ in self.args.test:
 
-            test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_,
-                                                                              upsample_lr=self.is_upsample,
-                                                                              is_vaihingen=is_vaihingen,
-                                                                              ref_scale=ref_scale, mask_out_dict=maskout,
+            test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, mask_out_dict=maskout,
                                                                               is_skip_if_masked=False)
             is_valid.append(test is not None)
             if is_valid[-1]:
@@ -594,7 +497,6 @@ class DataReader(object):
 
         self.single_gen_test = []
 
-
         for test_dset_ in range(len(self.test)):
             self.single_gen_test.append(
                 PatchExtractor(dataset_low=self.test[test_dset_], dataset_high=self.test_h[test_dset_],
@@ -604,8 +506,6 @@ class DataReader(object):
                                scale=self.scale, lims_with_labels=self.lims_labels_test[test_dset_],
                                patches_with_labels=self.args.patches_with_labels,
                                two_ds=self.two_ds))
-
-
 
     def get_input_test(self, is_restart=False, as_list=False):
         if not as_list:
@@ -716,21 +616,8 @@ class DataReader(object):
 
         n = self.n_channels
         n_c = self.n_classes
-        if 'vaihingen' in self.args.dataset:
-            if self.is_HR_labels:
-                return {'feat_l': data_l[..., :n],
-                        'feat_h': data_h[..., 0:3],
-                        'feat_lU': data_l[..., n:],
-                        'feat_hU': data_h[..., 5:8], }, \
-                       data_h[..., 3:5]
-            else:
-                return {'feat_l': data_l[..., 0:n],
-                        'feat_h': data_h[..., 0:3],
-                        'feat_lU': data_l[..., (n + 2):2 * n + 2],
-                        'feat_hU': data_h[..., 3:]}, \
-                       data_l[..., n:n + 2]
 
-        elif not self.args.is_upsample_LR:
+        if not self.args.is_upsample_LR:
             if self.two_ds:
                 return {'feat_l':data_l[..., 0:n],'feat_lU':data_l[..., (n + n_c):2 * n + n_c]}, data_l[..., n:n+n_c]
             else:

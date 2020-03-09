@@ -62,7 +62,7 @@ class PatchExtractor:
         self.label = label
         self.patches_with_labels = patches_with_labels
         self.lims_lab = lims_with_labels
-        self.d2_after = d2_after
+        # self.d2_after = d2_after
         self.unlab = unlab
         if IS_DEBUG:
             self.d_l1 = np.zeros_like(self.d_l)
@@ -276,20 +276,7 @@ class PatchExtractor:
         if not self.two_ds:
             with self.lock:
                 ind1 = self.indices1[np.mod(self.rand_ind, len(self.indices1))]
-
-                # if self.rand_ind < self.d2_after:
-                #     ind = self.indices[np.mod(self.rand_ind,self.len_labels)]
-                # else:
-                #     if not self.shuffled_indices:
-                #         np.random.shuffle(self.indices)
-                #         self.shuffled_indices = True
-                #         print(' Shuffling and addind unlabeled data')
-                #     ind = self.indices[np.mod(self.rand_ind,self.len_labelsALL)]
-
-                # print ' rand_index={}'.format(self.rand_ind)
                 self.rand_ind+=1
-            # ind = 50
-            # corner_ = divmod(ind, self.n_y)
 
             return self.get_patches(ind1)
         else:
@@ -351,9 +338,11 @@ class PatchExtractor:
         nr_patches = len(range_i) * len(range_j)
 
         print('   Shapes Original = {}'.format(data_.shape))
-        print('   Shapes Patched (low-res) Dataset = {}'.format(
-            [nr_patches, self.patch_l, self.patch_l, data_.shape[-1]]))
+        print('   Shapes Patched (low-res) Dataset = {} (border = {})'.format(
+            [nr_patches, self.patch_l, self.patch_l, data_.shape[-1]],self.border))
 
+        print(range_i)
+        print(range_j)
         self.d_l = data_
 
         self.nr_patches = nr_patches

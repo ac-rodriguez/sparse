@@ -3,27 +3,15 @@ import os
 import argparse
 import sys
 import glob
-import shutil
 import tensorflow as tf
 
-from tqdm import tqdm
 
-from data_reader import DataReader
-# from deeplab_resnet.data_reader import DataReader as DataReader1
-from utils import save_parameters, add_letter_path
-from model import Model
-import plots
-import patches
-from data_config import get_dataset
-import tools_tf as tools
-from predict_and_recompose import predict_and_recompose_individual
+from utils.data_reader import DataReader
+from utils.utils import save_parameters, add_letter_path
+from utils.model import Model
+import utils.tools_tf as tools
+from utils.predict_and_recompose import predict_and_recompose_individual
 from data_config import untar
-import gdal_processing as gp
-# colormax = {2: 0.93, 4: 0.155, 8: 0.04}
-# HRFILE='/home/pf/pfstaff/projects/andresro/sparse/data/coco'
-# LRFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/2A/coco_2017p/S2A_MSIL2A_20170205T022901_N0204_R046_T50PNQ_20170205T024158.SAFE/MTD_MSIL2A.xml'
-# # POINTSFILE ='/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_manual.kml'
-# POINTSFILE = '/home/pf/pfstaff/projects/andresro/barry_palm/data/labels/coco/points_detections.kml'
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -34,21 +22,14 @@ parser.add_argument("model_weights", type=str,
                     help="Path to the file with model weights.")
 
 # Input data args
-# parser.add_argument("--HR_file", default=HRFILE)
 parser.add_argument("--unlabeled_data", default=None)
-
-# parser.add_argument("--points", default=POINTSFILE)
 parser.add_argument("--roi_lon_lat_unlab", default=None)
 parser.add_argument("--roi_lon_lat_test", default=None)
-# parser.add_argument("--roi_lon_lat_val", default='117.81,8.82,117.84,8.88')
-# # parser.add_argument("--roi_lon_lat_val_lb", default='117.820,8.848,117.834,8.854')
 parser.add_argument("--dataset", default='palm')
 parser.add_argument("--select_bands", default="B02,B03,B04,B05,B06,B07,B08,B8A,B11,B12",
                     help="Select the bands. Using comma-separated band names.")
 parser.add_argument("--is-padding", default=False, action="store_true",
                     help="padding train data with (patch_size-1)")
-# parser.add_argument("--is-hr-label", default=False, action="store_true",
-#                     help="compute label on the HR resolultion")
 parser.add_argument("--is-fake-hr-label", default=False, action="store_true",
                     help="compute label on the LR resolultion and to ")
 parser.add_argument("--is-noS2", default=False, action="store_true",
@@ -112,22 +93,12 @@ parser.add_argument("--scale-points", default=10, type=int,
                     help="Original Scale in which the GT points was calculated")
 parser.add_argument("--l2-weights-every", default=None, type=int,
                     help="How often to update the L2 norm of the weights")
-parser.add_argument("--gen-loss-every", default=2, type=int,
-                    help="How often to run generator loss on adversarial settings")
-parser.add_argument("--is-conv",dest='is_bilinear', default=True, action="store_false",
-                    help="downsampling of HR_hat is bilinear (True) or conv (False).")
 parser.add_argument("--is-out-relu", default=False, action="store_true",
                     help="Adds a Relu to the output of the reg prediction")
 parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
 parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
-parser.add_argument("--semi-supervised",dest='semi', default=None,
-                    help="semi-supervised task")
-parser.add_argument("--distill-from", default=None, type=str,
-                    help="distill from a pretrained HR based model")
-parser.add_argument("--domain-loss",dest='domain', default=None,
-                    help="domain transfer model  HR to LR")
 parser.add_argument("--optimizer", type=str, default='adam',
                     help="['adagrad', 'adam']")
 parser.add_argument("--lr", type=float, default=1e-4,
@@ -161,7 +132,7 @@ def main(unused_args):
     args.is_upsample_LR = False
 
     if '*' in args.data_dir:
-        foldername = '_'.join(args.data_dir.split('*')[-2:])
+        foldername = '_'.join(args.data_dir.split('*')[-2:]).replace('.SAFE','')
         data_dir = glob.glob(args.data_dir)[:10]
         if len(data_dir) < 10:
             untar(file_pattern=args.data_dir)
@@ -220,7 +191,7 @@ def main(unused_args):
     Model_fn = Model(params)
     model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
                                    model_dir=model_dir, config=run_config)
-    is_hr_pred = Model_fn.hr_emb
+    is_hr_pred = False
 
     tf.logging.set_verbosity(tf.logging.INFO)  # Show training logs.
 
@@ -237,7 +208,7 @@ def main(unused_args):
 
             predict_and_recompose_individual(model, reader, input_fn_test_comp, reader.single_gen_test,
                             is_hr_pred, args.batch_size_eval,'test',
-                            is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+                            is_reg=(args.lambda_reg > 0.), is_sem=False,
                             chkpt_path=ckpt,return_array=False)
 
 

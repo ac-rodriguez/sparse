@@ -1,6 +1,7 @@
 import tensorflow as tf
-import tools_tf as tools
 import numpy as np
+
+import utils.tools_tf as tools
 
 def bn_layer(X, activation_fn=None, is_training=True):
     if activation_fn is None: activation_fn = lambda x: x

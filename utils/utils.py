@@ -4,7 +4,7 @@ import string
 import time
 import numpy as np
 from math import ceil
-from plots import plot_rgb, plot_heatmap
+from utils.plots import plot_rgb, plot_heatmap
 import matplotlib.pyplot as plt
 
 def save_parameters(params, out_dir, sysargv=None, name='FLAGS'):
