@@ -1,9 +1,11 @@
 # Deep Semantic Density Estimation
 
-We perform a density estimation of palm and coconut trees using Sentinel-2 open source imagery.
+<img align="center" width="500" height="500" src="palm_map.png">
+
+Density estimation of palm and coconut trees using Sentinel-2 open source imagery.
 
  
-## Processing of Sentinel-2 and Patches
+## Preprocessing of Sentinel-2 and preparing ground-truth
 
 #### Download Data from copernicus server
 
@@ -26,21 +28,22 @@ The expected tree directory is:
 ```
 data
 └─1C
-  └─ phillipines_2017
-     └─ PRODUCT
-        └─ S2A_MSIL1C_20170114T020411_N0204_R017_T51NYH_20170114T020453.zip
-  └─ indonesia_2017
-     ...
+|  └─ phillipines_2017
+|  |   └─ PRODUCT
+|  |      └─ S2A_MSIL1C_20170114T020411_N0204_R017_T51NYH_20170114T020453.zip
+|  └─ indonesia_2017
+|     ...
 └─2A
-  └─ phillipines_2017
-     └─ S2A_MSIL1C_20170114T020411_N0204_R017_T51NYH_20170114T020453.SAFE
-  └─ indonesia_2017
+   └─ phillipines_2017
+   |   └─ S2A_MSIL1C_20170114T020411_N0204_R017_T51NYH_20170114T020453.SAFE
+   └─ indonesia_2017
      ...  
 ```
+Note that we only use 2A products. after processing the 1C folder can be removed.
 
-## Labels
+#### Labels
 
-Our annotation strategy is to have at least 2 annotated regions of at least 300ha for each sentinel tile. See LabelingCampaign.pdf for more details.
+Our annotation strategy is to have at least 2 annotated regions of at least 300ha for each sentinel tile (1 Mha). See LabelingCampaign.pdf for more details.
 
 The expected tree directory is:
 
@@ -48,12 +51,12 @@ The expected tree directory is:
 data/labels
 └─palm_annotations
   └─ T47NPB
-     └─ group1
-        └─ points.kml
-        └─ positive.kml
-        └─ negative.kml
-     └─ group2
-        └─ ...
+  |   └─ group1
+  |      └─ points.kml
+  |      └─ positive.kml
+  |      └─ negative.kml
+  |   └─ group2
+  |      └─ ...
   └─ T47NQV
      └─ ...
  ```
@@ -68,12 +71,14 @@ Then use `OrganizeAnnotations.ipynb` to convert them to .shp files
 
 the flat `--dataset` defines the input data where we want to train and validate on. use `data_config.py` to define tiles and specific locations where the model should take input data from and the .shp files of each tile.
 
-## Prediction
+## Prediction and postprocessing
+
+#### Prediction with a trained model
 
 1. once a model is trained use `predict.py` to predict a SAFE dataset and save it as a GeoTiff file. Use `predict_array.sh` for parallel predictions over large areas.
 2. Predictions are masked with cloud values, to overcome this issue, we just aggregate all observations over all times available for each location. For such purpose use `sh aggregate_per_tile.sh` for such purpose.
 
-## untiling
+## Merging toghether single prediction tiles (untiling)
 Finally, use `untile.py` if you want to create a lower resolution version of a large predicted area.
 
 
