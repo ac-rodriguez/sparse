@@ -79,7 +79,8 @@ the flat `--dataset` defines the input data where we want to train and validate 
 2. Predictions are masked with cloud values, to overcome this issue, we just aggregate all observations over all times available for each location. For such purpose use `sh aggregate_per_tile.sh` for such purpose.
 
 ## Merging toghether single prediction tiles (untiling)
-Finally, use `untile.py` if you want to create a lower resolution version of a large predicted area.
+Finally, use `untile.py` if you want to create a lower resolution version of a large predicted area. After merging `zonal_stats.py`
+can be used to create statistics per defined (usually large scale) areas.
 
 
 ## Requirements python

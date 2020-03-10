@@ -3,7 +3,7 @@ import tensorflow as tf
 import numpy as np
 cross_entropy = tf.compat.v1.losses.sparse_softmax_cross_entropy
 
-from AdaBound import AdaBoundOptimizer
+# from AdaBound import AdaBoundOptimizer
 
 from utils.colorize import colorize, inv_preprocess_tf
 from utils.models_reg import simple, countception
