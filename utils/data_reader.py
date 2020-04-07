@@ -570,13 +570,15 @@ class DataReader(object):
             if is_restart:
                 self.patch_gen_val_complete.define_queues()
 
-            return partial(self.input_fn, type='val_complete')
+            # return partial(self.input_fn, type='val_complete')
+            return self.input_fn(type='val_complete')
         else:
             list_fn = []
             for id_, d_ in enumerate(self.single_gen_val):
                 if is_restart:
                     d_.define_queues()
-                list_fn.append(partial(self.input_fn,type=f'val_complete-{id_}'))
+                # list_fn.append(partial(self.input_fn,type=f'val_complete-{id_}'))
+                list_fn.append(self.input_fn(type=f'val_complete-{id_}'))
             return list_fn
 
     def normalize(self, features, labels):
@@ -649,13 +651,13 @@ class DataReader(object):
     def init_constants_normalization(self):
 
         try:
-            tf.Variable(self.mean_train.astype(np.float32), name='mean_train', trainable=False, validate_shape=True,
-                        expected_shape=tf.shape([self.n_channels]))
+            tf.Variable(self.mean_train.astype(np.float32), name='mean_train', trainable=False, validate_shape=True)
+                        # shape=tf.shape([self.n_channels]))
 
-            tf.Variable(self.std_train.astype(np.float32), name='std_train', trainable=False,
-                        expected_shape=tf.shape([self.n_channels]))
-            tf.Variable(self.max_dens.astype(np.float32), name='max_dens', trainable=False,
-                        expected_shape=tf.shape([1]))
+            tf.Variable(self.std_train.astype(np.float32), name='std_train', trainable=False)
+                        # shape=tf.shape([self.n_channels]))
+            tf.Variable(self.max_dens.astype(np.float32), name='max_dens', trainable=False)
+                        # shape=tf.shape([1]))
 
             tf.constant(self.mean_train.astype(np.float32), name='mean_train_k')
 

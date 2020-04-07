@@ -5,10 +5,12 @@ import tensorflow as tf
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.eager import context
-from tensorflow.contrib.tensorboard.plugins import projector
-import tensorflow.contrib.slim as slim
+# from tensorflow.contrib.tensorboard.plugins import projector
+# import tensorflow.contrib.slim as slim
 
 import numpy as np
+
+
 
 def analyze_model():
     slim.model_analyzer.analyze_vars(

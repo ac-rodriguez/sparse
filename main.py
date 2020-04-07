@@ -4,12 +4,12 @@ import argparse
 import sys
 import shutil
 import tensorflow as tf
-
+import tqdm
 
 from utils.data_reader import DataReader
-
+from utils import plots
 from utils.utils import save_parameters, add_letter_path
-from utils.model import Model
+from utils.trainer import Trainer
 
 from data_config import get_dataset
 import utils.tools_tf as tools
@@ -112,10 +112,8 @@ parser.add_argument("--is-predict","--is-test", dest='is_train', default=True, a
 parser.add_argument("--is-mounted", default=False, action="store_false",
                     help="directories on a mounted loc from leonhard cluster")
 
-args = parser.parse_args()
 
-
-def main(unused_args):
+def main(args):
     if args.is_train:
         d = get_dataset(args.dataset)
     else:
@@ -161,75 +159,60 @@ def main(unused_args):
     filename = 'FLAGS' if args.is_train else 'FLAGS_pred'
     if not args.is_restore:
         save_parameters(args, model_dir, sys.argv, name=filename)
-    params = {}
 
-    params['model_dir'] = model_dir
-    params['args'] = args
-    log_steps = args.logsteps
-    if args.is_multi_gpu:
-        strategy = tf.contrib.distribute.MirroredStrategy()
-        run_config = tf.estimator.RunConfig(
-            train_distribute=strategy, eval_distribute=strategy, log_step_count_steps=log_steps)
-    else:
-        run_config = tf.estimator.RunConfig(log_step_count_steps=log_steps)
-    best_ckpt = True
-
-    if args.is_noS2 and 'B_' in args.model:
-        vars_to_warm_start = ["encode.*", "countception.*"]
-    else:
-        vars_to_warm_start = ["countception.*"] # with a change of sensor, encoder has different channel dimensions
-
-    if args.warm_start_from is not None:
-        warm_dir = args.warm_start_from
-        if best_ckpt:
-            warm_dir = tools.get_last_best_ckpt(warm_dir, 'best/*')
-
-        warm_dir = tf.estimator.WarmStartSettings(warm_dir)
-    else:
-        warm_dir = None
-    Model_fn = Model(params)
-    model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
-                                   model_dir=model_dir, config=run_config, warm_start_from=warm_dir)
-
-    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.INFO)  # Show training logs.
+    trainer = Trainer(args)
 
     if args.is_train:
 
         reader = DataReader(args, is_training=True)
-        input_fn, input_fn_val = reader.get_input_fn(is_val_random=True)
+        train_ds = reader.input_fn(type='train')
+        val_ds = reader.input_fn(type='val')
+
         val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
         train_iters = np.sum(reader.patch_gen.nr_patches) // args.batch_size
 
-        metrics_scope = 'metrics'
-        if int(args.lambda_reg) == 1:
-            metric_ = metrics_scope+'/mae'
+        if args.lambda_reg == 1:
+            metric_ = 'mae'
             comp_fn = lambda best, new: best > new
             best = 99999.0
         else:
-            metric_ = metrics_scope+'/iou'
+            metric_ = 'iou'
             comp_fn = lambda best, new: best < new
             best = 0.0
-        print(best, metric_)
+        # print(best, metric_)
+        epoch_iter = tqdm.trange(args.epochs, desc=f'epoch 0 ({metric_}:{best})')
+        for epoch_ in epoch_iter:
+            # for id_train in tqdm.trange(train_iters, desc='train'):
+            for id_train in tqdm.trange(10,desc='train'):
+                x, y  = next(iter(train_ds))
+                y_hat = trainer.train_step(x,y)
+                if np.mod(id_train,10) == 0:
+                    trainer.update_sum_train(y, y_hat)
+                    trainer.summaries_train(step=epoch_*train_iters+id_train)
+                    
+            trainer.train_writer.flush()
+            trainer.reset_sum_train()
 
-        epoch_ = 0
-        while epoch_ < args.epochs:
-            print(f'[*] EPOCH: {epoch_}/{args.epochs} [0/{train_iters}]')
-            model.train(input_fn, steps=train_iters*args.eval_every)
-            if epoch_ == 0: # warm settings only at the first iteration
-                model._warm_start_settings = None
-            epoch_ += args.eval_every
-            metrics = model.evaluate(input_fn_val, steps=val_iters)
-            print(metrics)
-            if comp_fn(best, metrics[metric_]):
-                print (f'New best at epoch {epoch_}, {metric_}:{metrics[metric_]} from {best}')
-                best = metrics[metric_]
-                input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
-                predict_and_recompose(model,reader,input_fn_val_comp, reader.single_gen_val,False,args.batch_size_eval,'val',
-                                            prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0), m=metrics)
+            if np.mod(epoch_,args.eval_every) == 0:
+                for _ in tqdm.trange(val_iters, desc='val'):
+                    x, y  = next(iter(val_ds))
+                    predictions = trainer.model(x['feat_l'], is_training=False)
+                    trainer.update_sum_val(predictions,y)
+                metrics = trainer.summaries_val(step=epoch_)
 
-            else:
-                print(f'Keeping old best {metric_}:{best}')
-
+                # print(metrics)
+                if comp_fn(best, metrics[metric_]):
+                    epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{best} prev. {best})')
+                    # print(f'New best at epoch {epoch_}, {metric_}:{metrics[metric_]} from {best}')
+                    best = metrics[metric_]
+                    input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
+                    predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
+                                          args.batch_size_eval, 'val',
+                                          prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.),
+                                          is_sem=(args.lambda_reg < 1.0), m=metrics)
+                    trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
+                trainer.val_writer.flush()
+                trainer.reset_sum_val()
         plt_reg = lambda x, file: plots.plot_heatmap(x, file=file, min=-1, max=2.0, cmap='viridis')
 
         for i_, gen_ in enumerate(reader.single_gen):
@@ -243,10 +226,10 @@ def main(unused_args):
 
         input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
 
-        predict_and_recompose(model, reader, input_fn_val_comp, reader.single_gen_val,
+        predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val,
                                     False, args.batch_size_eval,'val',
                                     is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-                                    chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
+                                    chkpt_path=tools.get_last_best_ckpt(trainer.model_dir, 'best/*'))
         np.save('{}/train_label'.format(model_dir), reader.labels)
         np.save('{}/val_label'.format(model_dir), reader.labels_val)
         del reader.train, reader.train_h
@@ -266,6 +249,9 @@ def main(unused_args):
     np.save('{}/test_label'.format(model_dir), reader.labels_test)
 
 if __name__ == '__main__':
-    tf.compat.v1.app.run()
+    args = parser.parse_args()
+
+    main(args)
+    # tf.compat.v1.app.run()
 
 print('Done!')

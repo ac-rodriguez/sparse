@@ -80,7 +80,7 @@ def plot_rgb(data, file, max_luminance=4000, reorder=True, return_img=False, per
 
 
 
-def plot_labels(preds, file, colors=None, return_img=False):
+def plot_labels(preds, file='image', colors=None, return_img=False):
 
     filename = file + '.png'
     preds = np.squeeze(preds)

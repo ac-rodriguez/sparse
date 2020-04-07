@@ -278,7 +278,10 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
 
     for i in points:
 
-        (xp, yp, h) = ct.TransformPoint(i[0], i[1], 0.)
+        if gdal.__version__.startswith('3.'):
+            (xp, yp, h) = ct.TransformPoint(i[1], i[0], 0.)
+        else:
+            (xp, yp, h) = ct.TransformPoint(i[0], i[1], 0.)
         xp -= xoff
         yp -= yoff
         # matrix inversion
@@ -377,8 +380,11 @@ def rasterize_points(Input, refDataset, lims, scale = 10):
     e = e / scale
 
     for i in points:
+        if gdal.__version__.startswith('3.'):
+            (xp, yp, h) = ct.TransformPoint(i[1], i[0], 0.)
+        else:
+            (xp, yp, h) = ct.TransformPoint(i[0], i[1], 0.)
 
-        (xp, yp, h) = ct.TransformPoint(i[0], i[1], 0.)
         xp -= xoff
         yp -= yoff
         # matrix inversion
@@ -553,7 +559,11 @@ def to_xy(lon, lat, ds, is_int = True):
     srsLatLon.SetWellKnownGeogCS("WGS84")
     ct = osr.CoordinateTransformation(srsLatLon, srs)
 
-    (xp, yp, h) = ct.TransformPoint(lon, lat, 0.)
+    if gdal.__version__.startswith('3.'):
+        (xp, yp, h) = ct.TransformPoint(lat, lon, 0.)
+    else:
+        (xp, yp, h) = ct.TransformPoint(lon, lat, 0.)
+
     xp -= xoff
     yp -= yoff
     # matrix inversion
@@ -685,8 +695,11 @@ def to_latlon(x, y, ds):
 
     easting = originX + pixelWidth * x + bag_gtrn[2] * y
     northing = originY + bag_gtrn[4] * x + pixelHeight * y
+    if gdal.__version__.startswith('3.'):
+        geo_pt = transform.TransformPoint(northing, easting)[:2]
+    else:
+        geo_pt = transform.TransformPoint(easting, northing)[:2]
 
-    geo_pt = transform.TransformPoint(easting, northing)[:2]
     lon = geo_pt[0]
     lat = geo_pt[1]
     return lat, lon
@@ -711,7 +724,11 @@ def get_lonlat(ds, verbose= False):
     for x, y in bag_bbox_cells:
         x2 = bag_gtrn[0] + bag_gtrn[1] * x + bag_gtrn[2] * y
         y2 = bag_gtrn[3] + bag_gtrn[4] * x + bag_gtrn[5] * y
-        geo_pt = transform.TransformPoint(x2, y2)[:2]
+        if gdal.__version__.startswith('3.'):
+            geo_pt = transform.TransformPoint(y2, x2)[:2]
+        else:
+            geo_pt = transform.TransformPoint(x2, y2)[:2]
+
         geo_pts.append(geo_pt)
         if verbose:
             print(x, y, '->', geo_pt)

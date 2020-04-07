@@ -74,7 +74,7 @@ def encode(input, scope_name='encode', is_training=True, is_bn=True, reuse=tf.co
             x = bn_layer(x, activation_fn=tf.nn.leaky_relu, is_training=is_training) if is_bn else x
         return x
 
-def encode_same(input, scope_name='encode_same', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, is_small = True):
+def encode_same(input, scope_name='encode_same', is_training=True, is_bn=True, reuse=tf.compat.v1.AUTO_REUSE, is_small = True, dropout_always=True):
     with tf.compat.v1.variable_scope(scope_name, reuse=reuse):
 
         x = tf.compat.v1.layers.conv2d(input, 64, 3, activation=tf.nn.relu, padding='same')
