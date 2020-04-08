@@ -165,8 +165,8 @@ def main(args):
     if args.is_train:
 
         reader = DataReader(args, is_training=True)
-        train_ds = reader.input_fn(type='train')
-        val_ds = reader.input_fn(type='val')
+        train_ds = iter(reader.input_fn(type='train'))
+        val_ds = iter(reader.input_fn(type='val'))
 
         val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
         train_iters = np.sum(reader.patch_gen.nr_patches) // args.batch_size
@@ -182,9 +182,9 @@ def main(args):
         # print(best, metric_)
         epoch_iter = tqdm.trange(args.epochs, desc=f'epoch 0 ({metric_}:{best})')
         for epoch_ in epoch_iter:
-            # for id_train in tqdm.trange(train_iters, desc='train'):
-            for id_train in tqdm.trange(10,desc='train'):
-                x, y  = next(iter(train_ds))
+            for id_train in tqdm.trange(train_iters, desc='train',disable=True):
+            # for id_train in tqdm.trange(10,desc='train'):
+                x, y  = next(train_ds)
                 y_hat = trainer.train_step(x,y)
                 if np.mod(id_train,10) == 0:
                     trainer.update_sum_train(y, y_hat)
@@ -194,22 +194,21 @@ def main(args):
             trainer.reset_sum_train()
 
             if np.mod(epoch_,args.eval_every) == 0:
-                for _ in tqdm.trange(val_iters, desc='val'):
-                    x, y  = next(iter(val_ds))
+                for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
+                    x, y  = next(val_ds)
                     predictions = trainer.model(x['feat_l'], is_training=False)
                     trainer.update_sum_val(predictions,y)
                 metrics = trainer.summaries_val(step=epoch_)
 
                 # print(metrics)
                 if comp_fn(best, metrics[metric_]):
-                    epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{best} prev. {best})')
-                    # print(f'New best at epoch {epoch_}, {metric_}:{metrics[metric_]} from {best}')
+                    epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{best:.2f} prev. {best:.2f})')
                     best = metrics[metric_]
                     input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
                     predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
                                           args.batch_size_eval, 'val',
                                           prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.),
-                                          is_sem=(args.lambda_reg < 1.0), m=metrics)
+                                          is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_)
                     trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
                 trainer.val_writer.flush()
                 trainer.reset_sum_val()
@@ -239,19 +238,17 @@ def main(args):
     else:
         assert os.path.isdir(args.model_dir)
         reader = DataReader(args, is_training=False)
-    input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
+    # input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
 
-    predict_and_recompose_individual(model, reader, input_fn_test_comp, reader.single_gen_test,
-                                False, args.batch_size_eval,'test',
-                                is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-                                chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
+    # predict_and_recompose_individual(model, reader, input_fn_test_comp, reader.single_gen_test,
+    #                             False, args.batch_size_eval,'test',
+    #                             is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+    #                             chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
 
-    np.save('{}/test_label'.format(model_dir), reader.labels_test)
+    # np.save('{}/test_label'.format(model_dir), reader.labels_test)
 
 if __name__ == '__main__':
     args = parser.parse_args()
-
     main(args)
-    # tf.compat.v1.app.run()
 
 print('Done!')

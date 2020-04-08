@@ -213,7 +213,7 @@ class PatchExtractor:
                                     patches = (patches,patches_h)
                                 self.inputs_queue.put(patches)  # + (i,)
                             i += 1
-                    print('starting over Val set {}'.format(i))
+                    # print('starting over Val set {}'.format(i))
 
     def get_patch_corner(self,data, x,y,size):
         if data is not None:

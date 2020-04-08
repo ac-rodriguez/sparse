@@ -252,7 +252,7 @@ def save_test_patches(d10, d20, file, filename = 'data', patch=128, border=4, in
     print(' [*] {}.npz saved!'.format(filename))
 
 
-def recompose_images(a, border=4, size=None, show_image=False):
+def recompose_images(a, border=4, size=None, show_image=False, verbose=False):
 
     if len(a.shape) == 3:
         a = np.expand_dims(a,axis=-1)
@@ -263,18 +263,18 @@ def recompose_images(a, border=4, size=None, show_image=False):
         # # This is done because we do not mirror the data at the image border
         # size = [s - border * 2 for s in size]
         patch_size = a.shape[2]-border*2
-
-        print('Patch w/o borders has dimension {}'.format(patch_size))
-        print('Prediction has shape {}'.format(a.shape))
+        if verbose:
+            print('Patch w/o borders has dimension {}'.format(patch_size))
+            print('Prediction has shape {}'.format(a.shape))
         x_tiles = int(ceil(size[0]/float(patch_size)))
         y_tiles = int(ceil(size[1]/float(patch_size)))
-        print('Tiles per image {} {}'.format(x_tiles, y_tiles))
+        if verbose: print('Tiles per image {} {}'.format(x_tiles, y_tiles))
 
         # Initialize image
-        print('Image size is: {}'.format(size))
+        if verbose: print('Image size is: {}'.format(size))
         images = np.zeros((size[1], size[0],a.shape[-1])).astype(np.float32)
 
-        print(images.shape)
+        if verbose: print(images.shape)
         current_patch = 0
         for y in range(0, y_tiles):
             ypoint = y * patch_size

@@ -18,13 +18,12 @@ def save_m(name, m):
             f.write('%s:%s\n' % (key, value))
 
 def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
-                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None):
+                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None, epoch_=0):
     model_dir = trainer.model_dir
     save_dir = os.path.join(model_dir, prefix)
     if not os.path.isdir(save_dir): os.makedirs(save_dir)
     if m is not None:
         save_m(save_dir + '/metrics.txt', m)
-    epoch_ = int(prefix.split('/')[-1])
     # f1 = lambda x: (np.where(x == -1, x, x * (2.0 / reader.max_dens)) if is_hr_pred else x)
     f1 = lambda x:x
     plt_reg = lambda x: plots.plot_heatmap(f1(x), cmap='viridis', percentiles=(0, 100))  # min=-1, max=2.0,
@@ -54,11 +53,12 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
         if is_sem:
             pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
         patch_generator[id_].define_queues()
+        input_iter = iter(input_fn[id_])
         # preds_iter = trainer.predict(input_fn=input_fn[id_], yield_single_examples=False, checkpoint_path=chkpt_path)
 
         # print('Predicting {} Patches...'.format(nr_patches))
         for idx in tqdm(range(0, batch_idxs),disable=True):
-            x, _ = next(iter(input_fn[id_]))
+            x, _ = next(input_iter)
             p_ = trainer.model(x['feat_l'], is_training=False)
             start = idx * batch_size
             if is_reg:
@@ -119,7 +119,7 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
                     reg_sameshape = np.nanmedian(reg_sameshape, axis=-1)
                     for j in range(reg_sameshape.shape[-1]):
                         im = plt_reg(reg_sameshape[...,j])
-                        im.save(f'{save_dir}/{type_}_reg_pred{tile}_class{j}_{i}.png')
+                        # im.save(f'{save_dir}/{type_}_reg_pred{tile}_class{j}_{i}.png')
                         with trainer.val_writer.as_default():
                             tf.summary.image(f'{type_}/reg_pred{tile}_{i}/class{j}', np.array(im)[np.newaxis], step=epoch_)
             if is_sem:
@@ -135,14 +135,14 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
                     sem_sameshape = np.nanmedian(sem_sameshape, axis=-1)
 
                     np.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}',sem_sameshape)
-                    # im = plots.plot_labels(sem_sameshape, f'{save_dir}/{type_}_sem_pred{tile}_{i}')
                     im = plots.plot_labels(sem_sameshape, return_img=True)
-                    im.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}.png')
+                    # im.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}.png')
 
                     with trainer.val_writer.as_default():
                         tf.summary.image(f'{type_}/sem_pred{tile}_{i}', np.array(im)[np.newaxis], step=epoch_)
 
     else:
+        raise NotImplementedError
         print('saving as individual files')
         for id_ in range(len(patch_generator)):
 
