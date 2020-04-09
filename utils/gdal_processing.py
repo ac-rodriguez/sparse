@@ -471,7 +471,7 @@ def get_jp2(path, band, res=10):
         return glob.glob(f"{path}/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")[0]
 
 
-def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte, roi_lon_lat = None):
+def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte, roi_lon_lat = None, options = 0):
     if type == 'float32':
         type = gdal.GDT_Float32
     Image = gdal.Open(refDataset)
@@ -486,8 +486,32 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
         Input = np.expand_dims(Input, axis = 2)
 
     nbands = Input.shape[-1]
+    
+    # filename = filename.replace('.tif', f'_{options}.tif')
 
-    options = ['alpha=yes']
+    if options== 0:
+        options = ['alpha=yes']
+    elif options == 1:
+        options = ['alpha=yes',
+            'TILED=YES',
+            'COMPRESS=ZSTD',
+            'PREDICTOR=1',
+            'ZSTD_LEVEL=9']
+    elif options == 2:
+        options = ['alpha=yes',
+            'TILED=YES',
+            'COMPRESS=ZSTD',
+            'PREDICTOR=2',
+            'ZSTD_LEVEL=9']
+    elif options == 3:
+        options = ['alpha=yes',
+            'TILED=YES',
+            'COMPRESS=ZSTD',
+            'PREDICTOR=3',
+            'ZSTD_LEVEL=9']
+    else:
+        raise NotImplemented
+
     target_ds = gdal.GetDriverByName('GTiff').Create(filename, xmax - xmin + 1, ymax - ymin + 1, nbands, type, options=options)
 
     ox, pw, a, oy,b, ph = Image.GetGeoTransform()
@@ -862,3 +886,18 @@ def read_gt(refDataset, lims, ref_obj, scale_points=1,  path = None):
 #         sigma = scale / np.pi
 #     data = ndimage.gaussian_filter(data.astype(np.float32), sigma=sigma)
 #     return block_reduce(data, (scale, scale, 1), func)
+if __name__ == "__main__":
+    
+    filename = 'temp.tif'
+
+    options = ['alpha=yes',
+                'TILED=NO',
+                'COMPRESS=ZSTD',
+                'PREDICTOR=1',
+                'ZSTD_LEVEL=9']
+
+    target_ds = gdal.GetDriverByName('GTiff').Create(filename, 10, 10, 3, gdal.GDT_CFloat32, options=options)
+
+    print(target_ds)
+
+    print('done')

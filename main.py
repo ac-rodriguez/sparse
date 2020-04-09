@@ -165,6 +165,7 @@ def main(args):
     if args.is_train:
 
         reader = DataReader(args, is_training=True)
+        trainer.model.inputnorm = tools.InputNorm(reader.mean_train,reader.std_train)
         train_ds = iter(reader.input_fn(type='train'))
         val_ds = iter(reader.input_fn(type='val'))
 
@@ -186,7 +187,7 @@ def main(args):
             # for id_train in tqdm.trange(10,desc='train'):
                 x, y  = next(train_ds)
                 y_hat = trainer.train_step(x,y)
-                if np.mod(id_train,10) == 0:
+                if np.mod(id_train,args.logsteps) == 0:
                     trainer.update_sum_train(y, y_hat)
                     trainer.summaries_train(step=epoch_*train_iters+id_train)
                     
@@ -202,7 +203,7 @@ def main(args):
 
                 # print(metrics)
                 if comp_fn(best, metrics[metric_]):
-                    epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{best:.2f} prev. {best:.2f})')
+                    epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{metrics[metric_]:.2f} prev. {best:.2f})')
                     best = metrics[metric_]
                     input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
                     predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,

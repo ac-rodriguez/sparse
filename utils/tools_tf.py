@@ -12,6 +12,22 @@ import numpy as np
 
 
 
+class InputNorm(tf.keras.layers.Layer):
+    def __init__(self,mean=None, std=None, n_channels=None):
+        super(InputNorm,self).__init__()
+        if mean is not None and std is not None:
+            self.mean_train = tf.Variable(mean.astype(np.float32), name='mean_train', trainable=False)
+            self.std_train  = tf.Variable(std.astype(np.float32), name='std_train', trainable=False)
+        else:
+            self.mean_train = tf.Variable(np.zeros(n_channels, dtype=np.float32), name='mean_train',
+                                            trainable=False)
+            self.std_train = tf.Variable(np.ones(n_channels, dtype=np.float32), name='std_train', trainable=False)
+
+    def call(self,x):
+        x = (x - self.mean_train) / self.std_train
+        return x
+
+
 def analyze_model():
     slim.model_analyzer.analyze_vars(
         tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.TRAINABLE_VARIABLES), print_info=True)

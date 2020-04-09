@@ -1,13 +1,13 @@
 import os
 from itertools import compress
-
+import time
 import numpy as np
 from tqdm import tqdm
 
 import utils.plots as plots
 import utils.patches as patches
 import utils.gdal_processing as gp
-from utils.tools_tf import copy_last_ckpt
+from utils.tools_tf import copy_last_ckpt, InputNorm
 import tensorflow as tf
 
 def save_m(name, m):
@@ -159,9 +159,9 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
                 plots.plot_labels(data_c_recomposed, '{}/{}_sem_pred{}'.format(save_dir, type_,id_))
 
 
-def predict_and_recompose_individual(model, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
+def predict_and_recompose_individual(trainer, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
                           prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None):
-    model_dir = model.model_dir
+    model_dir = trainer.model_dir
     save_dir = os.path.join(model_dir, prefix)
     if not os.path.isdir(save_dir): os.makedirs(save_dir)
     if m is not None:
@@ -172,8 +172,10 @@ def predict_and_recompose_individual(model, reader, input_fn, patch_generator, i
     plt_reg = lambda x, file: plots.plot_heatmap(f1(x), file=file, cmap='viridis',
                                                  percentiles=(0, 100))  # min=-1, max=2.0,
     # copy chkpt
-    if chkpt_path is None and prefix != '':
-        copy_last_ckpt(model_dir, prefix)
+    if chkpt_path is not None:
+        trainer.model.inputnorm = InputNorm(n_channels=11)
+        trainer.model.load_weights(chkpt_path)
+        
     if not isinstance(patch_generator, list):
         patch_generator = [patch_generator]
 
@@ -222,15 +224,13 @@ def predict_and_recompose_individual(model, reader, input_fn, patch_generator, i
             else:
                 pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
 
-        hook = None
         patch_generator[id_].define_queues()
-        preds_iter = model.predict(input_fn=input_fn[id_], yield_single_examples=False, hooks=hook,
-                                   checkpoint_path=chkpt_path)
+        input_iter = iter(input_fn[id_])
 
-
-        print('Predicting {} Patches...'.format(nr_patches))
         for idx in tqdm(range(0, batch_idxs), disable=None):
-            p_ = next(preds_iter)
+            x = next(input_iter)
+            if 'test' in type_: x = trainer.model.inputnorm(x)
+            p_ = trainer.model(x, is_training=False)
             start = idx * batch_size
             last_batch = nr_patches - start
             if is_reg:
@@ -260,9 +260,13 @@ def predict_and_recompose_individual(model, reader, input_fn, patch_generator, i
             if not return_array:
                 fname = f'{save_dir}/{data_name}-{type_}_preds_reg'
                 if is_save_georef:
+                    # for opt in [0,1,2,3]:
+                        # t0 = time.time()
                     gp.rasterize_numpy(data_r_recomposed, refDataset,
-                                       filename=fname+'.tif', type='float32',
-                                       roi_lon_lat=ref_info['roi'])
+                                    filename=fname+'.tif', type='float32',
+                                    roi_lon_lat=ref_info['roi'],options=2)
+                    # print(f'total time option {opt} {time.time()-t0:.3f}')
+
                 else:
                     np.save(fname, data_r_recomposed)
                     for i in range(data_r_recomposed.shape[-1]):
@@ -278,8 +282,8 @@ def predict_and_recompose_individual(model, reader, input_fn, patch_generator, i
                 fname = f'{save_dir}/{data_name}-{type_}_preds_{semsuffix}'
                 if is_save_georef:
                     gp.rasterize_numpy(data_c_recomposed, refDataset,
-                                       filename=fname+'.tif', type='float32',
-                                       roi_lon_lat=ref_info['roi'])
+                                        filename=fname+'.tif', type='float32',
+                                        roi_lon_lat=ref_info['roi'], options=2)
                 else:
                     np.save(fname, data_c_recomposed)
                     if not is_save_class_prob:

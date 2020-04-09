@@ -8,7 +8,7 @@ import tensorflow as tf
 
 from utils.data_reader import DataReader
 from utils.utils import save_parameters, add_letter_path
-from utils.model import Model
+from utils.trainer import Trainer
 import utils.tools_tf as tools
 from utils.predict_and_recompose import predict_and_recompose_individual
 from data_config import untar
@@ -118,10 +118,8 @@ parser.add_argument("--is-overwrite-pred", default=False, action="store_true",
 parser.add_argument("--is-mounted", default=False, action="store_false",
                     help="directories on a mounted loc from leonhard cluster")
 
-args = parser.parse_args()
 
-
-def main(unused_args):
+def main(args):
 
     if ('HR' in args.model or 'SR' in args.model or 'DA_h' in args.model or 'B_h' in args.model) and \
             not '_l' in args.model and not args.is_fake_hr_label:
@@ -175,25 +173,9 @@ def main(unused_args):
     filename = 'FLAGS_pred'
     args.is_train = False
     save_parameters(args, model_dir, sys.argv, name=filename)
-    params = {}
 
-    params['model_dir'] = model_dir
-    params['args'] = args
-    log_steps = 500
-    if args.is_multi_gpu:
-        strategy = tf.contrib.distribute.MirroredStrategy()
-        run_config = tf.estimator.RunConfig(
-            train_distribute=strategy, eval_distribute=strategy, log_step_count_steps=log_steps)
-    else:
-        run_config = tf.estimator.RunConfig(log_step_count_steps=log_steps)
-    best_ckpt = True
-
-    Model_fn = Model(params)
-    model = tf.estimator.Estimator(model_fn=Model_fn.model_fn,
-                                   model_dir=model_dir, config=run_config)
+    trainer = Trainer(args)
     is_hr_pred = False
-
-    tf.logging.set_verbosity(tf.logging.INFO)  # Show training logs.
 
     for test_ in test_dsets:
         print('processing',test_)
@@ -206,13 +188,14 @@ def main(unused_args):
         if reader is not None:
             input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
 
-            predict_and_recompose_individual(model, reader, input_fn_test_comp, reader.single_gen_test,
+            predict_and_recompose_individual(trainer, reader, input_fn_test_comp, reader.single_gen_test,
                             is_hr_pred, args.batch_size_eval,'test',
                             is_reg=(args.lambda_reg > 0.), is_sem=False,
                             chkpt_path=ckpt,return_array=False)
 
-
 if __name__ == '__main__':
-    tf.app.run()
+    
+    args = parser.parse_args()
+    main(args)
 
 print('Done!')

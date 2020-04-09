@@ -322,10 +322,16 @@ class DataReader(object):
 
         # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
         # self.N_pixels = self.train.shape[0] * self.train.shape[1]
+        x_sum = np.sum([x.sum(axis=(0, 1)) for x in self.train], axis=0)
+        x2_sum = np.sum([(x**2).sum(axis=(0, 1)) for x in self.train], axis=0)
+        n = np.sum([x.shape[0] * x.shape[1] for x in self.train])
 
-        self.mean_train = self.train[0].mean(axis=(0, 1))
-        self.max_dens = self.labels[0].max()
-        self.std_train = self.train[0].std(axis=(0, 1))
+        self.mean_train = x_sum / n
+        self.std_train = (x2_sum / n - (x_sum/n)**2)**0.5
+        # train_flat = np.concatenate([x.reshape(-1,11) for x in self.train])
+        # self.mean_train = self.train[0].mean(axis=(0, 1))
+        self.max_dens = np.max([x.max() for x in self.labels])
+        # self.std_train = self.train[0].std(axis=(0, 1))
 
         if self.args.is_empty_aerial:
             self.train[(self.labels == -1)[..., 0], :] = 2000.0
@@ -512,58 +518,16 @@ class DataReader(object):
             if is_restart:
                 self.patch_gen_test.define_queues()
 
-            return partial(self.input_fn, type='test')
+            # return partial(self.input_fn, type='test')
+            return self.input_fn(type='test')
         else:
             list_fn = []
             for id_, d_ in enumerate(self.single_gen_test):
                 if is_restart:
                     d_.define_queues()
-                list_fn.append(partial(self.input_fn,type=f'test_complete-{id_}'))
+                # list_fn.append(partial(self.input_fn,type=f'test_complete-{id_}'))
+                list_fn.append(self.input_fn(type=f'test_complete-{id_}'))
             return list_fn
-
-    def get_input_test_old(self):  #
-        self.init_constants_normalization()
-
-        gen_func = self.patch_gen_test.get_iter_test
-        patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
-        batch = self.batch_eval
-        multiplier = 2 if self.two_ds else 1
-        self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset else 1
-        n_lab = self.n_channels_lab
-        if self.labels_test[0] is not None:
-            if self.is_HR_labels:
-                n_low = self.n_channels * multiplier
-                n_high = (3 + n_lab) * multiplier
-            else:
-                n_low = (self.n_channels + n_lab) * multiplier
-                n_high = 3 * multiplier
-
-            ds = tf.data.Dataset.from_generator(
-                gen_func, (tf.float32, tf.float32),
-                (
-                    tf.TensorShape([patch_l, patch_l,
-                                    n_low]),
-                    tf.TensorShape([patch_h, patch_h,
-                                    n_high])
-                ))
-
-            ds = ds.map(self.reorder_ds, num_parallel_calls=6)
-
-            ds = ds.batch(batch).map(self.normalize, num_parallel_calls=6)
-
-            ds = ds.prefetch(buffer_size=batch * 2)
-        else:
-            ds = tf.data.Dataset.from_generator(
-                gen_func, tf.float32,
-                tf.TensorShape([patch_l, patch_l, self.n_channels]))
-            if batch is None:
-                batch = self.args.batch_size
-            normalize = lambda x: (x - self.mean_train) / self.std_train
-            ds = ds.batch(batch).map(normalize, num_parallel_calls=6)
-
-            ds = ds.prefetch(buffer_size=batch * 2)
-
-        return ds
 
     def get_input_val(self, is_restart=False, as_list=False):
         if not as_list:
@@ -648,33 +612,8 @@ class DataReader(object):
                             'feat_hU': data_h[..., 3:]}, \
                            tf.expand_dims(data_l[..., n], axis=-1)
 
-    def init_constants_normalization(self):
-
-        try:
-            tf.Variable(self.mean_train.astype(np.float32), name='mean_train', trainable=False, validate_shape=True)
-                        # shape=tf.shape([self.n_channels]))
-
-            tf.Variable(self.std_train.astype(np.float32), name='std_train', trainable=False)
-                        # shape=tf.shape([self.n_channels]))
-            tf.Variable(self.max_dens.astype(np.float32), name='max_dens', trainable=False)
-                        # shape=tf.shape([1]))
-
-            tf.constant(self.mean_train.astype(np.float32), name='mean_train_k')
-
-            tf.constant(self.std_train.astype(np.float32), name='std_train_k')
-            tf.constant(self.max_dens.astype(np.float32), name='max_dens_k')
-        except AttributeError:
-
-            self.mean_train = tf.Variable(np.zeros(self.n_channels, dtype=np.float32), name='mean_train',
-                                          trainable=False, validate_shape=True,
-                                          expected_shape=tf.shape([self.n_channels]))
-
-            self.std_train = tf.Variable(np.ones(self.n_channels, dtype=np.float32), name='std_train', trainable=False,
-                                         expected_shape=tf.shape([self.n_channels]))
-
     def input_fn(self, type='train'):
         # np.random.seed(99)
-        self.init_constants_normalization()
 
         if type == 'train':
             gen_func = self.patch_gen.get_iter
@@ -721,8 +660,8 @@ class DataReader(object):
                 tf.TensorShape([patch_l, patch_l, self.n_channels]))
             if batch is None:
                 batch = self.args.batch_size
-            normalize = lambda x: (x - self.mean_train) / self.std_train
-            ds = ds.batch(batch).map(normalize, num_parallel_calls=6)
+            # normalize = lambda x: (x - self.mean_train) / self.std_train
+            ds = ds.batch(batch) # .map(normalize, num_parallel_calls=6)
 
             ds = ds.prefetch(buffer_size=batch * 2)
             return ds
