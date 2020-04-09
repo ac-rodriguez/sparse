@@ -91,6 +91,8 @@ parser.add_argument("--is-out-relu", default=False, action="store_true",
                     help="Adds a Relu to the output of the reg prediction")
 parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
+parser.add_argument("--is-dropout-uncertainty", default=False, action="store_true",
+                    help="adding dropout to cnn filters at train and test time.")                    
 parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--optimizer", type=str, default='adam',
@@ -232,9 +234,12 @@ def main(args):
                                     chkpt_path=tools.get_last_best_ckpt(trainer.model_dir, 'best/*'))
         np.save('{}/train_label'.format(model_dir), reader.labels)
         np.save('{}/val_label'.format(model_dir), reader.labels_val)
-        del reader.train, reader.train_h
-        del reader.val, reader.val_h
-        reader.prepare_test_data()
+        if len(args.test) > 0: 
+            del reader.train, reader.train_h
+            del reader.val, reader.val_h
+            reader.prepare_test_data()
+        else:
+            print('done, no test data was provided')
 
     else:
         assert os.path.isdir(args.model_dir)

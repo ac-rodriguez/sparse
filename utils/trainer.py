@@ -28,6 +28,7 @@ class Trainer():
 
         self.scale = 1
         self.is_slim = self.args.is_slim_eval
+        self.is_dropout = self.args.is_dropout_uncertainty
 
         self.float_ = lambda x: tf.cast(x, dtype=tf.float32)
 
@@ -50,7 +51,7 @@ class Trainer():
         if 'simpleA' in self.model_name:
             depth = self.model_name.replace('simpleA', '')
             depth = 0 if depth == '' else int(depth)
-            self.model = SimpleA(self.n_classes,extra_depth=depth)
+            self.model = SimpleA(self.n_classes,extra_depth=depth, is_dropout=self.is_dropout)
         else:
             raise NotImplementedError
 
