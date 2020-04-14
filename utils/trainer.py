@@ -56,18 +56,18 @@ class Trainer():
             raise NotImplementedError
 
         self.mse_loss = tf.keras.losses.MeanSquaredError()
-        self.ce_loss = tf.keras.losses.SparseCategoricalCrossentropy()
+        self.ce_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
 
         self.train_acc = tf.keras.metrics.SparseCategoricalAccuracy()
-        self.train_ce = tf.keras.metrics.SparseCategoricalCrossentropy()
+        self.train_ce = tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True)
         self.train_mse = tf.keras.metrics.MeanSquaredError()
         self.train_mae = tf.keras.metrics.MeanAbsoluteError()
 
         self.val_mse = tf.keras.metrics.MeanSquaredError()
         self.val_mae = tf.keras.metrics.MeanAbsoluteError()
 
-        self.val_ce = tf.keras.metrics.SparseCategoricalCrossentropy()
+        self.val_ce = tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True)
         self.val_acc = tf.keras.metrics.SparseCategoricalAccuracy()
         self.val_iou = tf.keras.metrics.MeanIoU(self.n_classes+1)
         self.val_prec = tf.keras.metrics.Precision()
