@@ -1,4 +1,4 @@
-import os
+import os, sys
 import gdal
 import argparse
 import socket
@@ -7,7 +7,9 @@ import glob
 from scipy import stats
 from skimage.transform import resize
 
-import gdal_processing as gp
+sys.path.insert(0, os.path.dirname(os.getcwd()))
+sys.path.insert(0, os.getcwd())
+import utils.gdal_processing as gp
 
 
 parser = argparse.ArgumentParser(description="median per tile calculation",
@@ -15,7 +17,7 @@ parser = argparse.ArgumentParser(description="median per tile calculation",
 
 parser.add_argument("data_dir", type=str, default="",
                     help="Path to the directory containing the predicted SAFE files")
-parser.add_argument("--save_dir", default=None)
+parser.add_argument("--save-dir", default=None, help='Default will save in parent directory of data_dir')
 parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="overwrite predictions already in folder")
 parser.add_argument("--is-clip-to-countries", default=False, action="store_true",
@@ -28,6 +30,8 @@ parser.add_argument("--is-avgprobs", default=False, action="store_true",
                     help="if true: average probabilities and then compute argmax, else mayority voting of classes")
 parser.add_argument("--nan-class", default=99, type=int,
                     help="Value of output pixels with nan values in all the input datasets")
+parser.add_argument("--mc-repetitions", default=1, type=int,
+                    help="Number of repetitions the arrays have predictions from")
 args = parser.parse_args()
 
 
@@ -42,8 +46,16 @@ def nanargmax(data, nanclass=args.nan_class):
     classes[mask] = nanclass
     return classes
 
+def clean_array(x, is_water, ref_data):
+    x[np.isnan(x)] = args.nan_class
+    if args.is_remove_water:
+        x[is_water] = 0
+    if args.is_clip_to_countries:
+        x = clipcountries(x,ref_data=ref_data)
+    return x
+
 if 'pf-pc' in socket.gethostname():
-    PATH = '/scratch/andresro/leon_igp'
+    PATH = '/scratch/andresro/leon_work'
 else:
     PATH = '/cluster/work/igp_psr/andresro'
 
@@ -79,22 +91,25 @@ if args.is_remove_water:
 
     is_water = np.nansum(is_water, axis=-1) > 0
     is_water = resize(is_water, output_shape=[x*2 for x in is_water.shape[0:2]], mode='edge') > 0.5
+else:
+    is_water = None
 
-
+suffix_reg = f'{args.mc_repetitions}_preds_reg_0'
 if tilename.startswith('T'):
     # Add all the orbits in the tile
     path = os.path.dirname(args.data_dir)
-    reg_dirs = glob.glob(f'{path}/*{tilename}/*preds_reg.tif')
+    reg_dirs = glob.glob(f'{path}/*{tilename}/*{suffix_reg}.tif')
+    print(f'reading {len(reg_dirs)} dirs from {path}/*{tilename}')
 else:
-    reg_dirs = glob.glob(args.data_dir+'/*preds_reg.tif')
+    reg_dirs = glob.glob(args.data_dir+'/*{suffix_reg}.tif')
+    print(f'reading {len(reg_dirs)} dirs from {args.data_dir}')
 
 
-
-reg_filename = f'{args.save_dir}/{tilename}_preds_reg.tif'
+reg_filename = f'{args.save_dir}/{tilename}_{suffix_reg}.tif'
 if not os.path.isfile(reg_filename) or args.is_overwrite:
     arrays = []
     for file in reg_dirs:
-        print('reading', file)
+        print('reading', os.path.basename(file))
         ds = gdal.Open(file)
         nbands = ds.RasterCount
         data_ = [ds.GetRasterBand(x+1).ReadAsArray() for x in range(nbands)]
@@ -102,15 +117,34 @@ if not os.path.isfile(reg_filename) or args.is_overwrite:
         arrays.append(data_)
 
     arrays = np.stack(arrays, axis=-1)
-    print('computing median value')
-    arrays = np.nanmedian(arrays, axis=-1)
-    arrays[np.isnan(arrays)] = args.nan_class
-    if args.is_remove_water:
-        arrays[is_water] = 0
+    if args.mc_repetitions == 1:
+        print('computing median value')
+        medians = np.nanmedian(arrays, axis=-1)
+        medians = clean_array(medians,is_water,reg_dirs[0])
+        gp.rasterize_numpy(medians,reg_dirs[0],filename=reg_filename,type='float32')
 
-    if args.is_clip_to_countries:
-        arrays = clipcountries(arrays,ref_data=reg_dirs[0])
-    gp.rasterize_numpy(arrays,reg_dirs[0],filename=reg_filename,type='float32')
+    if args.mc_repetitions > 1:
+        shape_ = arrays.shape
+        arrays = arrays.reshape(shape_[:2]+(-1,2))
+        n = np.count_nonzero(~np.isnan(arrays[...,0]), axis=-1) * args.mc_repetitions
+        gp.rasterize_numpy(n,reg_dirs[0],filename=reg_filename.replace('.tif','_n.tif'),type='int32')
+        
+        arrays = np.nansum(arrays,axis=-2)
+        x_sum = arrays[...,0]
+        x2_sum = arrays[...,1]
+
+        means = x_sum/n 
+        means = clean_array(means,is_water,reg_dirs[0])
+        gp.rasterize_numpy(means,reg_dirs[0],filename=reg_filename,type='float32')
+
+        std_dev = (x2_sum / n - (x_sum/n)**2)
+        std_dev = clean_array(std_dev,is_water,reg_dirs[0])
+        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_var.tif'),type='float32')
+        
+        std_dev = (x2_sum / n - (x_sum/n)**2)**0.5
+        std_dev = clean_array(std_dev,is_water,reg_dirs[0])
+        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_std.tif'),type='float32')
+
 
 
 classprob_filename = f'{args.save_dir}/{tilename}_preds_classprob.tif'
@@ -122,9 +156,9 @@ if args.is_avgprobs:
     sem_filename = sem_filename.replace('sem.tif','semA.tif')
     is_compute_class = False
 
-is_compute_sem = (not os.path.isfile(sem_filename) or args.is_overwrite) and not args.is_reg_only
+is_compute_sem = (not os.path.isfile(sem_filename) or args.is_overwrite)
 
-if is_compute_class or is_compute_sem:
+if (is_compute_class or is_compute_sem) and not args.is_reg_only:
     if tilename.startswith('T'):
         # Add all the orbits in the tile
         path = os.path.dirname(args.data_dir)

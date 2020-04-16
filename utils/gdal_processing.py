@@ -474,6 +474,8 @@ def get_jp2(path, band, res=10):
 def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte, roi_lon_lat = None, options = 0):
     if type == 'float32':
         type = gdal.GDT_Float32
+    elif type == 'int32':
+        type = gdal.GDT_Int32
     Image = gdal.Open(refDataset)
     if roi_lon_lat:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = split_roi_string(roi_lon_lat)
@@ -487,28 +489,43 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
 
     nbands = Input.shape[-1]
     
-    # filename = filename.replace('.tif', f'_{options}.tif')
+    filename = filename.replace('.tif', f'_{options}.tif')
 
     if options== 0:
         options = ['alpha=yes']
-    elif options == 1:
+    elif options == 1.1:
         options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=1',
             'ZSTD_LEVEL=9']
-    elif options == 2:
+    elif options == 1.2:
         options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=2',
             'ZSTD_LEVEL=9']
-    elif options == 3:
+    elif options == 1.3:
         options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=3',
             'ZSTD_LEVEL=9']
+    elif options == 2.1:
+        options = ['alpha=yes',
+            'TILED=YES',
+            'COMPRESS=LZW',
+            'PREDICTOR=1']
+    elif options == 2.2:
+        options = ['alpha=yes',
+            'TILED=YES',
+            'COMPRESS=LZW',
+            'PREDICTOR=2']
+    elif options == 2.3:
+        options = ['alpha=yes',
+            'TILED=YES',
+            'COMPRESS=LZW',
+            'PREDICTOR=3']
     else:
         raise NotImplemented
 
