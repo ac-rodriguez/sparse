@@ -10,7 +10,7 @@ from utils.data_reader import DataReader
 from utils.utils import save_parameters, add_letter_path
 from utils.trainer import Trainer
 import utils.tools_tf as tools
-from utils.predict_and_recompose import predict_and_recompose_individual
+from utils.predict_and_recompose import predict_and_recompose_individual, predict_and_recompose_individual_MC
 from data_config import untar
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
@@ -25,7 +25,7 @@ parser.add_argument("model_weights", type=str,
 parser.add_argument("--unlabeled_data", default=None)
 parser.add_argument("--roi_lon_lat_unlab", default=None)
 parser.add_argument("--roi_lon_lat_test", default=None)
-parser.add_argument("--dataset", default='palm')
+parser.add_argument("--dataset", default='')
 parser.add_argument("--select_bands", default="B02,B03,B04,B05,B06,B07,B08,B8A,B11,B12",
                     help="Select the bands. Using comma-separated band names.")
 parser.add_argument("--is-padding", default=False, action="store_true",
@@ -118,14 +118,13 @@ parser.add_argument("--is-overwrite-pred", default=False, action="store_true",
 parser.add_argument("--is-mounted", default=False, action="store_false",
                     help="directories on a mounted loc from leonhard cluster")
 
-
+parser.add_argument("--is-dropout-uncertainty", default=False, action="store_true",
+                    help="adding dropout to cnn filters at train and test time.")    
+parser.add_argument("--mc-repetitions", default=1, type=int,
+                    help="Number of forward passes to do. predicts and saves only x_sum and x2_sum")
 def main(args):
 
-    if ('HR' in args.model or 'SR' in args.model or 'DA_h' in args.model or 'B_h' in args.model) and \
-            not '_l' in args.model and not args.is_fake_hr_label:
-        args.is_hr_label = True
-    else:
-        args.is_hr_label = False
+    args.is_hr_label = False
 
     args.is_upsample_LR = False
 
@@ -142,11 +141,11 @@ def main(args):
         foldername = '_'.join(foldername)
         data_dir = [args.data_dir]
 
-    if args.tag is None:
-        args.tag = ""
-        # args.save_dir = args.save_dir +'_' + args.tag
-    model_dir = os.path.join(args.save_dir,args.tag, foldername, '')
-
+    
+    tag_ = f'{args.dataset}{args.model}'
+    if args.tag is not None and args.tag != '':
+        tag_ = tag_ + '_'+ args.tag
+    model_dir = os.path.join(args.save_dir,tag_, foldername, '')
 
     if '.ckpt' in args.model_weights:
         ckpt = args.model_weights
@@ -176,7 +175,12 @@ def main(args):
 
     trainer = Trainer(args)
     is_hr_pred = False
-
+    if args.mc_repetitions > 1:
+        assert args.is_dropout_uncertainty
+        type_ = f'test-{args.mc_repetitions}'
+    else:
+        type_ = 'test'
+    tf.random.set_seed(args.numpy_seed)
     for test_ in test_dsets:
         print('processing',test_)
         args.test = [test_]
@@ -187,11 +191,18 @@ def main(args):
 
         if reader is not None:
             input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
-
-            predict_and_recompose_individual(trainer, reader, input_fn_test_comp, reader.single_gen_test,
-                            is_hr_pred, args.batch_size_eval,'test',
+            if args.mc_repetitions > 1:
+                predict_and_recompose_individual_MC(trainer, reader,
+                            input_fn= input_fn_test_comp, patch_generator= reader.single_gen_test,
+                            is_hr_pred=is_hr_pred, batch_size= args.batch_size_eval,type_=type_,
                             is_reg=(args.lambda_reg > 0.), is_sem=False,
-                            chkpt_path=ckpt,return_array=False)
+                            chkpt_path=ckpt,return_array=False, mc_repetitions=args.mc_repetitions)
+            else:
+                predict_and_recompose_individual(trainer, reader,
+                                input_fn= input_fn_test_comp, patch_generator= reader.single_gen_test,
+                                is_hr_pred=is_hr_pred, batch_size= args.batch_size_eval,type_=type_,
+                                is_reg=(args.lambda_reg > 0.), is_sem=False,
+                                chkpt_path=ckpt,return_array=False)
 
 if __name__ == '__main__':
     

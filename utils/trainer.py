@@ -265,6 +265,20 @@ class Trainer():
         x = tf.compat.v1.where(tf.equal(xm,-1),xm,x, name='Label_down')
         return x
 
+    @tf_function()
+    def forward_ntimes(self, x, is_training, n):
+        out_dict = {}
+        out = [self.model(x,is_training) for _ in range(n)]
+        
+        # for key in out[0].keys():
+        for key in ['reg']: # not implemented for sem yet
+            stacked = tf.stack([x[key] for x in out],axis=0)        
+            sum_x = tf.reduce_sum(stacked,axis=0)
+            sum_x2 = tf.reduce_sum(stacked**2, axis=0)
+            out_dict[key] = tf.stack((sum_x,sum_x2), axis=-1)
+
+        return out_dict
+
     # def get_optimiter(self):
     #     if self.args.optimizer == 'adagrad':
     #         optimizer = tf.compat.v1.train.AdagradOptimizer(learning_rate=self.args.lr)

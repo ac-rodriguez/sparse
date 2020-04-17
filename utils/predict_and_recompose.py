@@ -230,6 +230,7 @@ def predict_and_recompose_individual(trainer, reader, input_fn, patch_generator,
         for idx in tqdm(range(0, batch_idxs), disable=None):
             x = next(input_iter)
             if 'test' in type_: x = trainer.model.inputnorm(x)
+            
             p_ = trainer.model(x, is_training=False)
             start = idx * batch_size
             last_batch = nr_patches - start
@@ -249,7 +250,7 @@ def predict_and_recompose_individual(trainer, reader, input_fn, patch_generator,
                     pred_c_rec[start:stop] = f(p_['sem'][0:last_batch])
                 else:
                     pred_c_rec[start:stop] = f(p_['sem'])
-        if type_ == 'test':
+        if 'test' in type_: # clean memory from input data
             reader.test[id_] = None
         print(ref_size)
         ## Recompose RGB
@@ -260,12 +261,13 @@ def predict_and_recompose_individual(trainer, reader, input_fn, patch_generator,
             if not return_array:
                 fname = f'{save_dir}/{data_name}-{type_}_preds_reg'
                 if is_save_georef:
-                    # for opt in [0,1,2,3]:
-                        # t0 = time.time()
-                    gp.rasterize_numpy(data_r_recomposed, refDataset,
-                                    filename=fname+'.tif', type='float32',
-                                    roi_lon_lat=ref_info['roi'],options=2)
-                    # print(f'total time option {opt} {time.time()-t0:.3f}')
+                    # for opt in [0,1.1,1.2,1.3,2.1,2.2,2.3]:
+                    for opt in [1.2]:
+                        t0 = time.time()
+                        gp.rasterize_numpy(data_r_recomposed, refDataset,
+                                        filename=fname+'.tif', type='float32',
+                                        roi_lon_lat=ref_info['roi'],options=opt)
+                        print(f'total time compression {opt} {time.time()-t0:.3f}')
 
                 else:
                     np.save(fname, data_r_recomposed)
@@ -296,3 +298,78 @@ def predict_and_recompose_individual(trainer, reader, input_fn, patch_generator,
             print('Returning only fist array of dataset list')
             return data_r_recomposed, data_c_recomposed
 
+def predict_and_recompose_individual_MC(trainer, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
+                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None, mc_repetitions=1):
+    
+    save_dir = os.path.join(trainer.model_dir, prefix)
+    if not os.path.isdir(save_dir): os.makedirs(save_dir)
+    if m is not None:
+        save_m(save_dir + '/metrics.txt', m)
+
+    if chkpt_path is not None:
+        trainer.model.inputnorm = InputNorm(n_channels=11)
+        trainer.model.load_weights(chkpt_path)
+        
+    if not isinstance(patch_generator, list):
+        patch_generator = [patch_generator]
+
+    assert 'test' in type_
+    assert not is_sem and is_reg,'forward pass needs to change for class prob'
+    semsuffix = 'classprob'
+
+    for id_ in range(len(patch_generator)):
+
+        patch = patch_generator[id_].patch_l
+        border = patch_generator[id_].border
+
+        ref_data = reader.test[id_]
+        ref_info = reader.test_info[id_]
+
+        lr_filename = ref_info['lr']
+        refDataset = gp.get_jp2(lr_filename, 'B03', res=10)
+        data_name = [x for x in lr_filename.split('/') if 'SAFE' in x][0]
+        ref_size = (ref_data.shape[1], ref_data.shape[0])
+        nr_patches = patch_generator[id_].nr_patches
+
+        batch_idxs = int(np.ceil(nr_patches / batch_size))
+        
+        # (last dim for (x_sum and x2_sum))
+        if is_reg: 
+            pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, reader.n_classes, 2]))
+            
+        patch_generator[id_].define_queues()
+        input_iter = iter(input_fn[id_])
+
+        for idx in tqdm(range(0, batch_idxs), disable=None):
+            x = next(input_iter)
+            if 'test' in type_: x = trainer.model.inputnorm(x)
+            p_ = trainer.forward_ntimes(x, is_training=False, n=mc_repetitions)
+            start = idx * batch_size
+            last_batch = nr_patches - start
+            if is_reg:
+                stop = start + p_['reg'].shape[0]
+                if stop > nr_patches:
+                    pred_r_rec[start:stop] = p_['reg'][0:last_batch]
+                else:
+                    pred_r_rec[start:stop] = p_['reg']
+
+        reader.test[id_] = None
+        print(ref_size)
+        ## Recompose RGB
+        if is_reg:
+            data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
+            data_r_recomposed[np.isnan(ref_data[..., 0])] = np.nan
+
+            if not return_array:
+                fname = f'{save_dir}/{data_name}-{type_}_preds_reg'
+                # for opt in [0,1.1,1.2,1.3,2.1,2.2,2.3]:
+                for opt in [1.2]:
+                    t0 = time.time()
+                    data_r_recomposed = data_r_recomposed.reshape(ref_size+(-1,))
+                    gp.rasterize_numpy(data_r_recomposed, refDataset,
+                                    filename=fname+'.tif', type='float32',
+                                    roi_lon_lat=ref_info['roi'],options=opt)
+                    print(f'total time compression {opt} {time.time()-t0:.3f}')
+
+        else:
+            data_r_recomposed = None

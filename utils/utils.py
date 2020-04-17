@@ -22,7 +22,7 @@ def save_parameters(params, out_dir, sysargv=None, name='FLAGS'):
             for i in sysargv:
                 f.write("{} ".format(i))
 
-    pprint.pprint(params)
+    pprint.pprint(params, compact=True,depth=2)
 
     print(' '.join(sysargv))
 

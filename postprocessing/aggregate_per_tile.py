@@ -32,6 +32,8 @@ parser.add_argument("--nan-class", default=99, type=int,
                     help="Value of output pixels with nan values in all the input datasets")
 parser.add_argument("--mc-repetitions", default=1, type=int,
                     help="Number of repetitions the arrays have predictions from")
+# parser.add_argument("--n-class", default=1, type=int,
+#                     help="Number of predicted classes")
 args = parser.parse_args()
 
 
@@ -69,6 +71,8 @@ def clipcountries(arrays, ref_data):
 
 if args.save_dir is None:
     args.save_dir = os.path.dirname(args.data_dir)
+if not os.path.exists(args.save_dir):    os.makedirs(args.save_dir)
+
 tilename = os.path.basename(args.data_dir)
 
 if args.is_remove_water:
@@ -98,7 +102,7 @@ suffix_reg = f'{args.mc_repetitions}_preds_reg_0'
 if tilename.startswith('T'):
     # Add all the orbits in the tile
     path = os.path.dirname(args.data_dir)
-    reg_dirs = glob.glob(f'{path}/*{tilename}/*{suffix_reg}.tif')
+    reg_dirs = glob.glob(f'{path}/*{tilename}/*20170422T024551*{suffix_reg}.tif')
     print(f'reading {len(reg_dirs)} dirs from {path}/*{tilename}')
 else:
     reg_dirs = glob.glob(args.data_dir+'/*{suffix_reg}.tif')
@@ -107,43 +111,67 @@ else:
 
 reg_filename = f'{args.save_dir}/{tilename}_{suffix_reg}.tif'
 if not os.path.isfile(reg_filename) or args.is_overwrite:
-    arrays = []
-    for file in reg_dirs:
-        print('reading', os.path.basename(file))
-        ds = gdal.Open(file)
-        nbands = ds.RasterCount
-        data_ = [ds.GetRasterBand(x+1).ReadAsArray() for x in range(nbands)]
-        data_ = np.stack(data_, axis=-1)
-        arrays.append(data_)
+    is_low_mem = True
 
-    arrays = np.stack(arrays, axis=-1)
     if args.mc_repetitions == 1:
+        arrays = []
+        for file in reg_dirs:
+            print('reading', os.path.basename(file))
+            ds = gdal.Open(file)
+            nbands = ds.RasterCount
+            data_ = [ds.GetRasterBand(x+1).ReadAsArray() for x in range(nbands)]
+            data_ = np.stack(data_, axis=-1)
+            arrays.append(data_)
+
+        arrays = np.stack(arrays, axis=-1)
         print('computing median value')
         medians = np.nanmedian(arrays, axis=-1)
         medians = clean_array(medians,is_water,reg_dirs[0])
         gp.rasterize_numpy(medians,reg_dirs[0],filename=reg_filename,type='float32')
 
     if args.mc_repetitions > 1:
-        shape_ = arrays.shape
-        arrays = arrays.reshape(shape_[:2]+(-1,2))
-        n = np.count_nonzero(~np.isnan(arrays[...,0]), axis=-1) * args.mc_repetitions
-        gp.rasterize_numpy(n,reg_dirs[0],filename=reg_filename.replace('.tif','_n.tif'),type='int32')
-        
-        arrays = np.nansum(arrays,axis=-2)
+        if not is_low_mem:
+            arrays = []
+            for file in reg_dirs:
+                print('reading',reg_dirs.index(file), os.path.basename(file))
+                ds = gdal.Open(file)
+                nbands = ds.RasterCount
+                data_ = [ds.GetRasterBand(x+1).ReadAsArray() for x in range(nbands)]
+                data_ = np.stack(data_, axis=-1)
+                arrays.append(data_)
+
+            arrays = np.stack(arrays, axis=-2)
+            n = np.count_nonzero(~np.isnan(arrays[...,0]), axis=-1) * args.mc_repetitions          
+            arrays = np.nansum(arrays,axis=-2)
+        else:
+            arrays = None
+            n = 0
+            for file in reg_dirs:
+                print('reading',reg_dirs.index(file), os.path.basename(file))
+                ds = gdal.Open(file)
+                nbands = ds.RasterCount
+                data_ = [ds.GetRasterBand(x+1).ReadAsArray() for x in range(nbands)]
+                data_ = np.stack(data_, axis=-1)
+
+                n = n + (1-np.isnan(data_[...,0])) * args.mc_repetitions
+                arrays = np.nansum(np.stack((arrays,data_),axis=0),axis=0) if arrays is not None else data_
+
+        gp.rasterize_numpy(n,reg_dirs[0],filename=reg_filename.replace('.tif','_n.tif'),type='int32', options=1.2)
+            
         x_sum = arrays[...,0]
         x2_sum = arrays[...,1]
 
         means = x_sum/n 
         means = clean_array(means,is_water,reg_dirs[0])
-        gp.rasterize_numpy(means,reg_dirs[0],filename=reg_filename,type='float32')
+        gp.rasterize_numpy(means,reg_dirs[0],filename=reg_filename,type='float32', options=1.2)
 
         std_dev = (x2_sum / n - (x_sum/n)**2)
         std_dev = clean_array(std_dev,is_water,reg_dirs[0])
-        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_var.tif'),type='float32')
+        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_var.tif'),type='float32', options=1.2)
         
         std_dev = (x2_sum / n - (x_sum/n)**2)**0.5
         std_dev = clean_array(std_dev,is_water,reg_dirs[0])
-        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_std.tif'),type='float32')
+        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_std.tif'),type='float32', options=1.2)
 
 
 

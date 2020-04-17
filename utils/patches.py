@@ -253,7 +253,10 @@ def save_test_patches(d10, d20, file, filename = 'data', patch=128, border=4, in
 
 
 def recompose_images(a, border=4, size=None, show_image=False, verbose=False):
-
+    '''
+    a is an array of shape NxPxPxC
+    where N is the number of patches, P is the patch size
+    '''
     if len(a.shape) == 3:
         a = np.expand_dims(a,axis=-1)
 
@@ -272,7 +275,8 @@ def recompose_images(a, border=4, size=None, show_image=False, verbose=False):
 
         # Initialize image
         if verbose: print('Image size is: {}'.format(size))
-        images = np.zeros((size[1], size[0],a.shape[-1])).astype(np.float32)
+        images = np.zeros(shape=(size[1], size[0])+tuple(a.shape[3:]),
+                          dtype=np.float32)
 
         if verbose: print(images.shape)
         current_patch = 0
