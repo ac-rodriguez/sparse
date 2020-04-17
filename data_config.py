@@ -121,7 +121,8 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         PATH_TRAIN = '/home/pf/pfstaff/projects/andresro'
     else:
         PATH = '/cluster/work/igp_psr/andresro'
-        PATH_TRAIN = '/cluster/scratch/andresro'
+        # PATH_TRAIN = '/cluster/scratch/andresro'
+        PATH_TRAIN = PATH
 
     if is_load_file:
 
@@ -705,7 +706,7 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
 
     if is_mounted and 'pf-pc' in socket.gethostname():
         PATH_TRAIN = '/scratch/andresro/leon_work'
-    dset_config['save_dir'] = os.path.join(PATH_TRAIN, 'sparse/training/snapshots', OBJECT, DATASET)
+    dset_config['save_dir'] = os.path.join(PATH_TRAIN, 'sparse/training', OBJECT, DATASET)
 
     return dset_config
 

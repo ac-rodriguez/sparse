@@ -139,8 +139,11 @@ def main(args):
     elif args.lambda_reg == 1.0:
         args.save_dir = args.save_dir + '_reg'
 
-    lambdas = 'Lr{:.1f}_Lw{:.4f}'.format(args.lambda_reg, args.lambda_weights)
-    model_dir = os.path.join(args.save_dir, f'{args.model}/PATCH{args.patch_size}_{args.patch_size_eval}_SCALE{args.scale}_{lambdas}{args.tag}')
+    model_name = args.model
+    if args.is_dropout_uncertainty: model_name+= '_drop'
+    
+    suffix = f'PATCH{args.patch_size}_{args.patch_size_eval}_Lr{args.lambda_reg:.1f}{args.tag}'
+    model_dir = os.path.join(args.save_dir, model_name,suffix)
 
     if args.is_overwrite and os.path.exists(model_dir) and args.is_train:
         print(' [!] Removing exsiting model and starting training from iter 0...')
