@@ -19,6 +19,16 @@ def conditional_decorator(dec, condition):
         return dec(func)
     return decorator
 
+from contextlib import redirect_stdout
+
+def no_verbose(func):
+    def decorated_func(*args, **kwargs):
+        with open(os.devnull, 'w') as void:
+            with redirect_stdout(void):
+                return func(*args, **kwargs)
+    return decorated_func
+
+
 def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None, mode='reflect'):
     image_20lr = plots.check_dims(image_20lr)
     N, w, h, ch = image_20lr.shape
@@ -241,6 +251,7 @@ class DataReader(object):
 
         return train, None, labels, lim_labels
 
+    @no_verbose
     def read_train_data(self):
         self.is_HR_labels = False
         self.unlab = None
