@@ -115,8 +115,9 @@ def get_name_extent(file):
                 xmax = max(pointsX)
                 ymin = min(pointsY)
                 ymax = max(pointsY)
+                key_ = items_['Name'] if items_['Name'] is not None else layer.GetDescription()
 
-                out[items_['Name'].lower()] = (xmin,ymin,xmax,ymax)
+                out[key_.lower()] = (xmin,ymin,xmax,ymax)
     return out
 
 def get_featname(file, is_assert=False):
@@ -128,7 +129,9 @@ def get_featname(file, is_assert=False):
             items_ = feature.items()
             geom = feature.geometry()
             geomtype = geom.GetGeometryName()
-            out.append({'Name':items_['Name'].lower(),
+            key_ = items_['Name'] if items_['Name'] is not None else layer.GetDescription()
+
+            out.append({'Name':key_.lower(),
                         'geom':geomtype,
                        'file':file})
     if is_assert:
@@ -801,7 +804,7 @@ def get_area_intersection(geo_pts1,geo_pts2):
     return area
 
 
-def roi_intersection(ds, geo_pts_ref, return_polygon = False):
+def roi_intersection(ds, geo_pts_ref, return_polygon = False, verbose=True):
     if geo_pts_ref is None:
         return True
     geo_pts = get_lonlat(ds)
@@ -829,7 +832,8 @@ def roi_intersection(ds, geo_pts_ref, return_polygon = False):
             intersection)
 
         # Print the area in m^2
-        print('ROI intersection area {:.1f} Ha '.format(geom_area.area/(100.**2)))
+        if verbose:
+            print('ROI intersection area {:.1f} Ha '.format(geom_area.area/(100.**2)))
     if return_polygon:
         return p1.intersects(p2), geom_area
     else:

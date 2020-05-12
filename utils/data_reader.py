@@ -12,12 +12,25 @@ import utils.plots as plots
 import utils.read_geoTiff as geotif
 from utils.patch_extractor import PatchExtractor, PatchWraper
 
+USE_RAY = True
 def conditional_decorator(dec, condition):
     def decorator(func):
         if not condition:
             return func
         return dec(func)
     return decorator
+
+@conditional_decorator(ray.remote, USE_RAY)
+def f_read(tr_,dict_id, mask_dict, read_data_pairs_func):
+    id_lab = get_id_lab(tr_)
+
+    train, train_h, labels, lim_labels = read_data_pairs_func(tr_, mask_out_dict=mask_dict, is_load_lab=False)
+
+    labels = dict_id[id_lab][2]
+    lim_labels = dict_id[id_lab][3]
+    is_valid_ = train is not None
+    return (train,train_h, labels,lim_labels,is_valid_)
+
 
 from contextlib import redirect_stdout
 
@@ -123,7 +136,7 @@ class DataReader(object):
        masks from the disk, and enqueues them into a TensorFlow queue.
     '''
 
-    def __init__(self, args, is_training, is_random_patches=True):
+    def __init__(self, args, datatype, is_random_patches=True):
         '''Initialise a DataReader.
 
         Args:
@@ -131,7 +144,9 @@ class DataReader(object):
         '''
         self.args = args
         self.two_ds = True
-        self.is_training = is_training
+        self.datatype = datatype
+        assert datatype in ['trainval','val','test'], datatype
+        self.is_training = datatype == 'trainval'
         self.run_60 = False
         self.luminosity_scale = 9999.0
         self.batch_tr = self.args.batch_size
@@ -146,13 +161,20 @@ class DataReader(object):
         self.is_upsample = False
 
         self.args.HR_file = None
+        
+        self.is_HR_labels = False
+        self.unlab = None
 
         self.patch_h = self.args.patch_size * self.scale
 
         self.args.max_N = 1e5
+        if USE_RAY:
+            ray.init()
+            print(ray.nodes()[0]['Resources'])
 
-        if self.is_training:
+        if self.datatype == 'trainval':
             self.read_train_data()
+            self.read_val_data()
             if self.args.numpy_seed: np.random.seed(self.args.numpy_seed)
             if args.sigma_smooth:
                 self.labels = ndimage.gaussian_filter(self.labels, sigma=args.sigma_smooth)
@@ -178,6 +200,12 @@ class DataReader(object):
                                    two_ds=self.two_ds,
                                    unlab=self.unlab))
             self.patch_gen = PatchWraper(self.single_gen, n_workers=4, max_queue_size=10)
+        if 'val' in self.datatype:
+            if not 'train' in self.datatype:
+                self.mean_train = 0.0
+                self.std_train = 1.0
+                self.read_val_data()
+            self.n_channels = self.val[0].shape[-1]
 
             self.single_gen_val = []
             self.single_gen_rand_val = []
@@ -208,9 +236,10 @@ class DataReader(object):
                     self.single_gen_rand_val.append(self.single_gen_val[-1])
 
             self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=4, max_queue_size=10)
-
-        else:
+        if self.datatype == 'test':
             self.prepare_test_data()
+        if USE_RAY:
+            ray.shutdown()
 
     def read_data_pairs(self, path_dict, mask_out_dict=None, is_load_lab=True, is_load_input=True,
                         is_skip_if_masked=True):
@@ -250,44 +279,25 @@ class DataReader(object):
             labels,lim_labels = None, None
 
         return train, None, labels, lim_labels
-
-    @no_verbose
+    
+    # @no_verbose
     def read_train_data(self):
-        self.is_HR_labels = False
-        self.unlab = None
 
         print('\n [*] Loading TRAIN data \n')
 
         list_id_lab = [get_id_lab(x) for x in self.args.tr]
         dict_id_lab = {x:[False,list_id_lab.index(x),None,None] for x in set(list_id_lab)}
         # Load first labels
-        for key,val in dict_id_lab.items():
+        for _,val in dict_id_lab.items():
             _,_,labels,lim_labels = self.read_data_pairs(self.args.tr[val[1]], is_load_lab=True, is_load_input=False)
             val[2] = labels
             val[3] = lim_labels
 
-        use_ray = True
-
-        if use_ray:
-            ray.init()
-            print(ray.nodes()[0]['Resources'])
-
-        @conditional_decorator(ray.remote, use_ray)
-        def f(tr_,dict_id, mask_dict):
-            id_lab = get_id_lab(tr_)
-
-            train, train_h, labels, lim_labels = self.read_data_pairs(tr_, mask_out_dict=mask_dict, is_load_lab=False)
-
-            labels = dict_id[id_lab][2]
-            lim_labels = dict_id[id_lab][3]
-            is_valid_ = train is not None
-            return (train,train_h, labels,lim_labels,is_valid_)
-
-        if use_ray:
-            data_tr = [f.remote(i,dict_id=dict_id_lab,mask_dict=None) for i in self.args.tr]
+        if USE_RAY:
+            data_tr = [f_read.remote(i,dict_id=dict_id_lab,mask_dict=None, read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
             self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
         else:
-            data_tr = [f(i, dict_id=dict_id_lab, mask_dict=None) for i in self.args.tr]
+            data_tr = [f_read(i, dict_id=dict_id_lab, mask_dict=None,read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
             self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
 
         self.train = list(compress(self.train, is_valid))
@@ -301,35 +311,6 @@ class DataReader(object):
             self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
                                                 roi_lon_lat=self.args.roi_lon_lat_unlab)
         self.n_classes = self.labels[0].shape[-1]
-
-        print('\n [*] Loading VALIDATION data \n')
-
-        maskout = {'CLD':10, # if Cloud prob is higher than 10%
-                   'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
-                   '20m':0} # if all 20m bands are 0
-        list_id_lab_val = [get_id_lab(x) for x in self.args.val]
-        dict_id_lab_val = {x:[False,list_id_lab_val.index(x),None,None] for x in set(list_id_lab_val)}
-
-        for key,val in dict_id_lab_val.items():
-            _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_load_lab=True, is_load_input=False)
-            val[2] = labels
-            val[3] = lim_labels
-
-        if use_ray:
-            data_val = [f.remote(i,dict_id=dict_id_lab_val,mask_dict=maskout) for i in self.args.val]
-            self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
-            ray.shutdown()
-        else:
-            data_val = [f(i, dict_id=dict_id_lab_val, mask_dict=maskout) for i in self.args.val]
-            self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
-
-        self.val = list(compress(self.val, is_valid))
-        self.val_h = list(compress(self.val_h, is_valid))
-        self.labels_val = list(compress(self.labels_val, is_valid))
-        self.lims_labels_val = list(compress(self.lims_labels_val, is_valid))
-
-        self.val_info = list(compress(self.args.val,is_valid))
-        self.val_tilenames = [x['tilename'] for x in self.val_info]
 
         # sum_train = np.expand_dims(self.train.sum(axis=(0, 1)),axis=0)
         # self.N_pixels = self.train.shape[0] * self.train.shape[1]
@@ -354,12 +335,56 @@ class DataReader(object):
             if self.train_h[i_] is not None:
                 self.train_h[i_],self.train[i_],self.labels[i_] = self.correct_shapes(
                     self.train_h[i_],self.train[i_],self.labels[i_], scale,type='Train',is_hr_lab=self.is_HR_labels)
+        
+        if self.args.is_padding:
+            a = self.patch_l - 1
+            self.train = np.pad(self.train, ((a, a), (a, a), (0, 0)), mode='constant', constant_values=0.0)
+            b = a * scale
+            self.train_h = np.pad(self.train_h, ((b, b), (b, b), (0, 0)), mode='constant',
+                                  constant_values=0.0) if self.train_h is not None else self.train_h
+            c = b if self.is_HR_labels else a
+            self.labels = np.pad(self.labels, ((c, c), (c, c), (0, 0)), mode='constant', constant_values=-1.0)
+
+            print('Padded datasets with low ={}, high={} with 0.0'.format(a, b))
+    
+    @no_verbose
+    def read_val_data(self):
+
+        print('\n [*] Loading VALIDATION data \n')
+
+        maskout = {'CLD':10, # if Cloud prob is higher than 10%
+                   'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
+                   '20m':0} # if all 20m bands are 0
+        list_id_lab_val = [get_id_lab(x) for x in self.args.val]
+        dict_id_lab_val = {x:[False,list_id_lab_val.index(x),None,None] for x in set(list_id_lab_val)}
+
+        for key,val in dict_id_lab_val.items():
+            _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_load_lab=True, is_load_input=False)
+            val[2] = labels
+            val[3] = lim_labels
+
+        if USE_RAY:
+            data_val = [f_read.remote(tr_=i,dict_id=dict_id_lab_val,mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
+            self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
+        else:
+            data_val = [f_read(i, dict_id=dict_id_lab_val, mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
+            self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
+
+        self.val = list(compress(self.val, is_valid))
+        self.val_h = list(compress(self.val_h, is_valid))
+        self.labels_val = list(compress(self.labels_val, is_valid))
+        self.lims_labels_val = list(compress(self.lims_labels_val, is_valid))
+
+        self.val_info = list(compress(self.args.val,is_valid))
+        self.val_tilenames = [x['tilename'] for x in self.val_info]
+
+        self.n_classes = self.labels_val[0].shape[-1]
 
         for i_ in range(len(self.val)):
 
             if self.val_h[i_] is not None:
                 self.val_h[i_], self.val[i_], self.labels_val[i_] = self.correct_shapes(
-                    self.val_h[i_], self.val[i_], self.labels_val[i_], scale, type='Val', is_hr_lab=self.is_HR_labels)
+                    self.val_h[i_], self.val[i_], self.labels_val[i_], self.scale, type='Val', is_hr_lab=self.is_HR_labels)
 
         if self.args.save_arrays:
             max_ = 20.0 if 'palmage' in self.args.dataset else 2.0
@@ -397,17 +422,6 @@ class DataReader(object):
 
                     np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
                     np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
-
-        if self.args.is_padding:
-            a = self.patch_l - 1
-            self.train = np.pad(self.train, ((a, a), (a, a), (0, 0)), mode='constant', constant_values=0.0)
-            b = a * scale
-            self.train_h = np.pad(self.train_h, ((b, b), (b, b), (0, 0)), mode='constant',
-                                  constant_values=0.0) if self.train_h is not None else self.train_h
-            c = b if self.is_HR_labels else a
-            self.labels = np.pad(self.labels, ((c, c), (c, c), (0, 0)), mode='constant', constant_values=-1.0)
-
-            print('Padded datasets with low ={}, high={} with 0.0'.format(a, b))
 
     def read_test_data(self):
 

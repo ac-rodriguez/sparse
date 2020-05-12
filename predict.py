@@ -142,11 +142,11 @@ def main(args):
         data_dir = [args.data_dir]
 
     
-    tag_ = f'{args.dataset}{args.model}'
+    tag_ = f'{args.dataset}_{args.model}'
     if args.tag is not None and args.tag != '':
         tag_ = tag_ + '_'+ args.tag
     model_dir = os.path.join(args.save_dir,tag_, foldername, '')
-
+    print(model_dir)
     if '.ckpt' in args.model_weights:
         ckpt = args.model_weights
     else:
@@ -185,7 +185,7 @@ def main(args):
         print('processing',test_)
         args.test = [test_]
         try:
-            reader = DataReader(args, is_training=False)
+            reader = DataReader(args, datatype='test')
         except AssertionError:
             reader = None
 

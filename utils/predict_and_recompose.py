@@ -18,7 +18,7 @@ def save_m(name, m):
             f.write('%s:%s\n' % (key, value))
 
 def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
-                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None, epoch_=0):
+                          prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None, epoch_=0,is_dropout=False, n_eval_dropout=5):
     model_dir = trainer.model_dir
     save_dir = os.path.join(model_dir, prefix)
     if not os.path.isdir(save_dir): os.makedirs(save_dir)
@@ -59,7 +59,10 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
         # print('Predicting {} Patches...'.format(nr_patches))
         for idx in tqdm(range(0, batch_idxs),disable=True):
             x, _ = next(input_iter)
-            p_ = trainer.model(x['feat_l'], is_training=False)
+            if is_dropout:
+                p_ = trainer.forward_ntimes(x['feat_l'], is_training=False,n=n_eval_dropout, return_moments=False)
+            else:
+                p_ = trainer.model(x['feat_l'], is_training=False)
             start = idx * batch_size
             if is_reg:
                 stop = start + p_['reg'].shape[0]
@@ -363,7 +366,7 @@ def predict_and_recompose_individual_MC(trainer, reader, input_fn, patch_generat
             if not return_array:
                 fname = f'{save_dir}/{data_name}-{type_}_preds_reg'
                 # for opt in [0,1.1,1.2,1.3,2.1,2.2,2.3]:
-                for opt in [1.2]:
+                for opt in [0]:
                     t0 = time.time()
                     data_r_recomposed = data_r_recomposed.reshape(ref_size+(-1,))
                     gp.rasterize_numpy(data_r_recomposed, refDataset,

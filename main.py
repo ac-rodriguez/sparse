@@ -92,7 +92,8 @@ parser.add_argument("--is-out-relu", default=False, action="store_true",
 parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
 parser.add_argument("--is-dropout-uncertainty", default=False, action="store_true",
-                    help="adding dropout to cnn filters at train and test time.")                    
+                    help="adding dropout to cnn filters at train and test time.")               
+parser.add_argument("--n-eval-dropout", default=5, type=int, help="Number of forward passes to evaluate dropout-uncertainty model")     
 parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--optimizer", type=str, default='adam',
@@ -109,7 +110,7 @@ parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="Delete model_dir before starting training from iter 0. Overrides --is-restore flag")
 parser.add_argument("--is-overwrite-pred", default=False, action="store_true",
                     help="overwrite predictions already in folder")
-parser.add_argument("--is-predict","--is-test", dest='is_train', default=True, action="store_false",
+parser.add_argument("--is-val", dest='is_train', default=True, action="store_false",
                     help="Predict using an already trained model")
 parser.add_argument("--is-mounted", default=False, action="store_false",
                     help="directories on a mounted loc from leonhard cluster")
@@ -169,7 +170,7 @@ def main(args):
 
     if args.is_train:
 
-        reader = DataReader(args, is_training=True)
+        reader = DataReader(args, datatype='trainval')
         trainer.model.inputnorm = tools.InputNorm(reader.mean_train,reader.std_train)
         train_ds = iter(reader.input_fn(type='train'))
         val_ds = iter(reader.input_fn(type='val'))
@@ -202,7 +203,10 @@ def main(args):
             if np.mod(epoch_,args.eval_every) == 0:
                 for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
                     x, y  = next(val_ds)
-                    predictions = trainer.model(x['feat_l'], is_training=False)
+                    if args.is_dropout_uncertainty:
+                        predictions = trainer.forward_ntimes(x['feat_l'], is_training=False,n=args.n_eval_dropout, return_moments=False)
+                    else:
+                        predictions = trainer.model(x['feat_l'], is_training=False)
                     trainer.update_sum_val(predictions,y)
                 metrics = trainer.summaries_val(step=epoch_)
 
@@ -214,7 +218,8 @@ def main(args):
                     predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
                                           args.batch_size_eval, 'val',
                                           prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.),
-                                          is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_)
+                                          is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_,
+                                          is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
                     trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
                 trainer.val_writer.flush()
                 trainer.reset_sum_val()
@@ -234,7 +239,8 @@ def main(args):
         predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val,
                                     False, args.batch_size_eval,'val',
                                     is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-                                    chkpt_path=tools.get_last_best_ckpt(trainer.model_dir, 'best/*'))
+                                    chkpt_path=tools.get_last_best_ckpt(trainer.model_dir, 'best/*'), 
+                                    is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
         np.save('{}/train_label'.format(model_dir), reader.labels)
         np.save('{}/val_label'.format(model_dir), reader.labels_val)
         if len(args.test) > 0: 
@@ -245,16 +251,39 @@ def main(args):
             print('done, no test data was provided')
 
     else:
-        assert os.path.isdir(args.model_dir)
-        reader = DataReader(args, is_training=False)
-    # input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
+        # assert os.path.isdir(args.model_dir)
+        chkpt_path = tools.get_last_best_ckpt(args.model_dir, folder='best/*')
+        reader = DataReader(args, datatype='val')
+        val_ds = iter(reader.input_fn(type='val'))
+        val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
 
-    # predict_and_recompose_individual(model, reader, input_fn_test_comp, reader.single_gen_test,
-    #                             False, args.batch_size_eval,'test',
-    #                             is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-    #                             chkpt_path=tools.get_last_best_ckpt(model.model_dir, 'best/*'))
+        trainer.model.inputnorm = tools.InputNorm(n_channels=11)
+        trainer.model.load_weights(chkpt_path)
 
-    # np.save('{}/test_label'.format(model_dir), reader.labels_test)
+        epoch_ = 0
+
+        for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
+            x, y  = next(val_ds)
+            x['feat_l'] = trainer.model.inputnorm(x['feat_l'])
+            if args.is_dropout_uncertainty:
+                predictions = trainer.forward_ntimes(x['feat_l'], is_training=False,n=args.n_eval_dropout, return_moments=False)
+            else:
+                predictions = trainer.model(x['feat_l'], is_training=False)
+            trainer.update_sum_val(predictions,y)
+        metrics = trainer.summaries_val(step=epoch_)
+        if args.is_dropout_uncertainty:
+            prefix_ = f'valonlydrop{args.n_eval_dropout}/{epoch_}'
+        else:
+            prefix_ = f'valonly/{epoch_}'
+        input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
+        predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
+                                args.batch_size_eval, 'val',
+                                prefix=prefix_, is_reg=(args.lambda_reg > 0.),
+                                is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_,
+                                is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
+        # trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
+        trainer.val_writer.flush()
+
 
 if __name__ == '__main__':
     args = parser.parse_args()

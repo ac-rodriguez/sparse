@@ -21,7 +21,7 @@ def tf_function():
 
 class Trainer():
 
-    def __init__(self, args):
+    def __init__(self, args, inference_only = False):
         super(Trainer, self).__init__()
         self.args = args
         self.model_dir = args.model_dir
@@ -55,30 +55,34 @@ class Trainer():
         else:
             raise NotImplementedError
 
-        self.mse_loss = tf.keras.losses.MeanSquaredError()
-        self.ce_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
+        if not inference_only:
+            self.mse_loss = tf.keras.losses.MeanSquaredError()
+            self.ce_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 
 
-        self.train_acc = tf.keras.metrics.SparseCategoricalAccuracy()
-        self.train_ce = tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True)
-        self.train_mse = tf.keras.metrics.MeanSquaredError()
-        self.train_mae = tf.keras.metrics.MeanAbsoluteError()
+            self.train_acc = tf.keras.metrics.SparseCategoricalAccuracy()
+            self.train_ce = tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True)
+            self.train_mse = tf.keras.metrics.MeanSquaredError()
+            self.train_mae = tf.keras.metrics.MeanAbsoluteError()
 
-        self.val_mse = tf.keras.metrics.MeanSquaredError()
-        self.val_mae = tf.keras.metrics.MeanAbsoluteError()
+            self.val_mse = tf.keras.metrics.MeanSquaredError()
+            self.val_mae = tf.keras.metrics.MeanAbsoluteError()
 
-        self.val_ce = tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True)
-        self.val_acc = tf.keras.metrics.SparseCategoricalAccuracy()
-        self.val_iou = tf.keras.metrics.MeanIoU(self.n_classes+1)
-        self.val_prec = tf.keras.metrics.Precision()
-        self.val_rec = tf.keras.metrics.Recall()
-        # add prec and recall
-        self.define_optimiter()
+            self.val_ce = tf.keras.metrics.SparseCategoricalCrossentropy(from_logits=True)
+            self.val_acc = tf.keras.metrics.SparseCategoricalAccuracy()
+            self.val_iou = tf.keras.metrics.MeanIoU(self.n_classes+1)
+            self.val_prec = tf.keras.metrics.Precision()
+            self.val_rec = tf.keras.metrics.Recall()
+            # add prec and recall
+            self.define_optimiter()
 
-        # Define summary locs:
+            # Define summary locs:
 
-        self.train_writer = tf.summary.create_file_writer(self.model_dir)
-        self.val_writer = tf.summary.create_file_writer(self.model_dir+'/val')
+            self.train_writer = tf.summary.create_file_writer(self.model_dir)
+            if self.args.is_dropout_uncertainty:
+                self.val_writer = tf.summary.create_file_writer(f'{self.model_dir}/valdrop{self.args.n_eval_dropout}')
+            else:
+                self.val_writer = tf.summary.create_file_writer(self.model_dir+'/val')
 
     def get_w(self, lab, is_99=False):
 
@@ -266,16 +270,19 @@ class Trainer():
         return x
 
     @tf_function()
-    def forward_ntimes(self, x, is_training, n):
+    def forward_ntimes(self, x, is_training, n, return_moments=True):
         out_dict = {}
         out = [self.model(x,is_training) for _ in range(n)]
-        
+
         # for key in out[0].keys():
-        for key in ['reg']: # not implemented for sem yet
+        for key in ['reg','sem']: # not implemented for sem yet
             stacked = tf.stack([x[key] for x in out],axis=0)        
-            sum_x = tf.reduce_sum(stacked,axis=0)
-            sum_x2 = tf.reduce_sum(stacked**2, axis=0)
-            out_dict[key] = tf.stack((sum_x,sum_x2), axis=-1)
+            if return_moments:
+                sum_x = tf.reduce_sum(stacked,axis=0)
+                sum_x2 = tf.reduce_sum(stacked**2, axis=0)
+                out_dict[key] = tf.stack((sum_x,sum_x2), axis=-1)
+            else:
+                out_dict[key] = tf.reduce_mean(stacked,axis=0)
 
         return out_dict
 
