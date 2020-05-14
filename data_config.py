@@ -33,24 +33,26 @@ def untar(file_pattern, save_dir=None):
 
 
 def parse_filelist(PATH, tilename, top_10_list, loc):
-    filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE')
+    if not isinstance(loc,list):
+        locs =[loc]
+    else:
+        locs = loc
+    filelist_out = []
+    for loc in locs:
+        filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE')
 
-    if len(filelist) < 10:
-        # TODO extract only the ones missing
-        file_pattern = PATH + f'/barry_palm/data/2A/{loc}/*{tilename}*.tar'
-        untar(file_pattern, save_dir=PATH + f'/barry_palm/data/2A/{loc}/')
+        filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE/MTD_MSIL2A.xml')
 
-    filelist = glob.glob(PATH + f'/barry_palm/data/2A/{loc}/*_{tilename}_*.SAFE/MTD_MSIL2A.xml')
+        lines = [line.rstrip('\n') for line in open(top_10_list)]
+        lines = [x.replace('_MSIL1C_', '_MSIL2A_') + '.SAFE' for x in lines]
+        filelist = [x for x in filelist if x.split('/')[-2] in lines]
 
-    lines = [line.rstrip('\n') for line in open(top_10_list)]
-    lines = [x.replace('_MSIL1C_', '_MSIL2A_') + '.SAFE' for x in lines]
-    filelist = [x for x in filelist if x.split('/')[-2] in lines]
-
-    # filter that 2A is correct
-    lines = [line.rstrip('\n') for line in open(PATH + f'/barry_palm/data/2A/{loc}/correct_2A.txt')]
-    lines = [x + '.SAFE' for x in lines]
-    filelist = [x for x in filelist if x.split('/')[-2] in lines]
-    return filelist
+        # filter that 2A is correct
+        lines = [line.rstrip('\n') for line in open(PATH + f'/barry_palm/data/2A/{loc}/correct_2A.txt')]
+        lines = [x + '.SAFE' for x in lines]
+        filelist = [x for x in filelist if x.split('/')[-2] in lines]
+        filelist_out.extend(filelist)
+    return filelist_out
 
 
 def get_dataset(DATASET, is_mounted=False, is_load_file=True):
@@ -80,11 +82,14 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
 
             if not isinstance(files, list):
                 files = [files]
+            if gt_ is not None:
+                print(f'\tgt {os.path.basename(gt_)} to {len(files)} sentinel images')
+
             for file_ in files:
                 dsREFfile = gp.get_jp2(file_, 'B03', res=10)
                 dsREF = gdal.Open(dsREFfile)
-                print(gt_)
-                if gp.roi_intersection(dsREF, roi_):
+                # print(gt_)
+                if gp.roi_intersection(dsREF, roi_, verbose=False):
                     dset_config[datatype].append({
                         'lr': file_,
                         'hr': None,
@@ -95,22 +100,23 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                 else:
                     print(
                         f'dataset for {datatype} in tile {tilename_} does not intersect with roi {roi_} in {gt_}, skipping it')
-    def add_datasets_intile(tilenames,rois_train, rois_val,rois_test, GT=None, loc=None,top_10_list=None):
+    def add_datasets_intile(tilenames,rois_train=[], rois_val=[],rois_test=[], GT=None, loc=None,top_10_list=None):
 
         if not isinstance(tilenames, list):
             tilenames = [tilenames]
-
+        if len(rois_train) > 0: print('Adding Train datasets')
+        if len(rois_val) > 0: print('Adding Val datasets')
+        if len(rois_test) > 0: print('Adding Test datasets')
+        
         for tilename in tilenames:
+            print('\t'+tilename)
             filelist = parse_filelist(PATH, tilename, top_10_list, loc=loc)
             if 'small' in DATASET:
                 filelist = filelist[:1]
-            print('Adding Train datasets')
             for roi in rois_train:
                 add_datasets(files=filelist, gtfile=GT, roi=roi, datatype='tr', tilename_=tilename)
-            print('Adding Val datasets')
             for roi in rois_val:
                 add_datasets(files=filelist, gtfile=GT, roi=roi, datatype='val', tilename_=tilename)
-            print('Adding Test datasets')
             for roi in rois_test:
                 add_datasets(files=filelist, gtfile=GT, roi=roi, datatype='test', tilename_=tilename)
 
@@ -153,8 +159,8 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
 
             dset_config = {**dset_config, **data}
 
-            save_dir = dset_config['save_dir'].split('/sparse/training/snapshots/')[-1]
-            dset_config['save_dir'] = PATH_TRAIN+'/sparse/training/snapshots/'+ save_dir
+            save_dir = dset_config['save_dir'].split('/sparse/training/')[-1]
+            dset_config['save_dir'] = PATH_TRAIN+'/sparse/training/'+ save_dir
 
             return dset_config
         else:
@@ -294,13 +300,13 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
         elif 'palmtiles3' == DATASET:
             tilenames = ['T49NGE','T49NHE','T49NHD','50NKL']
 
-        GT_train = PATH+'/barry_palm/data/labels/palm_annotations/*/group2'
+        GT_train = PATH+'/barry_palm/data/labels/manual_annotations/*/group2'
         add_datasets_intile(tilenames, rois_train=rois, rois_val=[], rois_test=[],
                             GT=GT_train,
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
 
-        GT_val = PATH+'/barry_palm/data/labels/palm_annotations/*/group1'
+        GT_val = PATH+'/barry_palm/data/labels/manual_annotations/*/group1'
         add_datasets_intile(tilenames, rois_train=[], rois_val=rois, rois_test=[],
                             GT=GT_val,
                             loc='palmcountries_2017',
@@ -490,6 +496,79 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
+    elif 'palmborneo' in DATASET:
+
+        OBJECT = 'palm'
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+        dset_config['is_upsample_LR'] = False
+
+        rois = ['geom']
+        # ['Kalimantan Barat', 'Sarawak','Sabah', 'Kalimantan Utara']
+        tilenames = 'T49MCV,T49MDT,T49MDU,T49MDV,T49MEV,T49NCB,T49NDA,T49NDB,T49NEB,T49NFA,T49NGA,T49NEC,T49NED,T49NFC,T49NFD,T49NGB,T49NGD,T49NGE,T49NHD,T49NHE,T50NKL,T50NLL,T50NLM,T50NMK,T50NML,T50NMM,T50NMN,T50NNK,T50NNL,T50NNM,T50NNN,T50NPM,T50NQL'
+        tilenames = tilenames.split(',')
+        
+        # ['Kalimantan Tengah', 'Kalimantan Selatan','Kalimantan Timur']
+
+        GT_train = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group1*'
+        add_datasets_intile(tilenames, rois_train=rois,
+                            GT=GT_train,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        GT_train = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group3*'
+        add_datasets_intile(tilenames, rois_train=rois,
+                            GT=GT_train,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        GT_val = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group2*'
+        add_datasets_intile(tilenames, rois_val=rois,
+                            GT=GT_val,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        # ['Kalimantan Tengah', 'Kalimantan Selatan','Kalimantan Timur']
+        tilenames = 'T49MET,T49MEU,T49MFS,T49MFT,T49MHS,T50NPG'
+        tilenames = tilenames.split(',')
+
+        GT_val = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*'
+        add_datasets_intile(tilenames, rois_val=rois,
+                            GT=GT_val,
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+    elif 'cocopalawanplus' in DATASET:
+    
+        OBJECT = 'coco'
+        dset_config['is_upsample_LR'] = False
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+
+        rois = ['geom']
+        
+        tilenames = 'T50PNQ,T50PPR,T50PQS,T51PUQ,T51NXH'.split(',')
+
+        GT_val = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group2*'
+        add_datasets_intile(tilenames, rois_val=rois,
+                            GT=GT_val,
+                            loc=['phillipines_2017','palmcountries_2017'],
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        if 'plus1' in DATASET:
+            tilenames = tilenames + 'T51NYB,T51NXB,T51NXA'.split(',')
+
+        GT_train = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group1*'
+        add_datasets_intile(tilenames, rois_train=rois,
+                            GT=GT_train,
+                            loc=['phillipines_2017','palmcountries_2017'],
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        GT_train = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group3*'
+        add_datasets_intile(tilenames, rois_train=rois,
+                            GT=GT_train,
+                            loc=['phillipines_2017','palmcountries_2017'],
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+
+    #
     # elif 'cococomplete' in DATASET:
     #
     #     OBJECT = 'coco'
