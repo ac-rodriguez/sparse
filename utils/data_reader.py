@@ -168,12 +168,12 @@ class DataReader(object):
         self.patch_h = self.args.patch_size * self.scale
 
         self.args.max_N = 1e5
-        if USE_RAY:
-            ray.init()
-            print(ray.nodes()[0]['Resources'])
 
         if self.datatype == 'trainval':
             self.read_train_data()
+            size = [np.prod(x.shape) * x.itemsize for x in self.train]
+            print('TRAIN: {:.2f} MB loaded in memory'.format(np.sum(size) / 1e6))
+
             self.read_val_data()
             if self.args.numpy_seed: np.random.seed(self.args.numpy_seed)
             if args.sigma_smooth:
@@ -205,6 +205,10 @@ class DataReader(object):
                 self.mean_train = 0.0
                 self.std_train = 1.0
                 self.read_val_data()
+            
+            size = [np.prod(x.shape) * x.itemsize for x in self.val]
+            print('VAL: {:.2f} MB loaded in memory'.format(np.sum(size) / 1e6))
+
             self.n_channels = self.val[0].shape[-1]
 
             self.single_gen_val = []
@@ -238,8 +242,7 @@ class DataReader(object):
             self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=4, max_queue_size=10)
         if self.datatype == 'test':
             self.prepare_test_data()
-        if USE_RAY:
-            ray.shutdown()
+
 
     def read_data_pairs(self, path_dict, mask_out_dict=None, is_load_lab=True, is_load_input=True,
                         is_skip_if_masked=True):
@@ -280,7 +283,7 @@ class DataReader(object):
 
         return train, None, labels, lim_labels
     
-    # @no_verbose
+    @no_verbose
     def read_train_data(self):
 
         print('\n [*] Loading TRAIN data \n')
@@ -294,8 +297,11 @@ class DataReader(object):
             val[3] = lim_labels
 
         if USE_RAY:
+            ray.init()
+            print(ray.nodes()[0]['Resources'])
             data_tr = [f_read.remote(i,dict_id=dict_id_lab,mask_dict=None, read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
             self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
+            ray.shutdown()
         else:
             data_tr = [f_read(i, dict_id=dict_id_lab, mask_dict=None,read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
             self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
@@ -364,8 +370,11 @@ class DataReader(object):
             val[3] = lim_labels
 
         if USE_RAY:
+            ray.init()
+            print(ray.nodes()[0]['Resources'])
             data_val = [f_read.remote(tr_=i,dict_id=dict_id_lab_val,mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
             self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
+            ray.shutdown()
         else:
             data_val = [f_read(i, dict_id=dict_id_lab_val, mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
             self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)

@@ -62,6 +62,7 @@ class PatchExtractor:
         self.label = label
         self.patches_with_labels = patches_with_labels
         self.lims_lab = lims_with_labels
+        self.verbose = False
         # self.d2_after = d2_after
         self.unlab = unlab
         if IS_DEBUG:
@@ -97,10 +98,10 @@ class PatchExtractor:
         else:
 
             n_x, self.n_y = np.subtract(self.d_l.shape[0:2], self.patch_l)
-            print('Max N random patches = {}'.format(n_x*self.n_y))
+            if self.verbose: print('Max N random patches = {}'.format(n_x*self.n_y))
             # Corner is always computed in low_res data
             max_patches = min(self.nr_patches, n_x*self.n_y)
-            print('Extracted random patches = {}'.format(max_patches))
+            if self.verbose: print('Extracted random patches = {}'.format(max_patches))
 
 
             size_label_ind = max_patches
@@ -154,7 +155,7 @@ class PatchExtractor:
                         self.indices2 = np.random.choice(len(valid_coords_unlab), size=len(self.indices1),replace=False)
                         self.indices2 = valid_coords_unlab[self.indices2]
                     # self.indices2 = np.random.choice(n_x * self.n_y, size=len(self.indices1), replace=False)
-                    print(' labeled and unlabeled data are always fed within a batch')
+                    if self.verbose: print(' labeled and unlabeled data are always fed within a batch')
 
                 else:
                     self.indices1 = indices
@@ -327,22 +328,22 @@ class PatchExtractor:
             if self.keep_edges:
                 range_i = np.append(range_i, (data_.shape[0] - self.patch_l))
             else:
-                print('{} pixels in x axis will be discarded'.format(x_excess))
+                if self.verbose: print('{} pixels in x axis will be discarded'.format(x_excess))
         if not (y_excess == 0):
             if self.keep_edges:
                 range_j = np.append(range_j, (data_.shape[1] - self.patch_l))
             else:
-                print('{} pixels in y axis will be discarded'.format(y_excess))
+                if self.verbose: print('{} pixels in y axis will be discarded'.format(y_excess))
 
         # nr_patches = (patchesAlongi + 1) * (patchesAlongj + 1)
         nr_patches = len(range_i) * len(range_j)
 
-        print('   Shapes Original = {}'.format(data_.shape))
-        print('   Shapes Patched (low-res) Dataset = {} (border = {})'.format(
+        if self.verbose: print('   Shapes Original = {}'.format(data_.shape))
+        if self.verbose: print('   Shapes Patched (low-res) Dataset = {} (border = {})'.format(
             [nr_patches, self.patch_l, self.patch_l, data_.shape[-1]],self.border))
 
-        print(range_i)
-        print(range_j)
+        if self.verbose: print(range_i)
+        if self.verbose: print(range_j)
         self.d_l = data_
 
         self.nr_patches = nr_patches
