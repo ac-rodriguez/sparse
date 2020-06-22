@@ -75,6 +75,7 @@ parser.add_argument("--sr-after", default=None, type=np.int64, help="Start SR ta
 parser.add_argument("--eval-every", default=1, type=int, help="Number of epochs between evaluations")
 parser.add_argument("--is-slim-eval", default=False, action="store_true",
                     help="at eval do not add DA, and feat_h architectures in the graph to speed up evaluation")
+parser.add_argument("--n-workers", default=4, type=int, help="Number of workers for each dataset")
 parser.add_argument("--model", default="simple",
                     help="Model Architecture to be used [deep_sentinel2, ...]")
 parser.add_argument("--sigma-smooth", type=int, default=None,
@@ -103,6 +104,12 @@ parser.add_argument("--optimizer", type=str, default='adam',
                     help="['adagrad', 'adam']")
 parser.add_argument("--lr", type=float, default=1e-4,
                     help="Learning rate for optimizer.")
+
+parser.add_argument("--is-use-location",default=False, action="store_true",
+                    help="use patch coordinate location for training")
+parser.add_argument("--fusion-type", type=str, default='concat',
+                    help="['concat', 'soft', 'hard']")
+
 # Save args
 
 parser.add_argument("--tag", default="",
@@ -173,7 +180,9 @@ def main(args):
     args.is_train = False
     save_parameters(args, model_dir, sys.argv, name=filename)
 
-    trainer = Trainer(args)
+    trainer = Trainer(args, inference_only=True)
+    trainer.model.inputnorm = tools.InputNorm(n_channels=13 if args.is_use_location else 11)
+    trainer.model.load_weights(ckpt)
     is_hr_pred = False
     if args.mc_repetitions > 1:
         assert args.is_dropout_uncertainty
@@ -190,7 +199,8 @@ def main(args):
             reader = None
 
         if reader is not None:
-            input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
+            # input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
+            input_fn_test_comp = None
             if args.mc_repetitions > 1:
                 predict_and_recompose_individual_MC(trainer, reader,
                             input_fn= input_fn_test_comp, patch_generator= reader.single_gen_test,

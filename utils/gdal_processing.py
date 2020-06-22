@@ -594,7 +594,10 @@ def rasterize_polygons(InputVector, refDataset, lims=None, offset=None, attribut
         mask = mask == 1
     return mask
 
-def to_xy(lon, lat, ds, is_int = True):
+def to_xy(lon, lat, ds, is_int = True, is_round=False):
+
+    if isinstance(ds,str):
+        ds = gdal.Open(ds)
 
     xoff, a, b, yoff, d, e = ds.GetGeoTransform()
     srs = osr.SpatialReference()
@@ -614,6 +617,8 @@ def to_xy(lon, lat, ds, is_int = True):
     det_inv = 1. / (a * e - d * b)
     x = (e * xp - b * yp) * det_inv
     y = (-d * xp + a * yp) * det_inv
+    if is_round:
+        return (int(round(x)), int(round(y)))
     if is_int:
         return (int(x), int(y))
     else:
@@ -749,7 +754,10 @@ def to_latlon(x, y, ds):
     return lat, lon
 
 
-def get_lonlat(ds, verbose= False):
+def get_lonlat(ds, verbose= False, points_pairs=None):
+
+    if isinstance(ds,str):
+        ds = gdal.Open(ds)
 
     bag_gtrn = ds.GetGeoTransform()
     bag_proj = ds.GetProjectionRef()
@@ -757,27 +765,71 @@ def get_lonlat(ds, verbose= False):
     geo_srs = bag_srs.CloneGeogCS()
     transform = osr.CoordinateTransformation(bag_srs, geo_srs)
 
-    bag_bbox_cells = (
-        (0., 0.),
-        (0, ds.RasterYSize),
-        (ds.RasterXSize, ds.RasterYSize),
-        (ds.RasterXSize, 0),
-    )
+    if points_pairs is None:
+        points_pairs = [
+            (0, 0),
+            (0, ds.RasterYSize-1),
+            (ds.RasterXSize-1, ds.RasterYSize-1),
+            (ds.RasterXSize-1, 0),
+        ]
+    points_pairs = np.array(points_pairs)
 
-    geo_pts = []
-    for x, y in bag_bbox_cells:
-        x2 = bag_gtrn[0] + bag_gtrn[1] * x + bag_gtrn[2] * y
-        y2 = bag_gtrn[3] + bag_gtrn[4] * x + bag_gtrn[5] * y
-        if gdal.__version__.startswith('3.'):
-            geo_pt = transform.TransformPoint(y2, x2)[:2]
-        else:
-            geo_pt = transform.TransformPoint(x2, y2)[:2]
+    points1 = np.concatenate((np.ones((points_pairs.shape[0],1)), points_pairs), axis=1)
+    gtrn_x, gtrn_y = bag_gtrn[0:3], bag_gtrn[3:]
+    x2 = np.matmul(points1,gtrn_x)
+    y2 = np.matmul(points1,gtrn_y)
 
-        geo_pts.append(geo_pt)
-        if verbose:
-            print(x, y, '->', geo_pt)
+    if gdal.__version__.startswith('3.'):
+        lonlat_pts = transform.TransformPoints(list(zip(y2,x2)))
+    else:
+        lonlat_pts = transform.TransformPoints(list(zip(x2,y2)))
 
-    return geo_pts
+    lonlat_pts = np.array(lonlat_pts)[:,:2]
+    # lonlat_pts = []
+    # for x, y in points_pairs:
+    #     x2 = bag_gtrn[0] + bag_gtrn[1] * x + bag_gtrn[2] * y
+    #     y2 = bag_gtrn[3] + bag_gtrn[4] * x + bag_gtrn[5] * y
+    #     if gdal.__version__.startswith('3.'):
+    #         geo_pt = transform.TransformPoint(y2, x2)[:2]
+    #     else:
+    #         geo_pt = transform.TransformPoint(x2, y2)[:2]
+
+    #     lonlat_pts.append(geo_pt)
+    #     if verbose:
+    #         print(x, y, '->', geo_pt)
+
+    return lonlat_pts
+
+def get_location_array(lr_filename, lims):
+    refdataset = get_jp2(lr_filename, 'B03', res=10)
+    ds = gdal.Open(refdataset)
+    if lims is not None:
+        x, y = lims[0], lims[1]
+        x1,y1 = lims[2],lims[3]
+    else:
+        x, y = 0 , 0
+        x1,y1 = ds.RasterXSize - 1, ds.RasterYSize - 1
+
+    # lat,lon = gp.to_latlon(y,x,ds)
+    # lat1,lon1 = gp.to_latlon(y1,x1,ds)
+
+    # lat_range = np.linspace(lat1,lat,num=x1-x+1)
+    # lon_range = np.linspace(lon1,lon,num=y1-y+1)
+
+    # latlon = np.stack(np.meshgrid(lat_range,lon_range), axis=-1)
+    x_range = np.linspace(x,x1,num=x1-x+1)
+    y_range = np.linspace(y,y1,num=y1-y+1) 
+
+    xy_grid = np.stack(np.meshgrid(x_range,y_range),axis=-1)
+
+    xy_grid1 = xy_grid.reshape(-1,2)
+
+    lonlat_grid1 = get_lonlat(ds,points_pairs=xy_grid1)
+
+    lonlat_grid = lonlat_grid1.reshape(xy_grid.shape)
+    #latlon = lonlat_grid[...,::-1]
+    #return latlon
+    return lonlat_grid
 
 
 def get_area_intersection(geo_pts1,geo_pts2):

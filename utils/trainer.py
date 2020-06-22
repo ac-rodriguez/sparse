@@ -10,6 +10,7 @@ from utils.colorize import colorize, inv_preprocess_tf
 from utils.models_reg import SimpleA
 import utils.tools_tf as tools
 # import utils.models_semi as semi
+from utils.location_encoder import SpatialModel
 
 def tf_function():
     def decorator(func):
@@ -51,9 +52,12 @@ class Trainer():
         if 'simpleA' in self.model_name:
             depth = self.model_name.replace('simpleA', '')
             depth = 0 if depth == '' else int(depth)
-            self.model = SimpleA(self.n_classes,extra_depth=depth, is_dropout=self.is_dropout)
+            self.model = SimpleA(self.n_classes,extra_depth=depth,lambda_reg=args.lambda_reg, is_dropout=self.is_dropout)
         else:
             raise NotImplementedError
+
+        if self.args.is_use_location:
+            self.model = SpatialModel(args,image_model=self.model, fusion=self.args.fusion_type)
 
         if not inference_only:
             self.mse_loss = tf.keras.losses.MeanSquaredError()
@@ -79,10 +83,14 @@ class Trainer():
             # Define summary locs:
 
             self.train_writer = tf.summary.create_file_writer(self.model_dir)
+            
+            self.val_dirname = self.model_dir+'/val'
+            if not self.args.is_train:
+                self.val_dirname = self.val_dirname+ "only"
             if self.args.is_dropout_uncertainty:
-                self.val_writer = tf.summary.create_file_writer(f'{self.model_dir}/valdrop{self.args.n_eval_dropout}')
-            else:
-                self.val_writer = tf.summary.create_file_writer(self.model_dir+'/val')
+                self.val_dirname = f'{self.val_dirname}drop{self.args.n_eval_dropout}'            
+            self.val_writer = tf.summary.create_file_writer(self.val_dirname)
+
 
     def get_w(self, lab, is_99=False):
 
@@ -107,7 +115,7 @@ class Trainer():
     @tf_function()
     def train_step(self, features, labels):
         with tf.GradientTape() as tape:
-            predictions = self.model(features['feat_l'], is_training=True)
+            predictions = self.model(features, is_training=True)
             loss = self.compute_loss(predictions, labels)
         gradients = tape.gradient(loss, self.model.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.model.trainable_variables))
@@ -115,7 +123,7 @@ class Trainer():
 
     # @tf.function
     def test_step(self, features, labels):
-        predictions = self.model(features['feat_l'], is_training=False)
+        predictions = self.model(features, is_training=False)
         self.update_sum_val(predictions,labels)
 
     @tf_function()
@@ -274,13 +282,16 @@ class Trainer():
         out_dict = {}
         out = [self.model(x,is_training) for _ in range(n)]
 
-        # for key in out[0].keys():
-        for key in ['reg','sem']: # not implemented for sem yet
+        for key in out[0].keys():
+        # for key in ['reg','sem']: # not implemented for sem yet
             stacked = tf.stack([x[key] for x in out],axis=0)        
-            if return_moments:
-                sum_x = tf.reduce_sum(stacked,axis=0)
-                sum_x2 = tf.reduce_sum(stacked**2, axis=0)
-                out_dict[key] = tf.stack((sum_x,sum_x2), axis=-1)
+            if key in ['reg','sem']:
+                if return_moments:
+                    sum_x = tf.reduce_sum(stacked,axis=0)
+                    sum_x2 = tf.reduce_sum(stacked**2, axis=0)
+                    out_dict[key] = tf.stack((sum_x,sum_x2), axis=-1)
+                else:
+                    out_dict[key] = tf.reduce_mean(stacked,axis=0)
             else:
                 out_dict[key] = tf.reduce_mean(stacked,axis=0)
 

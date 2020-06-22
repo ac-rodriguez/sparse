@@ -7,12 +7,21 @@ from skimage.transform import resize, downscale_local_mean
 from itertools import compress
 from functools import partial
 import ray
-
+import json
+import pickle
+import tqdm
+import threading
 import utils.plots as plots
 import utils.read_geoTiff as geotif
 from utils.patch_extractor import PatchExtractor, PatchWraper
+from utils import gdal_processing as gp
+from osgeo import gdal
+
 
 USE_RAY = True
+IS_VERBOSE_DATALOAD = True
+is_save_or_load_file = True
+
 def conditional_decorator(dec, condition):
     def decorator(func):
         if not condition:
@@ -143,7 +152,7 @@ class DataReader(object):
           args: arguments from the train.py
         '''
         self.args = args
-        self.two_ds = True
+        self.two_ds = False
         self.datatype = datatype
         assert datatype in ['trainval','val','test'], datatype
         self.is_training = datatype == 'trainval'
@@ -151,6 +160,7 @@ class DataReader(object):
         self.luminosity_scale = 9999.0
         self.batch_tr = self.args.batch_size
         self.batch_eval = self.args.batch_size_eval
+        self.n_workers = self.args.n_workers
 
         self.patch_l = self.args.patch_size
         self.patch_l_eval = self.args.patch_size_eval
@@ -190,16 +200,18 @@ class DataReader(object):
 
                 # Adding rounding down patches left out in the first dataset
                 train_patches[0] = train_patches[0] + args.train_patches - np.sum(train_patches)
-
-            for id_ in range(len(self.train)):
+            tbar = tqdm.trange(len(self.train), disable=False)
+            for id_ in tbar:
                 self.single_gen.append(
                     PatchExtractor(dataset_low=self.train[id_], dataset_high=self.train_h[id_], label=self.labels[id_],
-                                   patch_l=self.patch_l, n_workers=4, max_queue_size=10, is_random=is_random_patches,
+                                   patch_l=self.patch_l, n_workers=self.n_workers, max_queue_size=10, is_random=is_random_patches,
                                    scale=args.scale, max_N=train_patches[id_], lims_with_labels=self.lims_labels[id_],
                                    patches_with_labels=self.args.patches_with_labels,
                                    two_ds=self.two_ds,
-                                   unlab=self.unlab))
-            self.patch_gen = PatchWraper(self.single_gen, n_workers=4, max_queue_size=10)
+                                   unlab=self.unlab, use_location=args.is_use_location, is_use_queues=False))
+                tbar.set_description(f'active_threads {threading.active_count()}')
+            self.patch_gen = PatchWraper(self.single_gen, n_workers=self.args.n_workers, max_queue_size=self.args.batch_size*2)
+            print(f'active_threads Train {threading.active_count()}')
         if 'val' in self.datatype:
             if not 'train' in self.datatype:
                 self.mean_train = 0.0
@@ -214,32 +226,35 @@ class DataReader(object):
             self.single_gen_val = []
             self.single_gen_rand_val = []
             # val_dset_ = -1 # TODO implement several datasets for val dset
-            for val_dset_ in range(len(self.val)):
+            tbar = tqdm.trange(len(self.val), disable=False)
+            for val_dset_ in tbar:
                 self.single_gen_val.append(
                     PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
                                                              label=self.labels_val[val_dset_],
-                                                             patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                                             patch_l=self.patch_l_eval, n_workers=self.n_workers, max_queue_size=10,
                                                              is_random=False, border=4,
                                                              scale=self.scale, lims_with_labels=self.lims_labels_val[val_dset_],
                                                              patches_with_labels=self.args.patches_with_labels,
-                                                             two_ds=self.two_ds))
+                                                             two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False))
+                tbar.set_description(f'active_threads {threading.active_count()}')
                 if self.single_gen_val[-1].nr_patches*10 >= args.val_patches:
 
                     self.single_gen_rand_val.append(
                         PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
                                                              label=self.labels_val[val_dset_],
-                                                             patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                                                             patch_l=self.patch_l_eval, n_workers=self.n_workers, max_queue_size=10,
                                                              is_random=True, border=4,
                                                              scale=args.scale, max_N=args.val_patches,
                                                              lims_with_labels=self.lims_labels_val[val_dset_],
                                                              patches_with_labels=self.args.patches_with_labels,
-                                                             two_ds=self.two_ds))
+                                                             two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False))
                 else:
                     print(f' Complete val dataset has {self.single_gen_val[-1].nr_patches} and it is used as random sub-sample too...')
 
                     self.single_gen_rand_val.append(self.single_gen_val[-1])
 
-            self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=4, max_queue_size=10)
+            self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=self.args.n_workers, max_queue_size=self.args.batch_size*2)
+            print(f'active_threads Train {threading.active_count()}')
         if self.datatype == 'test':
             self.prepare_test_data()
 
@@ -283,35 +298,69 @@ class DataReader(object):
 
         return train, None, labels, lim_labels
     
-    @no_verbose
+    @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
     def read_train_data(self):
 
         print('\n [*] Loading TRAIN data \n')
 
         list_id_lab = [get_id_lab(x) for x in self.args.tr]
         dict_id_lab = {x:[False,list_id_lab.index(x),None,None] for x in set(list_id_lab)}
-        # Load first labels
-        for _,val in dict_id_lab.items():
-            _,_,labels,lim_labels = self.read_data_pairs(self.args.tr[val[1]], is_load_lab=True, is_load_input=False)
-            val[2] = labels
-            val[3] = lim_labels
 
-        if USE_RAY:
-            ray.init()
-            print(ray.nodes()[0]['Resources'])
-            data_tr = [f_read.remote(i,dict_id=dict_id_lab,mask_dict=None, read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
-            self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
-            ray.shutdown()
-        else:
-            data_tr = [f_read(i, dict_id=dict_id_lab, mask_dict=None,read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
-            self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
+        reload_ = True
+        file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],self.args.dataset,'tmp_data')
 
-        self.train = list(compress(self.train, is_valid))
-        self.train_h = list(compress(self.train_h, is_valid))
-        self.labels = list(compress(self.labels, is_valid))
-        self.lims_labels = list(compress(self.lims_labels, is_valid))
+        if os.path.isfile(file_dataset+'/dict_id_lab.json') and is_save_or_load_file:
+            with open(file_dataset+'/dict_id_lab.json', 'r') as fp:
+                list_keys = json.load(fp)
 
-        self.train_info = list(compress(self.args.tr, is_valid))
+            if set(list_keys) == set(dict_id_lab.keys()):
+                with np.load(file_dataset+'/arrays_train.npz', allow_pickle=True) as data:
+                    self.train = data['train']
+                    self.train_h = data['train_h']
+                    self.labels = data['labels']
+                with open(file_dataset+'/lims_labels.json', 'r') as fp:
+                    self.lims_labels = json.load(fp)
+                with open(file_dataset+'/train_info.json', 'r') as fp:
+                    self.train_info = json.load(fp)
+                reload_ = False
+                print(f'loaded train data from {file_dataset}')
+
+        if reload_:
+            # Load first labels
+            for _,val in dict_id_lab.items():
+                _,_,labels,lim_labels = self.read_data_pairs(self.args.tr[val[1]], is_load_lab=True, is_load_input=False)
+                val[2] = labels
+                val[3] = lim_labels
+
+            if USE_RAY:
+                ray.init()
+                print(ray.nodes()[0]['Resources'])
+                data_tr = [f_read.remote(i,dict_id=dict_id_lab,mask_dict=None, read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
+                self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
+                ray.shutdown()
+            else:
+                data_tr = [f_read(i, dict_id=dict_id_lab, mask_dict=None,read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
+                self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
+
+            self.train = list(compress(self.train, is_valid))
+            self.train_h = list(compress(self.train_h, is_valid))
+            self.labels = list(compress(self.labels, is_valid))
+            self.lims_labels = list(compress(self.lims_labels, is_valid))
+
+            self.train_info = list(compress(self.args.tr, is_valid))
+            if is_save_or_load_file:
+                if not os.path.exists(file_dataset):
+                    os.makedirs(file_dataset)
+
+                with open(file_dataset+'/dict_id_lab.json', 'w') as fp:
+                    json.dump(list(dict_id_lab.keys()), fp, indent=4)
+                np.savez(file_dataset+'/arrays_train.npz',train=self.train,train_h=self.train_h, labels=self.labels)
+                with open(file_dataset+'/lims_labels.json', 'w') as fp:
+                    json.dump(self.lims_labels, fp,  indent=4)
+                with open(file_dataset+'/train_info.json', 'w') as fp:
+                    json.dump(self.train_info, fp,  indent=4)
+                print('saved dataset in',file_dataset)
+
 
         if self.args.unlabeled_data is not None:
             self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
@@ -352,8 +401,14 @@ class DataReader(object):
             self.labels = np.pad(self.labels, ((c, c), (c, c), (0, 0)), mode='constant', constant_values=-1.0)
 
             print('Padded datasets with low ={}, high={} with 0.0'.format(a, b))
-    
-    @no_verbose
+        if self.args.is_use_location:
+            for i_ in range(len(self.train)):
+                lonlat = gp.get_location_array(self.train_info[i_]['lr'], lims=self.lims_labels[i_])
+                self.train[i_] = np.concatenate((self.train[i_],lonlat), axis=-1)
+            self.mean_train = np.concatenate((self.mean_train,np.array([0.,0.])))
+            self.std_train = np.concatenate((self.std_train,np.array([1.,1.])))
+
+    @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
     def read_val_data(self):
 
         print('\n [*] Loading VALIDATION data \n')
@@ -364,27 +419,60 @@ class DataReader(object):
         list_id_lab_val = [get_id_lab(x) for x in self.args.val]
         dict_id_lab_val = {x:[False,list_id_lab_val.index(x),None,None] for x in set(list_id_lab_val)}
 
-        for key,val in dict_id_lab_val.items():
-            _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_load_lab=True, is_load_input=False)
-            val[2] = labels
-            val[3] = lim_labels
+        is_save_or_load_file = True
+        reload_ = True
+        file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],self.args.dataset,'tmp_data')
 
-        if USE_RAY:
-            ray.init()
-            print(ray.nodes()[0]['Resources'])
-            data_val = [f_read.remote(tr_=i,dict_id=dict_id_lab_val,mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
-            self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
-            ray.shutdown()
-        else:
-            data_val = [f_read(i, dict_id=dict_id_lab_val, mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
-            self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
+        if os.path.isfile(file_dataset+'/dict_id_lab_val.json') and is_save_or_load_file:
+            with open(file_dataset+'/dict_id_lab_val.json', 'r') as fp:
+                list_keys = json.load(fp)
 
-        self.val = list(compress(self.val, is_valid))
-        self.val_h = list(compress(self.val_h, is_valid))
-        self.labels_val = list(compress(self.labels_val, is_valid))
-        self.lims_labels_val = list(compress(self.lims_labels_val, is_valid))
+            if set(list_keys) == set(dict_id_lab_val.keys()):
+                with np.load(file_dataset+'/arrays_val.npz', allow_pickle=True) as data:
+                    self.val = data['val']
+                    self.val_h = data['val_h']
+                    self.labels_val = data['labels_val']
+                with open(file_dataset+'/lims_labels_val.json', 'r') as fp:
+                    self.lims_labels_val = json.load(fp)
+                with open(file_dataset+'/val_info.json', 'r') as fp:
+                    self.val_info = json.load(fp)
+                reload_ = False
+                print(f'loaded val data from {file_dataset}')
+        if reload_:
+            for key,val in dict_id_lab_val.items():
+                _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_load_lab=True, is_load_input=False)
+                val[2] = labels
+                val[3] = lim_labels
 
-        self.val_info = list(compress(self.args.val,is_valid))
+            if USE_RAY:
+                ray.init()
+                print(ray.nodes()[0]['Resources'])
+                data_val = [f_read.remote(tr_=i,dict_id=dict_id_lab_val,mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
+                self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
+                ray.shutdown()
+            else:
+                data_val = [f_read(i, dict_id=dict_id_lab_val, mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
+                self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
+
+            self.val = list(compress(self.val, is_valid))
+            self.val_h = list(compress(self.val_h, is_valid))
+            self.labels_val = list(compress(self.labels_val, is_valid))
+            self.lims_labels_val = list(compress(self.lims_labels_val, is_valid))
+
+            self.val_info = list(compress(self.args.val,is_valid))
+            if is_save_or_load_file:
+                if not os.path.exists(file_dataset):
+                    os.makedirs(file_dataset)
+
+                with open(file_dataset+'/dict_id_lab_val.json', 'w') as fp:
+                    json.dump(list(dict_id_lab_val.keys()), fp, indent=4)
+                np.savez(file_dataset+'/arrays_val.npz',val=self.val,val_h=self.val_h, labels_val=self.labels_val)
+                with open(file_dataset+'/lims_labels_val.json', 'w') as fp:
+                    json.dump(self.lims_labels_val, fp,  indent=4)
+                with open(file_dataset+'/val_info.json', 'w') as fp:
+                    json.dump(self.val_info, fp,  indent=4)
+
+
         self.val_tilenames = [x['tilename'] for x in self.val_info]
 
         self.n_classes = self.labels_val[0].shape[-1]
@@ -431,6 +519,10 @@ class DataReader(object):
 
                     np.save(self.args.model_dir + f'/val_LR{i_}', self.val[i_])
                     np.save(self.args.model_dir + f'/val_reg_label{i_}', self.labels_val[i_])
+        if self.args.is_use_location:
+            for i_ in range(len(self.val)):
+                lonlat = gp.get_location_array(self.val_info[i_]['lr'], lims=self.lims_labels_val[i_])
+                self.val[i_] = np.concatenate((self.val[i_],lonlat), axis=-1)
 
     def read_test_data(self):
 
@@ -478,6 +570,11 @@ class DataReader(object):
                 self.n_classes = 2
             else:
                 self.n_classes = 1
+        if self.args.is_use_location:
+            for i_ in range(len(self.test)):
+                lonlat = gp.get_location_array(self.test_info[i_]['lr'], lims=self.lims_labels_test[i_])
+                self.test[i_] = np.concatenate((self.test[i_],lonlat), axis=-1)
+
         self.n_channels = self.test[0].shape[-1]
 
         if self.args.save_arrays:
@@ -545,12 +642,12 @@ class DataReader(object):
                                is_random=False, border=self.args.border,
                                scale=self.scale, lims_with_labels=self.lims_labels_test[test_dset_],
                                patches_with_labels=self.args.patches_with_labels,
-                               two_ds=self.two_ds))
+                               two_ds=self.two_ds, is_use_queues=False))
 
     def get_input_test(self, is_restart=False, as_list=False):
         if not as_list:
             if is_restart:
-                self.patch_gen_test.define_queues()
+                self.patch_gen_test.redefine_queues()
 
             # return partial(self.input_fn, type='test')
             return self.input_fn(type='test')
@@ -558,7 +655,7 @@ class DataReader(object):
             list_fn = []
             for id_, d_ in enumerate(self.single_gen_test):
                 if is_restart:
-                    d_.define_queues()
+                    d_.redefine_queues()
                 # list_fn.append(partial(self.input_fn,type=f'test_complete-{id_}'))
                 list_fn.append(self.input_fn(type=f'test_complete-{id_}'))
             return list_fn
@@ -566,7 +663,7 @@ class DataReader(object):
     def get_input_val(self, is_restart=False, as_list=False):
         if not as_list:
             if is_restart:
-                self.patch_gen_val_complete.define_queues()
+                self.patch_gen_val_complete.redefine_queues()
 
             # return partial(self.input_fn, type='val_complete')
             return self.input_fn(type='val_complete')
@@ -574,24 +671,33 @@ class DataReader(object):
             list_fn = []
             for id_, d_ in enumerate(self.single_gen_val):
                 if is_restart:
-                    d_.define_queues()
+                    d_.redefine_queues()
                 # list_fn.append(partial(self.input_fn,type=f'val_complete-{id_}'))
                 list_fn.append(self.input_fn(type=f'val_complete-{id_}'))
             return list_fn
 
-    def normalize(self, features, labels):
+    def normalize(self, sample):
+        sample_out = {}
+        for key, val in sample.items():
+            
+            if key != 'label':
+                sample_out[key] = (val -  self.mean_train) /  self.std_train
+            else: 
+                sample_out[key] = val
 
-        if isinstance(features,dict):
-            features['feat_l'] -= self.mean_train
-            features['feat_l'] /= self.std_train
-            if self.two_ds:
-                features['feat_lU'] -= self.mean_train
-                features['feat_lU'] /= self.std_train
-        else:
-            features -= self.mean_train
-            features /= self.std_train
-        return features, labels
+        return sample_out
+    # def normalize(self, features, labels):
 
+    #     if isinstance(features,dict):
+    #         features['feat_l'] -= self.mean_train
+    #         features['feat_l'] /= self.std_train
+    #         if self.two_ds:
+    #             features['feat_lU'] -= self.mean_train
+    #             features['feat_lU'] /= self.std_train
+    #     else:
+    #         features -= self.mean_train
+    #         features /= self.std_train
+    #     return features, labels
     def add_spatial_masking(self, features, labels):
 
         a = tf.random.uniform([2], maxval=int(self.patch_l), dtype=tf.int32)
@@ -607,130 +713,53 @@ class DataReader(object):
 
         return features, labels
 
-    # def reorder_ds(self, data_l, data_h):
-    def reorder_ds(self,data):
-        if isinstance(data,tuple):
-            data_l, data_h = data
-        else:
-            data_l,data_h = data,None
-
-        n = self.n_channels
-        n_c = self.n_classes
-
-        if not self.args.is_upsample_LR:
-            if self.two_ds:
-                return {'feat_l':data_l[..., 0:n],'feat_lU':data_l[..., (n + n_c):2 * n + n_c]}, data_l[..., n:n+n_c]
-            else:
-                return data_l[..., 0:n], data_l[...,n:n+n_c]
-        else:
-
-            if not self.two_ds:
-                if self.is_HR_labels:
-                    return {'feat_l': data_l,
-                            'feat_h': data_h[..., 0:3]}, tf.expand_dims(data_h[..., -n_c:], axis=-1)
-                else:
-                    return {'feat_l': data_l[..., 0:n],
-                            'feat_h': data_h}, tf.expand_dims(data_l[..., -n_c], axis=-1)
-            else:
-                assert n_c == 1, 'not implemented for more classes'
-                if self.is_HR_labels:
-                    return {'feat_l': data_l[..., :n],
-                            'feat_h': data_h[..., 0:3],
-                            'feat_lU': data_l[..., n:],
-                            'feat_hU': data_h[..., 4:7], }, \
-                           tf.expand_dims(data_h[..., 3], axis=-1)
-                else:
-                    return {'feat_l': data_l[..., 0:n],
-                            'feat_h': data_h[..., 0:3],
-                            'feat_lU': data_l[..., (n + 1):2 * n + 1],
-                            'feat_hU': data_h[..., 3:]}, \
-                           tf.expand_dims(data_l[..., n], axis=-1)
-
     def input_fn(self, type='train'):
         # np.random.seed(99)
-
+        dict_sample = {'feat_l':np.empty((self.patch_l_eval,self.patch_l_eval,self.n_channels)),
+                        'label':np.empty((self.patch_l_eval,self.patch_l_eval,self.n_classes))}
+        batch = self.batch_eval
         if type == 'train':
             gen_func = self.patch_gen.get_iter
-            patch_l, patch_h = self.patch_l, self.patch_h
             batch = self.batch_tr
-            is_onlyLR = self.patch_gen.is_onlyLR
+            dict_sample = {'feat_l':np.empty((self.patch_l,self.patch_l,self.n_channels)),
+                'label':np.empty((self.patch_l,self.patch_l,self.n_classes))}
         elif type == 'val':
             gen_func = self.patch_gen_val_rand.get_iter
-            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
-            batch = self.batch_eval
-            is_onlyLR = self.patch_gen_val_rand.is_onlyLR
         elif type == 'val_complete':
             gen_func = self.patch_gen_val_complete.get_iter
-            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
-            batch = self.batch_eval
-            is_onlyLR = self.patch_gen_val_complete.is_onlyLR
         elif 'val_complete' in type:
             type,id_ = type.split('-')
             id_ = int(id_)
             gen_func = self.single_gen_val[id_].get_iter
-            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
-            batch = self.batch_eval
-            is_onlyLR = self.single_gen_val[id_].is_onlyLR
         elif type == 'test':
+            dict_sample.pop('label')
             gen_func = self.patch_gen_test.get_iter
-            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
-            batch = self.batch_eval
-            is_onlyLR = self.patch_gen_test.is_onlyLR
         elif 'test_complete' in type:
+            dict_sample.pop('label')
             type,id_ = type.split('-')
             id_ = int(id_)
             gen_func = self.single_gen_test[id_].get_iter
-            patch_l, patch_h = self.patch_l_eval, int(self.patch_l_eval * self.scale)
-            batch = self.batch_eval
-            is_onlyLR = self.single_gen_test[id_].is_onlyLR
         else:
             sys.exit(1)
-        multiplier = 2 if self.two_ds else 1
-        self.n_channels_lab = 2 if 'vaihingen' in self.args.dataset or 'palmcoco' in self.args.dataset else 1
-        n_lab = self.n_channels_lab
-        if 'test' in type and self.labels_test[0] is None:
-            ds = tf.data.Dataset.from_generator(
-                gen_func, tf.float32,
-                tf.TensorShape([patch_l, patch_l, self.n_channels]))
-            if batch is None:
-                batch = self.args.batch_size
-            # normalize = lambda x: (x - self.mean_train) / self.std_train
-            ds = ds.batch(batch) # .map(normalize, num_parallel_calls=6)
+        
+        ds = tf.data.Dataset.from_generator(
+        gen_func,
+        output_types={k: tf.float32 for k in dict_sample},
+        output_shapes={k:val.shape for k,val in dict_sample.items()})
 
-            ds = ds.prefetch(buffer_size=batch * 2)
-            return ds
+        if batch is None:
+            batch = self.args.batch_size
 
-        if self.is_HR_labels:
-            n_low = self.n_channels * multiplier
-            n_high = (3 + n_lab) * multiplier
-        else:
-            n_low = (self.n_channels + n_lab) * multiplier
-            n_high = 3 * multiplier
-        if is_onlyLR:
-            ds = tf.data.Dataset.from_generator(
-                gen_func, (tf.float32),
-                (
-                    tf.TensorShape([patch_l, patch_l,
-                                    n_low])
-                ))
-        else:
-            ds = tf.data.Dataset.from_generator(
-                gen_func, (tf.float32, tf.float32),
-                (
-                    tf.TensorShape([patch_l, patch_l,
-                                    n_low]),
-                    tf.TensorShape([patch_h, patch_h,
-                                    n_high])
-                ))
         if type == 'train':
-            ds = ds.shuffle(buffer_size=batch * 5)
-        ds = ds.map(self.reorder_ds, num_parallel_calls=6)
-        if type == 'train' and self.args.is_masking:
-            ds = ds.map(self.add_spatial_masking)
-        ds = ds.batch(batch).map(self.normalize, num_parallel_calls=6)
+            # ds = ds.shuffle(buffer_size=batch * 5)
+            if self.args.is_masking:
+                ds = ds.map(self.add_spatial_masking)
+
+        ds = ds.batch(batch)
+        if 'test' not in type:
+            ds = ds.map(self.normalize, num_parallel_calls=6)
 
         ds = ds.prefetch(buffer_size=batch * 2)
-
         return ds
 
     def get_input_fn(self, is_val_random=False):

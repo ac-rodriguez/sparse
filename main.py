@@ -63,6 +63,7 @@ parser.add_argument("--lambda-weights", default=0.001, type=float, help="Lambda 
 #                     help="Regularisation parameter for L2-loss.")
 parser.add_argument("--epochs", default=100, type=int, help="Number of epochs to train")
 parser.add_argument("--eval-every", default=1, type=int, help="Number of epochs between evaluations")
+parser.add_argument("--n-workers", default=4, type=int, help="Number of workers for each dataset")
 parser.add_argument("--logsteps", default=500, type=int, help="Number of steps between train logs")
 parser.add_argument("--is-slim-eval", default=False, action="store_true",
                     help="at eval do not add DA, and feat_h architectures in the graph to speed up evaluation")
@@ -91,9 +92,15 @@ parser.add_argument("--is-out-relu", default=False, action="store_true",
                     help="Adds a Relu to the output of the reg prediction")
 parser.add_argument("--is-masking", default=False, action="store_true",
                     help="adding random spatial masking to labels.")
+
 parser.add_argument("--is-dropout-uncertainty", default=False, action="store_true",
                     help="adding dropout to cnn filters at train and test time.")               
 parser.add_argument("--n-eval-dropout", default=5, type=int, help="Number of forward passes to evaluate dropout-uncertainty model")     
+
+parser.add_argument("--is-use-location",default=False, action="store_true",
+                    help="use patch coordinate location for training")
+parser.add_argument("--fusion-type", type=str, default='concat',
+                    help="['concat', 'soft', 'hard']")
 parser.add_argument("--is-lower-bound", default=False, action="store_true",
                     help="set roi traindata to roi traindata with labels")
 parser.add_argument("--optimizer", type=str, default='adam',
@@ -142,6 +149,7 @@ def main(args):
 
     model_name = args.model
     if args.is_dropout_uncertainty: model_name+= '_drop'
+    if args.is_use_location: model_name+= '_wloc'
     
     suffix = f'PATCH{args.patch_size}_{args.patch_size_eval}_Lr{args.lambda_reg:.1f}{args.tag}'
     model_dir = os.path.join(args.save_dir, model_name,suffix)
@@ -187,12 +195,14 @@ def main(args):
             comp_fn = lambda best, new: best < new
             best = 0.0
         # print(best, metric_)
+        is_predict_and_recompose=False
         epoch_iter = tqdm.trange(args.epochs, desc=f'epoch 0 ({metric_}:{best})')
         for epoch_ in epoch_iter:
-            for id_train in tqdm.trange(train_iters, desc='train',disable=True):
+            for id_train in tqdm.trange(train_iters, desc='train',disable=False):
             # for id_train in tqdm.trange(10,desc='train'):
-                x, y  = next(train_ds)
-                y_hat = trainer.train_step(x,y)
+                sample  = next(train_ds)
+                y = sample['label']
+                y_hat = trainer.train_step(sample,y)
                 if np.mod(id_train,args.logsteps) == 0:
                     trainer.update_sum_train(y, y_hat)
                     trainer.summaries_train(step=epoch_*train_iters+id_train)
@@ -202,25 +212,30 @@ def main(args):
 
             if np.mod(epoch_,args.eval_every) == 0:
                 for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
-                    x, y  = next(val_ds)
+                # for _ in tqdm.trange(10, desc=f'val (epoch {epoch_})'):
+                    sample = next(val_ds)
+                    y = sample['label']
                     if args.is_dropout_uncertainty:
-                        predictions = trainer.forward_ntimes(x['feat_l'], is_training=False,n=args.n_eval_dropout, return_moments=False)
+                        predictions = trainer.forward_ntimes(sample, is_training=False,n=args.n_eval_dropout, return_moments=False)
                     else:
-                        predictions = trainer.model(x['feat_l'], is_training=False)
+                        predictions = trainer.model(sample, is_training=False)
                     trainer.update_sum_val(predictions,y)
                 metrics = trainer.summaries_val(step=epoch_)
 
                 # print(metrics)
                 if comp_fn(best, metrics[metric_]):
+                    
                     epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{metrics[metric_]:.2f} prev. {best:.2f})')
                     best = metrics[metric_]
-                    input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
-                    predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
-                                          args.batch_size_eval, 'val',
-                                          prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.),
-                                          is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_,
-                                          is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
                     trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
+                    if is_predict_and_recompose:
+                        #input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
+                        input_fn_val_comp = None
+                        predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
+                                            args.batch_size_eval, 'val',
+                                            prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.),
+                                            is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_,
+                                            is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
                 trainer.val_writer.flush()
                 trainer.reset_sum_val()
         plt_reg = lambda x, file: plots.plot_heatmap(x, file=file, min=-1, max=2.0, cmap='viridis')
@@ -234,7 +249,8 @@ def main(args):
             except AttributeError:
                 pass
 
-        input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
+        # input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
+        input_fn_val_comp = None # will be defined inside predict_and_recompose
 
         predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val,
                                     False, args.batch_size_eval,'val',
@@ -257,30 +273,34 @@ def main(args):
         val_ds = iter(reader.input_fn(type='val'))
         val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
 
-        trainer.model.inputnorm = tools.InputNorm(n_channels=11)
+        trainer.model.inputnorm = tools.InputNorm(n_channels=13 if args.is_use_location else 11)
         trainer.model.load_weights(chkpt_path)
 
         epoch_ = 0
-
-        for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
-            x, y  = next(val_ds)
-            x['feat_l'] = trainer.model.inputnorm(x['feat_l'])
-            if args.is_dropout_uncertainty:
-                predictions = trainer.forward_ntimes(x['feat_l'], is_training=False,n=args.n_eval_dropout, return_moments=False)
-            else:
-                predictions = trainer.model(x['feat_l'], is_training=False)
-            trainer.update_sum_val(predictions,y)
-        metrics = trainer.summaries_val(step=epoch_)
-        if args.is_dropout_uncertainty:
-            prefix_ = f'valonlydrop{args.n_eval_dropout}/{epoch_}'
+        is_compute_scalar_metrics = False
+        if is_compute_scalar_metrics:
+            
+            for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
+                sample = next(val_ds)
+                y = sample['label']
+                sample['feat_l'] = trainer.model.inputnorm(sample['feat_l'])
+                if args.is_dropout_uncertainty:
+                    predictions = trainer.forward_ntimes(sample, is_training=False,n=args.n_eval_dropout, return_moments=False)
+                else:
+                    predictions = trainer.model(sample, is_training=False)
+                trainer.update_sum_val(predictions,y)
+            metrics = trainer.summaries_val(step=epoch_)
         else:
-            prefix_ = f'valonly/{epoch_}'
-        input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
+            metrics = None
+
+        prefix_ = f'{trainer.val_dirname}/{epoch_}'
+        # input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
+        input_fn_val_comp = None # will be defined inside predict_and_recompose
         predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
                                 args.batch_size_eval, 'val',
                                 prefix=prefix_, is_reg=(args.lambda_reg > 0.),
                                 is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_,
-                                is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
+                                is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout, is_input_norm=True)
         # trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
         trainer.val_writer.flush()
 

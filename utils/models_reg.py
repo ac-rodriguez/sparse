@@ -45,96 +45,99 @@ class Block(layers.Layer):
 
 
 class SimpleA(tf.keras.Model):
-  def __init__(self,n_classes, extra_depth=0, lambda_reg=0.5, is_dropout=False):
-    super(SimpleA, self).__init__()
+    def __init__(self,n_classes, extra_depth, lambda_reg, is_dropout=False):
+        super(SimpleA, self).__init__()
 
-    self.extra_depth = extra_depth
-    self.n_classes = n_classes
-    self.lambda_reg = lambda_reg
-    self.is_dropout = is_dropout
+        self.extra_depth = extra_depth
+        self.n_classes = n_classes
+        self.lambda_reg = lambda_reg
+        self.is_dropout = is_dropout
 
-    # Encode same part
-    self.block0 = Block(nfeatures=[64,18,128])
+        # Encode same part
+        self.block0 = Block(nfeatures=[64,18,128])
 
-    self.conv4 = layers.Conv2D(128,3,activation='relu',padding='same')
-    self.bn4 = layers.BatchNormalization()
+        self.conv4 = layers.Conv2D(128,3,activation='relu',padding='same')
+        self.bn4 = layers.BatchNormalization()
 
-    feature_size = 256
+        feature_size = 256
 
-    self.conv5 = layers.Conv2D(feature_size,3, activation='relu',padding='same', use_bias=False)
-    self.bn5 = layers.BatchNormalization()
+        self.conv5 = layers.Conv2D(feature_size,3, activation='relu',padding='same', use_bias=False)
+        self.bn5 = layers.BatchNormalization()
 
-    self.conv5a = layers.Conv2D(feature_size,1, activation='relu',padding='same', use_bias=False)
-    self.bn5a = layers.BatchNormalization()
+        self.conv5a = layers.Conv2D(feature_size,1, activation='relu',padding='same', use_bias=False)
+        self.bn5a = layers.BatchNormalization()
 
-    feature_size_block = [64,64,256]
-    self.block1 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
-    self.block2 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
-    self.block3 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
-    self.block4 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
-    self.block5 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
-    self.block6 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
+        feature_size_block = [64,64,256]
+        self.block1 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
+        self.block2 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
+        self.block3 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
+        self.block4 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
+        self.block5 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
+        self.block6 = Block(nfeatures=feature_size_block, is_dropout=self.is_dropout)
 
-    self.extra_blocks = [Block(nfeatures=feature_size_block, is_dropout=self.is_dropout) for _ in range(self.extra_depth)]
+        self.extra_blocks = [Block(nfeatures=feature_size_block, is_dropout=self.is_dropout) for _ in range(self.extra_depth)]
 
-    self.relu =layers.ReLU()
-    if self.is_dropout:
-        self.dropout_last = layers.Dropout(rate=0.5, noise_shape=(None, 1,1, feature_size_block[-1]))
+        self.relu =layers.ReLU()
+        if self.is_dropout:
+            self.dropout_last = layers.Dropout(rate=0.5, noise_shape=(None, 1,1, feature_size_block[-1]))
 
-    if self.lambda_reg > 0.0:
-        self.conv_reg = layers.Conv2D(n_classes,3, activation=None,padding='same', use_bias=False)
-    if self.lambda_reg < 1.0:
-        self.conv_sem = layers.Conv2D(n_classes+1, 3, activation=None, padding='same', use_bias=False)
+        if self.lambda_reg > 0.0:
+            self.conv_reg = layers.Conv2D(n_classes,3, activation=None,padding='same', use_bias=False)
+        if self.lambda_reg < 1.0:
+            self.conv_sem = layers.Conv2D(n_classes+1, 3, activation=None, padding='same', use_bias=False)
 
+    def get_deep_features(self, x, is_training, return_feat=False):
+        
+        x = self.block0(x, is_training)
+        x = self.bn4(self.conv4(x))
 
-  def call(self, x, is_training, return_feat=False):
+        x = self.bn5(self.conv5(x))
+        x1 = self.bn5a(self.conv5a(x))
 
-    x = self.block0(x, is_training)
-    # x = self.bn1(self.conv1(x))
-    # x = self.bn2(self.conv2(x))
-    # x = self.bn3(self.conv3(x))
-    x = self.bn4(self.conv4(x))
+        x2 = self.block1(x, is_training)
 
-    x = self.bn5(self.conv5(x))
-    x1 = self.bn5a(self.conv5a(x))
+        x3_ = self.relu(x1 + x2)
+        x3 = self.block2(x3_, is_training)
 
-    x2 = self.block1(x, is_training)
+        x4_ = self.relu(x3_ + x3)
+        x4 = self.block3(x4_, is_training)
 
-    x3_ = self.relu(x1 + x2)
-    x3 = self.block2(x3_, is_training)
+        x5_ = self.relu(x4_ + x4)
+        x5 = self.block4(x5_, is_training)
+        mid = x5_
+        x6_ = self.relu(x5_ + x5)
+        x6 = self.block5(x6_, is_training)
 
-    x4_ = self.relu(x3_ + x3)
-    x4 = self.block3(x4_, is_training)
+        x7_ = self.relu(x6_ + x6)
+        x7 = self.block6(x7_, is_training)
 
-    x5_ = self.relu(x4_ + x4)
-    x5 = self.block4(x5_, is_training)
-    mid = x5_
-    x6_ = self.relu(x5_ + x5)
-    x6 = self.block5(x6_, is_training)
+        for b in self.extra_blocks:
 
-    x7_ = self.relu(x6_ + x6)
-    x7 = self.block6(x7_, is_training)
+            x7_ = self.relu(x7_ + x7)
+            x7 = b(x7_, is_training)
+        
+        last = self.relu(x7_ + x7)
+        
+        return last
 
-    for b in self.extra_blocks:
+    def call(self, x, is_training, return_feat=False):
 
-        x7_ = self.relu(x7_ + x7)
-        x7 = b(x7_, is_training)
+        last = self.get_deep_features(x['feat_l'],is_training,return_feat)
 
-    last = self.relu(x7_ + x7)
-    if self.is_dropout:
-        last = self.dropout_last(last, training=True)
+        if self.is_dropout:
+            last = self.dropout_last(last, training=True)
 
-    return_dict = {}
-    if self.lambda_reg > 0.0:
-        return_dict['reg'] = self.conv_reg(last)
-    if self.lambda_reg < 1.0:
-        return_dict['sem'] = self.conv_sem(last)
-    
-    if return_feat:
-        raise NotImplementedError
-        # return {'reg': x_reg, 'sem': x_sem}, mid, last
-    else:
-        return return_dict
+        return_dict = {}
+        if self.lambda_reg > 0.0:
+            return_dict['reg'] = self.conv_reg(last)
+        if self.lambda_reg < 1.0:
+            return_dict['sem'] = self.conv_sem(last)
+        return_dict['last'] = last
+        if return_feat:
+            raise NotImplementedError
+            # return {'reg': x_reg, 'sem': x_sem}, mid, last
+        else:
+            return return_dict
 
 
 # def bn_layer(X, activation_fn=None, is_training=True):
