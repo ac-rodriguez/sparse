@@ -415,6 +415,7 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
     elif 'palmpeninsula' in DATASET and not 'new' in DATASET:
+        raise AssertionError('do not use this dataset anymore, only the new')
 
         OBJECT = 'palm'
         top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
@@ -476,6 +477,32 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             GT=PATH + '/barry_palm/data/labels/palm_annotations/*/group*',
                             loc='palmcountries_2017',
                             top_10_list=top_10_path + '/palmcountries_2017/Malaysia_all_1150.txt')
+    elif 'palm4748' == DATASET:
+
+        OBJECT = 'palm'
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+        dset_config['is_upsample_LR'] = False
+
+        rois = ['geom']
+        north = ['T47NRG','T47NPF','T47NRF','T47NQE','T47NRE']
+        south = ['T48NTK','T48NTJ','T48NTH','T48NUG']        
+        tilenames_tr = north + south # Base tiles from Peninsula
+        
+        # TRAIN
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                            GT=f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group*',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        # VAL
+        tilenames_val = ['T47NQD', 'T48NUH'] # areas in peninsula
+        tilenames_val += ['T47NKF', 'T47MPV', 'T48MVB'] # areas in Sumatra
+        
+        add_datasets_intile(tilenames_val, rois_train=[], rois_val=rois, rois_test=[],
+                            GT=f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group*',
+                            loc='palmcountries_2017',
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
     elif 'palmriau' in DATASET:
 
         OBJECT = 'palm'
