@@ -79,7 +79,7 @@ class SpatialModel(tf.keras.Model):
 
 
 
-
+    @tf.function
     def call(self,sample, is_training=True):
 
         img, coords = sample['feat_l'][...,0:11], sample['feat_l'][...,11:]
@@ -199,7 +199,7 @@ class TheoryGridCellSpatialRelationEncoder(tf.keras.layers.Layer):
                                          tf.keras.layers.BatchNormalization())
 
         
-    @tf.function
+    #@tf.function
     def call(self, coords, is_training):
         """
         Given a list of coords (deltaX, deltaY), give their spatial relation embedding

@@ -120,6 +120,7 @@ class SimpleA(tf.keras.Model):
         
         return last
 
+    @tf.function
     def call(self, x, is_training, return_feat=False):
 
         last = self.get_deep_features(x['feat_l'],is_training,return_feat)
