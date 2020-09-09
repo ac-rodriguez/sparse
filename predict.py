@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description="Partial Supervision",
 
 parser.add_argument("data_dir", type=str, default="",
                     help="Path to the directory containing the patched TEST dataset.")
-parser.add_argument("model_weights", type=str,
+parser.add_argument("model_weights", type=str,nargs='+',
                     help="Path to the file with model weights.")
 
 # Input data args
@@ -125,6 +125,8 @@ parser.add_argument("--is-overwrite-pred", default=False, action="store_true",
 parser.add_argument("--is-mounted", default=False, action="store_false",
                     help="directories on a mounted loc from leonhard cluster")
 
+parser.add_argument("--compression", default='0', help='compression algorithm to save geotifs')
+
 parser.add_argument("--is-dropout-uncertainty", default=False, action="store_true",
                     help="adding dropout to cnn filters at train and test time.")    
 parser.add_argument("--mc-repetitions", default=1, type=int,
@@ -154,16 +156,28 @@ def main(args):
         tag_ = tag_ + '_'+ args.tag
     model_dir = os.path.join(args.save_dir,tag_, foldername, '')
     print(model_dir)
-    if '.ckpt' in args.model_weights:
-        ckpt = args.model_weights
+    is_ensemble = False
+    
+    if len(args.model_weights)== 1 and '.ckpt' in args.model_weights[0]:
+        ckpt = args.model_weights[0]
     else:
-        ckpt = tools.get_last_best_ckpt(args.model_weights, folder='best/*')
+        ref_folder = '/*' if args.model_weights[0].endswith('last') else 'best/*'
+        if len(args.model_weights) > 1:
+            ckpt = [tools.get_last_best_ckpt(x, folder=ref_folder) for x in args.model_weights]
+            print(f'will load {len(ckpt)} models at every forward pass')
+            assert len(ckpt) == args.mc_repetitions
+            is_ensemble = True
+        else:
+            ckpt = tools.get_last_best_ckpt(args.model_weights[0], folder=ref_folder)
 
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
-    elif os.path.exists(model_dir+'/preds_reg.tif') and not args.is_overwrite_pred:
-        print('preds_reg.tif already exists')
-        sys.exit(0)
+    elif not args.is_overwrite_pred:
+        safe_ = data_dir[0].split('/')[-1]
+        file_reg = f'{model_dir}/{safe_}-test-{args.mc_repetitions}_preds_reg_{args.compression}.tif'
+        if os.path.isfile(file_reg):
+            print(f'{file_reg} already exists')
+            sys.exit(0)
 
     test_dsets = [{
             'lr': x,
@@ -182,10 +196,13 @@ def main(args):
 
     trainer = Trainer(args, inference_only=True)
     trainer.model.inputnorm = tools.InputNorm(n_channels=13 if args.is_use_location else 11)
-    trainer.model.load_weights(ckpt)
+    if isinstance(ckpt,list):
+        trainer.model.load_weights(ckpt[0])
+    else:
+        trainer.model.load_weights(ckpt)
     is_hr_pred = False
     if args.mc_repetitions > 1:
-        assert args.is_dropout_uncertainty
+        assert args.is_dropout_uncertainty or is_ensemble
         type_ = f'test-{args.mc_repetitions}'
     else:
         type_ = 'test'
@@ -206,13 +223,13 @@ def main(args):
                             input_fn= input_fn_test_comp, patch_generator= reader.single_gen_test,
                             is_hr_pred=is_hr_pred, batch_size= args.batch_size_eval,type_=type_,
                             is_reg=(args.lambda_reg > 0.), is_sem=False,
-                            chkpt_path=ckpt,return_array=False, mc_repetitions=args.mc_repetitions)
+                            chkpt_path=ckpt,return_array=False, mc_repetitions=args.mc_repetitions, is_ensemble=is_ensemble, compression=args.compression)
             else:
                 predict_and_recompose_individual(trainer, reader,
                                 input_fn= input_fn_test_comp, patch_generator= reader.single_gen_test,
                                 is_hr_pred=is_hr_pred, batch_size= args.batch_size_eval,type_=type_,
                                 is_reg=(args.lambda_reg > 0.), is_sem=False,
-                                chkpt_path=ckpt,return_array=False)
+                                chkpt_path=ckpt,return_array=False, compression=args.compression)
 
 if __name__ == '__main__':
     
