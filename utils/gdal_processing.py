@@ -279,12 +279,12 @@ def rasterize_points_constrained(Input, refDataset, lims, lims_with_labels, up_s
     a = a / up_scale
     e = e / up_scale
 
-    for i in points:
+    for lon_,lat_,_ in points:
 
         if gdal.__version__.startswith('3.'):
-            (xp, yp, h) = ct.TransformPoint(i[1], i[0], 0.)
+            (xp, yp, h) = ct.TransformPoint(lat_, lon_, 0.)
         else:
-            (xp, yp, h) = ct.TransformPoint(i[0], i[1], 0.)
+            (xp, yp, h) = ct.TransformPoint(lon_, lat_, 0.)
         xp -= xoff
         yp -= yoff
         # matrix inversion
@@ -474,7 +474,7 @@ def get_jp2(path, band, res=10):
         return glob.glob(f"{path}/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")[0]
 
 
-def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte, roi_lon_lat = None, options = 0):
+def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte, roi_lon_lat = None, compression='0'):
     if type == 'float32':
         type = gdal.GDT_Float32
     elif type == 'int32':
@@ -492,47 +492,47 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
 
     nbands = Input.shape[-1]
     
-    filename = filename.replace('.tif', f'_{options}.tif')
+    filename = filename.replace('.tif', f'_{compression}.tif')
 
-    if options== 0:
-        options = ['alpha=yes']
-    elif options == 1.1:
-        options = ['alpha=yes',
+    if compression== "0":
+        compression = ['alpha=yes']
+    elif compression == "11":
+        compression = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=1',
             'ZSTD_LEVEL=9']
-    elif options == 1.2:
-        options = ['alpha=yes',
+    elif compression == "12":
+        compression = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=2',
             'ZSTD_LEVEL=9']
-    elif options == 1.3:
-        options = ['alpha=yes',
+    elif compression == "13":
+        compression = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=3',
             'ZSTD_LEVEL=9']
-    elif options == 2.1:
-        options = ['alpha=yes',
+    elif compression == "21":
+        compression = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=LZW',
             'PREDICTOR=1']
-    elif options == 2.2:
-        options = ['alpha=yes',
+    elif compression == "22":
+        compression = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=LZW',
             'PREDICTOR=2']
-    elif options == 2.3:
-        options = ['alpha=yes',
+    elif compression == "23":
+        compression = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=LZW',
             'PREDICTOR=3']
     else:
         raise NotImplemented
 
-    target_ds = gdal.GetDriverByName('GTiff').Create(filename, xmax - xmin + 1, ymax - ymin + 1, nbands, type, options=options)
+    target_ds = gdal.GetDriverByName('GTiff').Create(filename, xmax - xmin + 1, ymax - ymin + 1, nbands, type, compression=compression)
 
     ox, pw, a, oy,b, ph = Image.GetGeoTransform()
     ox = xmin *pw + ox
@@ -780,11 +780,13 @@ def get_lonlat(ds, verbose= False, points_pairs=None):
     y2 = np.matmul(points1,gtrn_y)
 
     if gdal.__version__.startswith('3.'):
-        lonlat_pts = transform.TransformPoints(list(zip(y2,x2)))
+        lonlat_pts = transform.TransformPoints(list(zip(x2,y2))) # returns latlon_pts
+        lonlat_pts = np.array(lonlat_pts)[:,:2]
+        lonlat_pts = lonlat_pts[:,::-1] # changing to lonlat order
+
     else:
         lonlat_pts = transform.TransformPoints(list(zip(x2,y2)))
-
-    lonlat_pts = np.array(lonlat_pts)[:,:2]
+        lonlat_pts = np.array(lonlat_pts)[:,:2]
     # lonlat_pts = []
     # for x, y in points_pairs:
     #     x2 = bag_gtrn[0] + bag_gtrn[1] * x + bag_gtrn[2] * y
@@ -801,8 +803,9 @@ def get_lonlat(ds, verbose= False, points_pairs=None):
     return lonlat_pts
 
 def get_location_array(lr_filename, lims):
-    refdataset = get_jp2(lr_filename, 'B03', res=10)
-    ds = gdal.Open(refdataset)
+    if not lr_filename.endswith('.tif'):
+        lr_filename = get_jp2(lr_filename, 'B03', res=10)
+    ds = gdal.Open(lr_filename)
     if lims is not None:
         x, y = lims[0], lims[1]
         x1,y1 = lims[2],lims[3]
@@ -866,30 +869,47 @@ def roi_intersection(ds, geo_pts_ref, return_polygon = False, verbose=True):
 
         geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
 
+    if pyproj.__version__.startswith('2.'):
+        p1 = Polygon(np.array(geo_pts)[:,::-1])
+        p2 = Polygon(np.array(geo_pts_ref)[:,::-1])
+        intersection = p1.intersection(p2)
 
-    p1 = Polygon(geo_pts)
-    p2 = Polygon(geo_pts_ref)
-    intersection = p1.intersection(p2)
-    # print(intersection.area)
-
-    if p1.intersects(p2):
-        geom_area = ops.transform(
-            partial(
-                pyproj.transform,
-                pyproj.Proj(init='EPSG:4326'),
-                pyproj.Proj(
-                    proj='aea',
-                    lat_1=intersection.bounds[1],
-                    lat_2=intersection.bounds[3])),
-            intersection)
-
-        # Print the area in m^2
-        if verbose:
-            print('ROI intersection area {:.1f} Ha '.format(geom_area.area/(100.**2)))
-    if return_polygon:
-        return p1.intersects(p2), geom_area
+        if p1.intersects(p2):
+            ds_proj = pyproj.CRS.from_wkt(ds.GetProjectionRef())
+            transformer = pyproj.transformer.Transformer.from_crs("epsg:4326", ds_proj) #  "aea", area_of_interest)
+            geom_area = ops.transform(transformer.transform,intersection)
+            # Print the area in m^2
+            if verbose:
+                print('ROI intersection area {:.1f} Ha '.format(geom_area.area/(100.**2)))
+        if return_polygon:
+            return p1.intersects(p2), geom_area
+        else:
+            return p1.intersects(p2)
     else:
-        return p1.intersects(p2)
+
+        p1 = Polygon(geo_pts)
+        p2 = Polygon(geo_pts_ref)
+        intersection = p1.intersection(p2)
+        # print(intersection.area)
+
+        if p1.intersects(p2):
+            geom_area = ops.transform(
+                partial(
+                    pyproj.transform,
+                    pyproj.Proj(init='EPSG:4326'),
+                    pyproj.Proj(
+                        proj='aea',
+                        lat_1=intersection.bounds[1],
+                        lat_2=intersection.bounds[3])),
+                intersection)
+
+            # Print the area in m^2
+            if verbose:
+                print('ROI intersection area {:.1f} Ha '.format(geom_area.area/(100.**2)))
+        if return_polygon:
+            return p1.intersects(p2), geom_area
+        else:
+            return p1.intersects(p2)
 
 
 def enlarge_pixel(xmin, xmax, ref=6):
