@@ -82,6 +82,7 @@ class BasePatch:
 import random
 class PatchWraper(BasePatch):
     def __init__(self, extractors,max_queue_size=4,n_workers=1):
+        self.add_info = True
         self.extractors = [x for x in extractors if x.any_valid_pixels]
         super(PatchWraper, self).__init__('Patch_wraper',max_queue_size,n_workers)
 
@@ -113,7 +114,8 @@ class PatchWraper(BasePatch):
         extr_id , index_patch = self.indices1[index]
 
         patches = self.extractors[extr_id].__getitem__(index_patch)
-
+        if self.add_info:
+            patches['info'] = self.extractors[extr_id].name
         return patches
     
         # is_correct = False
@@ -126,12 +128,17 @@ class PatchExtractor(BasePatch):
 
     def __init__(self, dataset_low, dataset_high, label, patch_l=16, max_queue_size=4, n_workers=1, is_random=True,
                  border=None, scale=None, return_corner=False, keep_edges=True, max_N=5e4, lims_with_labels = None,
-                  patches_with_labels= 0.1, d2_after=0, two_ds=True, unlab = None, use_location=False, is_use_queues=True):
+                  patches_with_labels= 0.1, d2_after=0, two_ds=True, unlab = None, use_location=False, is_use_queues=True,
+                  ds_info = None):
         self.two_ds = two_ds
         assert not two_ds
         self.d_l = dataset_low
         self.is_use_queues = is_use_queues
-        super(PatchExtractor, self).__init__(f'PatchExtractor({self.d_l.shape})',max_queue_size,n_workers)
+        if ds_info is None:
+            name = f'PatchExtractor({self.d_l.shape})'
+        else:
+            name = ds_info['tilename']+'_'+ds_info['gt'].split('/')[-1]
+        super(PatchExtractor, self).__init__(name,max_queue_size,n_workers)
 
         self.d_h = dataset_high
         self.label = label
@@ -163,12 +170,15 @@ class PatchExtractor(BasePatch):
             self.cloud_axis= -1
 
         self.patch_l = patch_l
-        assert self.patch_l <= self.d_l.shape[0] and self.patch_l <= self.d_l.shape[1], \
-            ' patch of size {} is bigger than ds_l {}'.format(self.patch_l, self.d_l.shape)
 
         self.patch_h = patch_l * scale
         self.patch_lab = self.patch_h if self.is_HR_label else self.patch_l
         self.any_valid_pixels = True
+
+        if not self.patch_l <= self.d_l.shape[0] and self.patch_l <= self.d_l.shape[1]:
+            print('patch of size {} is bigger than ds_l {}'.format(self.patch_l, self.d_l.shape))
+            print('will skip during training')
+            self.any_valid_pixels = False
 
         if self.border is not None:
             assert self.patch_l > self.border * 2
@@ -177,7 +187,7 @@ class PatchExtractor(BasePatch):
             self.compute_tile_ranges()
             self.indices1 = [(ii,jj) for ii in self.range_i for jj in self.range_j]
             self.rand_ind = 0
-        else:
+        elif self.any_valid_pixels:
 
             n_x, self.n_y = np.subtract(self.d_l.shape[0:2], self.patch_l)
             if self.verbose: print('Max N random patches = {}'.format(n_x*self.n_y))

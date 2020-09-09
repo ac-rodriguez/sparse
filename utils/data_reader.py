@@ -18,8 +18,8 @@ from utils import gdal_processing as gp
 from osgeo import gdal
 
 
-USE_RAY = True
-IS_VERBOSE_DATALOAD = True
+USE_RAY = False
+IS_VERBOSE_DATALOAD = False
 is_save_or_load_file = True
 
 def conditional_decorator(dec, condition):
@@ -135,6 +135,16 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_s
     return data
 
 
+def check_path(list_in, basepath_):
+    list_out = []
+    add_path = lambda x: basepath_+'/barry_palm/'+x.split('barry_palm',1)[-1] if x is not None else x
+    for i_ in list_in:
+        i_['gt'] = add_path(i_['gt'])
+        i_['lr'] = add_path(i_['lr'])
+        list_out.append(i_)
+    return list_out
+
+
 def get_id_lab(x):
     if isinstance(x['roi'], tuple):
         x['roi'] = ','.join([str(i) for i in x['roi']])
@@ -235,7 +245,8 @@ class DataReader(object):
                                                              is_random=False, border=4,
                                                              scale=self.scale, lims_with_labels=self.lims_labels_val[val_dset_],
                                                              patches_with_labels=self.args.patches_with_labels,
-                                                             two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False))
+                                                             two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False,
+                                                             ds_info=self.val_info[val_dset_]))
                 tbar.set_description(f'active_threads {threading.active_count()}')
                 if self.single_gen_val[-1].nr_patches*10 >= args.val_patches:
 
@@ -247,7 +258,8 @@ class DataReader(object):
                                                              scale=args.scale, max_N=args.val_patches,
                                                              lims_with_labels=self.lims_labels_val[val_dset_],
                                                              patches_with_labels=self.args.patches_with_labels,
-                                                             two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False))
+                                                             two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False,
+                                                             ds_info=self.val_info[val_dset_]))
                 else:
                     print(f' Complete val dataset has {self.single_gen_val[-1].nr_patches} and it is used as random sub-sample too...')
 
@@ -258,7 +270,7 @@ class DataReader(object):
         if self.datatype == 'test':
             self.prepare_test_data()
 
-
+    @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
     def read_data_pairs(self, path_dict, mask_out_dict=None, is_load_lab=True, is_load_input=True,
                         is_skip_if_masked=True):
 
@@ -298,7 +310,7 @@ class DataReader(object):
 
         return train, None, labels, lim_labels
     
-    @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
+    # @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
     def read_train_data(self):
 
         print('\n [*] Loading TRAIN data \n')
@@ -313,7 +325,9 @@ class DataReader(object):
             with open(file_dataset+'/dict_id_lab.json', 'r') as fp:
                 list_keys = json.load(fp)
 
-            if set(list_keys) == set(dict_id_lab.keys()):
+            list_keys_ = {x.split('barry_palm',1)[-1] for x in list_keys}
+            dict_id_lab_keys_ = {x.split('barry_palm',1)[-1] for x in dict_id_lab.keys()}
+            if list_keys_ == dict_id_lab_keys_:
                 with np.load(file_dataset+'/arrays_train.npz', allow_pickle=True) as data:
                     self.train = data['train']
                     self.train_h = data['train_h']
@@ -322,12 +336,19 @@ class DataReader(object):
                     self.lims_labels = json.load(fp)
                 with open(file_dataset+'/train_info.json', 'r') as fp:
                     self.train_info = json.load(fp)
+                basepath = self.args.save_dir.split('sparse',1)[0]
+                self.train_info = check_path(self.train_info,basepath)
+
                 reload_ = False
                 print(f'loaded train data from {file_dataset}')
+            else:
+                print('not all keys matched, will reload',file_dataset)
+        else:
+            print('file not found, will reload',file_dataset)
 
         if reload_:
             # Load first labels
-            for _,val in dict_id_lab.items():
+            for _,val in tqdm.tqdm(dict_id_lab.items(), desc='loading labels'):
                 _,_,labels,lim_labels = self.read_data_pairs(self.args.tr[val[1]], is_load_lab=True, is_load_input=False)
                 val[2] = labels
                 val[3] = lim_labels
@@ -339,7 +360,8 @@ class DataReader(object):
                 self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
                 ray.shutdown()
             else:
-                data_tr = [f_read(i, dict_id=dict_id_lab, mask_dict=None,read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
+                iter_tr = tqdm.tqdm(self.args.tr, desc='loading input data')
+                data_tr = [f_read(i, dict_id=dict_id_lab, mask_dict=None,read_data_pairs_func=self.read_data_pairs) for i in iter_tr]
                 self.train, self.train_h, self.labels, self.lims_labels, is_valid = zip(*data_tr)
 
             self.train = list(compress(self.train, is_valid))
@@ -354,7 +376,7 @@ class DataReader(object):
 
                 with open(file_dataset+'/dict_id_lab.json', 'w') as fp:
                     json.dump(list(dict_id_lab.keys()), fp, indent=4)
-                np.savez(file_dataset+'/arrays_train.npz',train=self.train,train_h=self.train_h, labels=self.labels)
+                np.savez(file_dataset+'/arrays_train.npz',train=self.train,train_h=self.train_h, labels=self.labels, force_zip64=True)
                 with open(file_dataset+'/lims_labels.json', 'w') as fp:
                     json.dump(self.lims_labels, fp,  indent=4)
                 with open(file_dataset+'/train_info.json', 'w') as fp:
@@ -408,7 +430,7 @@ class DataReader(object):
             self.mean_train = np.concatenate((self.mean_train,np.array([0.,0.])))
             self.std_train = np.concatenate((self.std_train,np.array([1.,1.])))
 
-    @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
+    # @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
     def read_val_data(self):
 
         print('\n [*] Loading VALIDATION data \n')
@@ -422,12 +444,15 @@ class DataReader(object):
         is_save_or_load_file = True
         reload_ = True
         file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],self.args.dataset,'tmp_data')
-
+        #if 'palm4748a' in self.args.dataset:
+        #    file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],'palm4748a','tmp_data')
+        #    print('looking for', file_dataset)
         if os.path.isfile(file_dataset+'/dict_id_lab_val.json') and is_save_or_load_file:
             with open(file_dataset+'/dict_id_lab_val.json', 'r') as fp:
                 list_keys = json.load(fp)
-
-            if set(list_keys) == set(dict_id_lab_val.keys()):
+            list_keys_ = {x.split('barry_palm',1)[-1] for x in list_keys}
+            dict_id_lab_val_keys_ = {x.split('barry_palm',1)[-1] for x in dict_id_lab_val.keys()}
+            if list_keys_ == dict_id_lab_val_keys_:
                 with np.load(file_dataset+'/arrays_val.npz', allow_pickle=True) as data:
                     self.val = data['val']
                     self.val_h = data['val_h']
@@ -436,10 +461,18 @@ class DataReader(object):
                     self.lims_labels_val = json.load(fp)
                 with open(file_dataset+'/val_info.json', 'r') as fp:
                     self.val_info = json.load(fp)
+                basepath = self.args.save_dir.split('sparse',1)[0]
+                self.val_info = check_path(self.val_info,basepath)
+
                 reload_ = False
                 print(f'loaded val data from {file_dataset}')
+            else:
+                print('not all keys matched, will reload',file_dataset)
+        else:
+            print('file not found, will reload',file_dataset)
+
         if reload_:
-            for key,val in dict_id_lab_val.items():
+            for _,val in tqdm.tqdm(dict_id_lab_val.items(), desc='loading labels'):
                 _,_,labels,lim_labels = self.read_data_pairs(self.args.val[val[1]], is_load_lab=True, is_load_input=False)
                 val[2] = labels
                 val[3] = lim_labels
@@ -451,7 +484,8 @@ class DataReader(object):
                 self.val,self.val_h,self.labels_val,self.lims_labels_val,is_valid = zip(*ray.get(data_val))
                 ray.shutdown()
             else:
-                data_val = [f_read(i, dict_id=dict_id_lab_val, mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in self.args.val]
+                iter_val = tqdm.tqdm(self.args.val, desc='loading input data')
+                data_val = [f_read(i, dict_id=dict_id_lab_val, mask_dict=maskout,read_data_pairs_func=self.read_data_pairs) for i in iter_val]
                 self.val, self.val_h, self.labels_val, self.lims_labels_val, is_valid = zip(*data_val)
 
             self.val = list(compress(self.val, is_valid))
@@ -471,6 +505,7 @@ class DataReader(object):
                     json.dump(self.lims_labels_val, fp,  indent=4)
                 with open(file_dataset+'/val_info.json', 'w') as fp:
                     json.dump(self.val_info, fp,  indent=4)
+                print('saved dataset in',file_dataset)
 
 
         self.val_tilenames = [x['tilename'] for x in self.val_info]
@@ -638,7 +673,7 @@ class DataReader(object):
             self.single_gen_test.append(
                 PatchExtractor(dataset_low=self.test[test_dset_], dataset_high=self.test_h[test_dset_],
                                label=self.labels_test[test_dset_],
-                               patch_l=self.patch_l_eval, n_workers=4, max_queue_size=10,
+                               patch_l=self.patch_l_eval, n_workers=self.n_workers, max_queue_size=10,
                                is_random=False, border=self.args.border,
                                scale=self.scale, lims_with_labels=self.lims_labels_test[test_dset_],
                                patches_with_labels=self.args.patches_with_labels,
@@ -680,7 +715,7 @@ class DataReader(object):
         sample_out = {}
         for key, val in sample.items():
             
-            if key != 'label':
+            if 'feat' in key:
                 sample_out[key] = (val -  self.mean_train) /  self.std_train
             else: 
                 sample_out[key] = val
@@ -715,37 +750,36 @@ class DataReader(object):
 
     def input_fn(self, type='train'):
         # np.random.seed(99)
-        dict_sample = {'feat_l':np.empty((self.patch_l_eval,self.patch_l_eval,self.n_channels)),
-                        'label':np.empty((self.patch_l_eval,self.patch_l_eval,self.n_classes))}
         batch = self.batch_eval
         if type == 'train':
-            gen_func = self.patch_gen.get_iter
+            ref_patch_gen = self.patch_gen
             batch = self.batch_tr
-            dict_sample = {'feat_l':np.empty((self.patch_l,self.patch_l,self.n_channels)),
-                'label':np.empty((self.patch_l,self.patch_l,self.n_classes))}
         elif type == 'val':
-            gen_func = self.patch_gen_val_rand.get_iter
+            ref_patch_gen = self.patch_gen_val_rand
         elif type == 'val_complete':
-            gen_func = self.patch_gen_val_complete.get_iter
+            ref_patch_gen = self.patch_gen_val_complete
         elif 'val_complete' in type:
             type,id_ = type.split('-')
             id_ = int(id_)
-            gen_func = self.single_gen_val[id_].get_iter
+            ref_patch_gen = self.single_gen_val[id_]
         elif type == 'test':
-            dict_sample.pop('label')
-            gen_func = self.patch_gen_test.get_iter
+            ref_patch_gen = self.patch_gen_test
+            raise NotImplementedError
         elif 'test_complete' in type:
-            dict_sample.pop('label')
             type,id_ = type.split('-')
             id_ = int(id_)
-            gen_func = self.single_gen_test[id_].get_iter
+            ref_patch_gen = self.single_gen_test[id_]
         else:
             sys.exit(1)
+
+        dict_sample = ref_patch_gen.__getitem__(0)
+        gen_func = ref_patch_gen.get_iter
         
         ds = tf.data.Dataset.from_generator(
-        gen_func,
-        output_types={k: tf.float32 for k in dict_sample},
-        output_shapes={k:val.shape for k,val in dict_sample.items()})
+                gen_func,
+                output_types={k: tf.float32 if not isinstance(val,str) else tf.string for k,val in dict_sample.items()},
+                output_shapes={k:val.shape if not isinstance(val,str) else () for k,val in dict_sample.items()}
+            )
 
         if batch is None:
             batch = self.args.batch_size

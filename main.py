@@ -35,7 +35,7 @@ parser.add_argument("--is-degraded-hr", dest='degraded_hr',default=False, action
                     help="add a progressive blur to HR images, (scale 1 to low res equivalence)")
 parser.add_argument("--not-save-arrays",dest='save_arrays', default=True, action="store_false",
                     help="save arrays of GT and input data")
-parser.add_argument("--warm-start-from", default=None, help="fine tune from MODELNAME or LOWER flag checkpoint")
+parser.add_argument("--warm-start-from", default=None, type=str, help="fine tune from MODELNAME or LOWER flag checkpoint")
 parser.add_argument("--low-task-evol", default=None,type=float, help="add an increasing lambda over time for low-res task")
 parser.add_argument("--high-task-evol", default=None,type=float, help="add an increasing lambda over time for high-res task")
 parser.add_argument("--is-empty-aerial", default=False, action="store_true",
@@ -48,6 +48,13 @@ parser.add_argument("--is-total-patches-datasets",default=False, action="store_t
 parser.add_argument("--patches-with-labels", default=0.5, type=float, help="Percent of patches with labels")
 parser.add_argument("--val-patches", default=2000, type=int, help="Number of random patches extracted from train area")
 parser.add_argument("--numpy-seed", default=None, type=int, help="Random seed for random patches extraction")
+
+
+# active learning samples
+parser.add_argument("--rand-option", default=None, type=str, help="Random realization to read")
+parser.add_argument("--active-samples", default=None, type=int, help="Additional samples selected")
+parser.add_argument("--is-save-data-only", default=False, action="store_true",
+                    help="Save data as npz only, no training")
 
 # Training args
 parser.add_argument("--patch-size", default=16, type=int, help="size of the patches to be created (low-res).")
@@ -76,7 +83,7 @@ parser.add_argument("--sq-kernel", type=int, default=2,
                     help="Smooth with a squared kernel of N 10m pixels N instead of gaussian.")
 parser.add_argument("--normalize", type=str, default='normal',
                     help="type of normalization applied to the data.")
-parser.add_argument("--is-restore", "--is-reload", dest="is_restore", default=False, action="store_true",
+parser.add_argument("--is-restore", "--is-reload","--is-resume", dest="is_restore", default=False, action="store_true",
                     help="Continue training from a stored model.")
 parser.add_argument("--is-multi-gpu", default=False, action="store_true",
                     help="Add mirrored strategy for multi gpu training and eval.")
@@ -107,6 +114,13 @@ parser.add_argument("--optimizer", type=str, default='adam',
                     help="['adagrad', 'adam']")
 parser.add_argument("--lr", type=float, default=1e-4,
                     help="Learning rate for optimizer.")
+parser.add_argument("--lr-step", type=int, default=10000,
+                    help="Learning rate step for SGD.")
+parser.add_argument("--momentum", type=float, default=0.9,
+                    help="Momentum for SGD.")
+parser.add_argument("--wdecay", type=float, default=0,
+                    help="wdecay for all parameters.")
+
 # Save args
 
 parser.add_argument("--tag", default="",
@@ -125,8 +139,13 @@ parser.add_argument("--is-mounted", default=False, action="store_false",
 
 def main(args):
     if args.is_train:
+        if args.rand_option is not None:
+            args.dataset = f'{args.dataset}_{args.active_samples}{args.rand_option}'
         d = get_dataset(args.dataset)
     else:
+        if args.rand_option is not None:
+            args.dataset = f'{args.dataset}_{args.active_samples}{args.rand_option}'
+
         d = get_dataset(args.dataset, is_mounted=args.is_mounted)
 
     args.__dict__.update(d)
@@ -171,7 +190,11 @@ def main(args):
 
     args.model_dir = model_dir
     filename = 'FLAGS' if args.is_train else 'FLAGS_pred'
-    if not args.is_restore:
+    if args.is_restore:
+        raise NotImplementedError('optimizer states are not saved!')
+        # assert args.warm_start_from is None, 'use only one flag'
+        # args.warm_start_from = tools.get_last_best_ckpt(model_dir, folder='best/*')
+    else:
         save_parameters(args, model_dir, sys.argv, name=filename)
 
     trainer = Trainer(args)
@@ -179,13 +202,20 @@ def main(args):
     if args.is_train:
 
         reader = DataReader(args, datatype='trainval')
+        if args.is_save_data_only:
+            sys.exit(0)
         trainer.model.inputnorm = tools.InputNorm(reader.mean_train,reader.std_train)
+        if args.warm_start_from is not None:
+            trainer.model.load_weights(args.warm_start_from)
+            print('loaded weights from ', args.warm_start_from)
         train_ds = iter(reader.input_fn(type='train'))
         val_ds = iter(reader.input_fn(type='val'))
 
         val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
         train_iters = np.sum(reader.patch_gen.nr_patches) // args.batch_size
-
+        is_debug = False
+        if is_debug:
+            train_iters, val_iters = 10,10
         if args.lambda_reg == 1:
             metric_ = 'mae'
             comp_fn = lambda best, new: best > new
@@ -199,7 +229,6 @@ def main(args):
         epoch_iter = tqdm.trange(args.epochs, desc=f'epoch 0 ({metric_}:{best})')
         for epoch_ in epoch_iter:
             for id_train in tqdm.trange(train_iters, desc='train',disable=False):
-            # for id_train in tqdm.trange(10,desc='train'):
                 sample  = next(train_ds)
                 y = sample['label']
                 y_hat = trainer.train_step(sample,y)
@@ -212,14 +241,14 @@ def main(args):
 
             if np.mod(epoch_,args.eval_every) == 0:
                 for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
-                # for _ in tqdm.trange(10, desc=f'val (epoch {epoch_})'):
                     sample = next(val_ds)
                     y = sample['label']
                     if args.is_dropout_uncertainty:
                         predictions = trainer.forward_ntimes(sample, is_training=False,n=args.n_eval_dropout, return_moments=False)
                     else:
                         predictions = trainer.model(sample, is_training=False)
-                    trainer.update_sum_val(predictions,y)
+                    info = sample['info'] if 'info' in sample.keys() else None
+                    trainer.update_sum_val(predictions,y, info)
                 metrics = trainer.summaries_val(step=epoch_)
 
                 # print(metrics)
@@ -238,33 +267,35 @@ def main(args):
                                             is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
                 trainer.val_writer.flush()
                 trainer.reset_sum_val()
-        plt_reg = lambda x, file: plots.plot_heatmap(x, file=file, min=-1, max=2.0, cmap='viridis')
+        trainer.model.save_weights(f'{trainer.model_dir}/last/{epoch_}/model.ckpt')
+        print('Finished training, saved last model ')
+        if args.save_arrays:
+            plt_reg = lambda x, file: plots.plot_heatmap(x, file=file, min=-1, max=2.0, cmap='viridis')
+            for i_, gen_ in enumerate(reader.single_gen):
+                try:
+                    plots.plot_rgb(gen_.d_l1, file=model_dir + f'/sample_train_LR{i_}')
+                    for j in range(reader.n_classes):
+                        plt_reg(gen_.label_1[...,j], model_dir + f'/sample_train_reg_label{i_}_class{j}')
 
-        for i_, gen_ in enumerate(reader.single_gen):
-            try:
-                plots.plot_rgb(gen_.d_l1, file=model_dir + f'/sample_train_LR{i_}')
-                for j in range(reader.n_classes):
-                    plt_reg(gen_.label_1[...,j], model_dir + f'/sample_train_reg_label{i_}_class{j}')
+                except AttributeError:
+                    pass
+        if is_predict_and_recompose:
+            # input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
+            input_fn_val_comp = None # will be defined inside predict_and_recompose
 
-            except AttributeError:
-                pass
-
-        # input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
-        input_fn_val_comp = None # will be defined inside predict_and_recompose
-
-        predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val,
-                                    False, args.batch_size_eval,'val',
-                                    is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-                                    chkpt_path=tools.get_last_best_ckpt(trainer.model_dir, 'best/*'), 
-                                    is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
-        np.save('{}/train_label'.format(model_dir), reader.labels)
-        np.save('{}/val_label'.format(model_dir), reader.labels_val)
-        if len(args.test) > 0: 
-            del reader.train, reader.train_h
-            del reader.val, reader.val_h
-            reader.prepare_test_data()
-        else:
-            print('done, no test data was provided')
+            predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val,
+                                        False, args.batch_size_eval,'val',
+                                        is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
+                                        chkpt_path=tools.get_last_best_ckpt(trainer.model_dir, 'best/*'), 
+                                        is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
+            np.save('{}/train_label'.format(model_dir), reader.labels)
+            np.save('{}/val_label'.format(model_dir), reader.labels_val)
+            if len(args.test) > 0: 
+                del reader.train, reader.train_h
+                del reader.val, reader.val_h
+                reader.prepare_test_data()
+            else:
+                print('done, no test data was provided')
 
     else:
         # assert os.path.isdir(args.model_dir)
@@ -277,7 +308,7 @@ def main(args):
         trainer.model.load_weights(chkpt_path)
 
         epoch_ = 0
-        is_compute_scalar_metrics = False
+        is_compute_scalar_metrics = True
         if is_compute_scalar_metrics:
             
             for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
@@ -288,7 +319,8 @@ def main(args):
                     predictions = trainer.forward_ntimes(sample, is_training=False,n=args.n_eval_dropout, return_moments=False)
                 else:
                     predictions = trainer.model(sample, is_training=False)
-                trainer.update_sum_val(predictions,y)
+                info = sample['info'] if 'info' in sample.keys() else None
+                trainer.update_sum_val(predictions,y, info)
             metrics = trainer.summaries_val(step=epoch_)
         else:
             metrics = None
