@@ -340,7 +340,7 @@ class DataReader(object):
                 self.train_info = check_path(self.train_info,basepath)
 
                 reload_ = False
-                print(f'loaded train data from {file_dataset}')
+                print(f'loaded train data from {file_dataset} n={len(self.train)}')
             else:
                 print('not all keys matched, will reload',file_dataset)
         else:
@@ -381,7 +381,7 @@ class DataReader(object):
                     json.dump(self.lims_labels, fp,  indent=4)
                 with open(file_dataset+'/train_info.json', 'w') as fp:
                     json.dump(self.train_info, fp,  indent=4)
-                print('saved dataset in',file_dataset)
+                print(f'saved dataset in {file_dataset} n={len(self.train)}')
 
 
         if self.args.unlabeled_data is not None:
@@ -465,7 +465,7 @@ class DataReader(object):
                 self.val_info = check_path(self.val_info,basepath)
 
                 reload_ = False
-                print(f'loaded val data from {file_dataset}')
+                print(f'loaded val data from {file_dataset} n={len(self.val)}')
             else:
                 print('not all keys matched, will reload',file_dataset)
         else:
@@ -505,7 +505,7 @@ class DataReader(object):
                     json.dump(self.lims_labels_val, fp,  indent=4)
                 with open(file_dataset+'/val_info.json', 'w') as fp:
                     json.dump(self.val_info, fp,  indent=4)
-                print('saved dataset in',file_dataset)
+                print(f'saved dataset in {file_dataset} n={len(self.val)}')
 
 
         self.val_tilenames = [x['tilename'] for x in self.val_info]
