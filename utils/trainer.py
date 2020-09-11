@@ -1,5 +1,7 @@
 import tensorflow as tf
 import numpy as np
+import pickle
+
 cross_entropy = tf.compat.v1.losses.sparse_softmax_cross_entropy
 
 # from AdaBound import AdaBoundOptimizer
@@ -379,4 +381,13 @@ class Trainer():
         else:
             raise NotImplementedError
 
+    def save_optimizer_state(self, file='optimizer.pkl'):
+        weights = self.optimizer.get_weights()
+        with open(file, 'wb') as f:
+            pickle.dump(weights, f)
 
+    def load_optimizer_state(self,file='optimizer.pkl'):
+        #self.model._make_train_function()
+        with open(file, 'rb') as f:
+            weight_values = pickle.load(f)
+        self.optimizer.set_weights(weight_values)

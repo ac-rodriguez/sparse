@@ -191,10 +191,14 @@ def main(args):
     args.model_dir = model_dir
     filename = 'FLAGS' if args.is_train else 'FLAGS_pred'
     if args.is_restore:
-        raise NotImplementedError('optimizer states are not saved!')
-        # assert args.warm_start_from is None, 'use only one flag'
-        # args.warm_start_from = tools.get_last_best_ckpt(model_dir, folder='best/*')
+        # raise NotImplementedError('optimizer states are not saved!')
+        assert args.warm_start_from is None, 'use only one flag'
+        restore_from = tools.get_last_best_ckpt(model_dir, folder='last/*')
+        restore_opt_from = restore_from.replace('model.ckpt','optimizer.pkl')
+        assert os.path.isfile(restore_opt_from)
+        epoch_start = int(restore_from.split('/')[-2])
     else:
+        epoch_start = 0
         save_parameters(args, model_dir, sys.argv, name=filename)
 
     trainer = Trainer(args)
@@ -207,7 +211,8 @@ def main(args):
         trainer.model.inputnorm = tools.InputNorm(reader.mean_train,reader.std_train)
         if args.warm_start_from is not None:
             trainer.model.load_weights(args.warm_start_from)
-            print('loaded weights from ', args.warm_start_from)
+            print('loaded weights from', args.warm_start_from)
+
         train_ds = iter(reader.input_fn(type='train'))
         val_ds = iter(reader.input_fn(type='val'))
 
@@ -226,12 +231,17 @@ def main(args):
             best = 0.0
         # print(best, metric_)
         is_predict_and_recompose=False
-        epoch_iter = tqdm.trange(args.epochs, desc=f'epoch 0 ({metric_}:{best})')
+        epoch_iter = tqdm.trange(epoch_start,args.epochs, desc=f'epoch {epoch_start} ({metric_}:{best})')
         for epoch_ in epoch_iter:
             for id_train in tqdm.trange(train_iters, desc='train',disable=False):
                 sample  = next(train_ds)
                 y = sample['label']
                 y_hat = trainer.train_step(sample,y)
+                if args.is_restore and epoch_ == epoch_start and id_train == 0: 
+                    # i.e. first iteration. we needed the first train_step to have the optimizer initialized
+                    trainer.model.load_weights(restore_from)
+                    trainer.load_optimizer_state(file=restore_opt_from)
+                    y_hat = trainer.train_step(sample,y)
                 if np.mod(id_train,args.logsteps) == 0:
                     trainer.update_sum_train(y, y_hat)
                     trainer.summaries_train(step=epoch_*train_iters+id_train)
@@ -255,8 +265,8 @@ def main(args):
                 if comp_fn(best, metrics[metric_]):
                     
                     epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{metrics[metric_]:.2f} prev. {best:.2f})')
-                    best = metrics[metric_]
-                    trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
+                    #best = metrics[metric_]
+                    #trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
                     if is_predict_and_recompose:
                         #input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
                         input_fn_val_comp = None
@@ -267,7 +277,9 @@ def main(args):
                                             is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
                 trainer.val_writer.flush()
                 trainer.reset_sum_val()
-        trainer.model.save_weights(f'{trainer.model_dir}/last/{epoch_}/model.ckpt')
+                trainer.model.save_weights(f'{trainer.model_dir}/last/{epoch_}/model.ckpt')
+                trainer.save_optimizer_state(f'{trainer.model_dir}/last/{epoch_}/optimizer.pkl')
+                
         print('Finished training, saved last model ')
         if args.save_arrays:
             plt_reg = lambda x, file: plots.plot_heatmap(x, file=file, min=-1, max=2.0, cmap='viridis')
