@@ -13,7 +13,7 @@ from utils.trainer import Trainer
 
 from data_config import get_dataset
 import utils.tools_tf as tools
-from utils.predict_and_recompose import predict_and_recompose_individual,predict_and_recompose
+from utils.predict_and_recompose import predict_and_recompose_individual,predict_and_recompose, predict_and_recompose_with_metrics
 
 parser = argparse.ArgumentParser(description="Partial Supervision",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -180,7 +180,7 @@ def main(args):
         model_dir = add_letter_path(model_dir, timestamp=False)
 
     if not args.is_train:
-        ckpt = tools.get_last_best_ckpt(model_dir, folder='best/*')
+        ckpt = tools.get_last_best_ckpt(model_dir, folder='last/*')
         args.ckpt = ckpt
         if not args.is_overwrite_pred:
             assert not os.path.isfile(os.path.join(model_dir,'test_sem_pred.png')), 'predictions exist'
@@ -191,18 +191,22 @@ def main(args):
     args.model_dir = model_dir
     filename = 'FLAGS' if args.is_train else 'FLAGS_pred'
     if args.is_restore:
-        # raise NotImplementedError('optimizer states are not saved!')
         assert args.warm_start_from is None, 'use only one flag'
         restore_from = tools.get_last_best_ckpt(model_dir, folder='last/*')
         restore_opt_from = restore_from.replace('model.ckpt','optimizer.pkl')
         assert os.path.isfile(restore_opt_from)
         epoch_start = int(restore_from.split('/')[-2])
+        print('starting with epoch', epoch_start)
     else:
         epoch_start = 0
         save_parameters(args, model_dir, sys.argv, name=filename)
 
     trainer = Trainer(args)
-
+    metrics = None
+    is_compute_scalar_metrics = False
+    is_predict_and_recompose = True
+    assert not (is_compute_scalar_metrics and is_predict_and_recompose), 'summaries have the same names'
+    
     if args.is_train:
 
         reader = DataReader(args, datatype='trainval')
@@ -214,23 +218,20 @@ def main(args):
             print('loaded weights from', args.warm_start_from)
 
         train_ds = iter(reader.input_fn(type='train'))
-        val_ds = iter(reader.input_fn(type='val'))
-
-        val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
+        
         train_iters = np.sum(reader.patch_gen.nr_patches) // args.batch_size
-        is_debug = False
-        if is_debug:
-            train_iters, val_iters = 10,10
+        trainer.is_debug = True
+        if trainer.is_debug:
+            train_iters = 10
         if args.lambda_reg == 1:
-            metric_ = 'mae'
+            metric_ = 'val_mae'
             comp_fn = lambda best, new: best > new
             best = 99999.0
         else:
-            metric_ = 'iou'
+            metric_ = 'val_iou'
             comp_fn = lambda best, new: best < new
             best = 0.0
-        # print(best, metric_)
-        is_predict_and_recompose=False
+        
         epoch_iter = tqdm.trange(epoch_start,args.epochs, desc=f'epoch {epoch_start} ({metric_}:{best})')
         for epoch_ in epoch_iter:
             for id_train in tqdm.trange(train_iters, desc='train',disable=False):
@@ -250,31 +251,13 @@ def main(args):
             trainer.reset_sum_train()
 
             if np.mod(epoch_,args.eval_every) == 0:
-                for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
-                    sample = next(val_ds)
-                    y = sample['label']
-                    if args.is_dropout_uncertainty:
-                        predictions = trainer.forward_ntimes(sample, is_training=False,n=args.n_eval_dropout, return_moments=False)
-                    else:
-                        predictions = trainer.model(sample, is_training=False)
-                    info = sample['info'] if 'info' in sample.keys() else None
-                    trainer.update_sum_val(predictions,y, info)
-                metrics = trainer.summaries_val(step=epoch_)
-
-                # print(metrics)
-                if comp_fn(best, metrics[metric_]):
-                    
+                if is_compute_scalar_metrics:
+                    metrics = trainer.validate_dataset_patches(epoch_, reader, args)
+                if is_predict_and_recompose:
+                    metrics = predict_and_recompose_with_metrics(trainer,reader,args, prefix=f'last/{epoch_}',epoch_=epoch_)
+                if metrics is not None:
                     epoch_iter.set_description(f'epoch {epoch_} ({metric_}:{metrics[metric_]:.2f} prev. {best:.2f})')
-                    #best = metrics[metric_]
-                    #trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
-                    if is_predict_and_recompose:
-                        #input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
-                        input_fn_val_comp = None
-                        predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
-                                            args.batch_size_eval, 'val',
-                                            prefix='best/{}'.format(epoch_), is_reg=(args.lambda_reg > 0.),
-                                            is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_,
-                                            is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
+
                 trainer.val_writer.flush()
                 trainer.reset_sum_val()
                 trainer.model.save_weights(f'{trainer.model_dir}/last/{epoch_}/model.ckpt')
@@ -292,14 +275,8 @@ def main(args):
                 except AttributeError:
                     pass
         if is_predict_and_recompose:
-            # input_fn_val_comp = reader.get_input_val(is_restart=True,as_list=True)
-            input_fn_val_comp = None # will be defined inside predict_and_recompose
+            metrics = predict_and_recompose_with_metrics(trainer,reader,args, prefix=f'last/{epoch_}',epoch_=epoch_)
 
-            predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val,
-                                        False, args.batch_size_eval,'val',
-                                        is_reg=(args.lambda_reg > 0.), is_sem=(args.lambda_reg < 1.0),
-                                        chkpt_path=tools.get_last_best_ckpt(trainer.model_dir, 'best/*'), 
-                                        is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout)
             np.save('{}/train_label'.format(model_dir), reader.labels)
             np.save('{}/val_label'.format(model_dir), reader.labels_val)
             if len(args.test) > 0: 
@@ -310,42 +287,17 @@ def main(args):
                 print('done, no test data was provided')
 
     else:
-        # assert os.path.isdir(args.model_dir)
-        chkpt_path = tools.get_last_best_ckpt(args.model_dir, folder='best/*')
+        chkpt_path = tools.get_last_best_ckpt(args.model_dir, folder='last/*')
         reader = DataReader(args, datatype='val')
-        val_ds = iter(reader.input_fn(type='val'))
-        val_iters = np.sum(reader.patch_gen_val_rand.nr_patches) // args.batch_size_eval
 
         trainer.model.inputnorm = tools.InputNorm(n_channels=13 if args.is_use_location else 11)
         trainer.model.load_weights(chkpt_path)
 
-        epoch_ = 0
-        is_compute_scalar_metrics = True
+        epoch_ = int(chkpt_path.split('/')[-2])
         if is_compute_scalar_metrics:
-            
-            for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
-                sample = next(val_ds)
-                y = sample['label']
-                sample['feat_l'] = trainer.model.inputnorm(sample['feat_l'])
-                if args.is_dropout_uncertainty:
-                    predictions = trainer.forward_ntimes(sample, is_training=False,n=args.n_eval_dropout, return_moments=False)
-                else:
-                    predictions = trainer.model(sample, is_training=False)
-                info = sample['info'] if 'info' in sample.keys() else None
-                trainer.update_sum_val(predictions,y, info)
-            metrics = trainer.summaries_val(step=epoch_)
-        else:
-            metrics = None
-
-        prefix_ = f'{trainer.val_dirname}/{epoch_}'
-        # input_fn_val_comp = reader.get_input_val(is_restart=True, as_list=True)
-        input_fn_val_comp = None # will be defined inside predict_and_recompose
-        predict_and_recompose(trainer, reader, input_fn_val_comp, reader.single_gen_val, False,
-                                args.batch_size_eval, 'val',
-                                prefix=prefix_, is_reg=(args.lambda_reg > 0.),
-                                is_sem=(args.lambda_reg < 1.0), m=metrics, epoch_=epoch_,
-                                is_dropout=args.is_dropout_uncertainty, n_eval_dropout=args.n_eval_dropout, is_input_norm=True)
-        # trainer.model.save_weights(f'{trainer.model_dir}/best/{epoch_}/model.ckpt')
+            metrics = trainer.validate_dataset_patches(epoch_, reader, args)
+        if is_predict_and_recompose:
+            metrics = predict_and_recompose_with_metrics(trainer,reader,args, prefix=f'last/{epoch_}',epoch_=epoch_)
         trainer.val_writer.flush()
 
 

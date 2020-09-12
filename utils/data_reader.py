@@ -242,8 +242,10 @@ class DataReader(object):
                     PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
                                                              label=self.labels_val[val_dset_],
                                                              patch_l=self.patch_l_eval, n_workers=self.n_workers, max_queue_size=10,
-                                                             is_random=False, border=4,
-                                                             scale=self.scale, lims_with_labels=self.lims_labels_val[val_dset_],
+                                                             is_random=False,
+                                                             border=4,
+                                                             scale=self.scale,
+                                                             lims_with_labels=self.lims_labels_val[val_dset_],
                                                              patches_with_labels=self.args.patches_with_labels,
                                                              two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False,
                                                              ds_info=self.val_info[val_dset_]))
@@ -254,8 +256,9 @@ class DataReader(object):
                         PatchExtractor(dataset_low=self.val[val_dset_], dataset_high=self.val_h[val_dset_],
                                                              label=self.labels_val[val_dset_],
                                                              patch_l=self.patch_l_eval, n_workers=self.n_workers, max_queue_size=10,
-                                                             is_random=True, border=4,
-                                                             scale=args.scale, max_N=args.val_patches,
+                                                             is_random=True, max_N=args.val_patches,
+                                                             border=4,
+                                                             scale=self.scale, 
                                                              lims_with_labels=self.lims_labels_val[val_dset_],
                                                              patches_with_labels=self.args.patches_with_labels,
                                                              two_ds=self.two_ds, use_location=args.is_use_location,is_use_queues=False,
@@ -265,7 +268,8 @@ class DataReader(object):
 
                     self.single_gen_rand_val.append(self.single_gen_val[-1])
 
-            self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=self.args.n_workers, max_queue_size=self.args.batch_size*2)
+            #self.patch_gen_val_rand = PatchWraper(self.single_gen_rand_val, n_workers=self.args.n_workers, max_queue_size=self.args.batch_size*2)
+            self.patch_gen_val_complete = PatchWraper(self.single_gen_val, n_workers=self.args.n_workers, max_queue_size=self.args.batch_size*2, name='Patch_val', is_random=False)
             print(f'active_threads Train {threading.active_count()}')
         if self.datatype == 'test':
             self.prepare_test_data()
@@ -763,7 +767,7 @@ class DataReader(object):
             id_ = int(id_)
             ref_patch_gen = self.single_gen_val[id_]
         elif type == 'test':
-            ref_patch_gen = self.patch_gen_test
+            # ref_patch_gen = self.patch_gen_test
             raise NotImplementedError
         elif 'test_complete' in type:
             type,id_ = type.split('-')
@@ -773,7 +777,7 @@ class DataReader(object):
             sys.exit(1)
 
         dict_sample = ref_patch_gen.__getitem__(0)
-        gen_func = ref_patch_gen.get_iter
+        gen_func = ref_patch_gen.get_iter_patch
         
         ds = tf.data.Dataset.from_generator(
                 gen_func,
@@ -793,7 +797,7 @@ class DataReader(object):
         if 'test' not in type:
             ds = ds.map(self.normalize, num_parallel_calls=6)
 
-        ds = ds.prefetch(buffer_size=batch * 2)
+        ds = ds.prefetch(tf.data.experimental.AUTOTUNE)
         return ds
 
     def get_input_fn(self, is_val_random=False):

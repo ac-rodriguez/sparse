@@ -37,7 +37,7 @@ class BasePatch:
         self.stop_event.set()
         def consumer_():
             while True:
-                out_ = self.inputs_queue.get()
+                out_ = self.get_inputs()
                 self.inputs_queue.task_done()
                 if out_ is None:
                     break
@@ -56,13 +56,15 @@ class BasePatch:
         threads_ =  threading.active_count()
         if hasattr(self,'inputs_queue'):
             self.finish_threads()
-        
+        self.rand_ind = 0
         self.define_queues()
         print(f"Active threads after redefine: {threading.active_count()} (was {threads_})")
 
     def _inputs_producer(self):
         raise NotImplementedError
-
+    def __getitem__(self,index):
+        raise NotImplementedError
+    
     def get_inputs(self):
         try:
             input = self.inputs_queue.get(timeout=30)
@@ -73,18 +75,30 @@ class BasePatch:
 
     def get_iter(self):
         while True:
+        # while not self.stop_event.is_set():
+            #inputs_ = self.get_inputs()
+            #if inputs_ is not None:
+            #    yield inputs_
+            #else:
+            #    break
             yield self.get_inputs()
 
-    def get_iter_test(self):
-        while True:
-            yield self.get_inputs()
+    #def get_iter_test(self):
+    #    while True:
+    #        yield self.get_inputs()
+    def get_iter_patch(self):
+        for index in range(len(self)):
+#        while self.rand_ind < len(self):
+#            index = np.mod(self.rand_ind, len(self))
+#            self.rand_ind +=1
+            yield self.__getitem__(index)
 
 import random
 class PatchWraper(BasePatch):
-    def __init__(self, extractors,max_queue_size=4,n_workers=1):
+    def __init__(self, extractors,max_queue_size=4,n_workers=1, name ='Patch_wraper', is_random=True):
         self.add_info = True
         self.extractors = [x for x in extractors if x.any_valid_pixels]
-        super(PatchWraper, self).__init__('Patch_wraper',max_queue_size,n_workers)
+        super(PatchWraper, self).__init__(name,max_queue_size,n_workers)
 
         self.nr_patches = [len(x.indices1) for x in self.extractors]
         self.n_pixels = [(x.d_l.shape[0]*x.d_l.shape[1]) for x in self.extractors]
@@ -93,12 +107,14 @@ class PatchWraper(BasePatch):
         #print(f' Fetch Prob. {self.weights}')
         #self.indices1 = np.random.choice(len(self.extractors),size=100,p=self.weights)
         self.indices1 = [(id, id1) for id, ext in enumerate(self.extractors) for id1 in range(len(ext.indices1))]
-        random.shuffle(self.indices1)
+        if is_random:
+            random.shuffle(self.indices1)
         self.rand_ind = 0
-        self.define_queues()
+        # self.define_queues()
 
     def _inputs_producer(self):
-        while not self.stop_event.is_set():
+        #while not self.stop_event.is_set():
+        while self.rand_ind < len(self):
             with self.lock:
                 index = np.mod(self.rand_ind, len(self))
                 self.rand_ind +=1
@@ -281,7 +297,8 @@ class PatchExtractor(BasePatch):
                     is_correct =  not self.is_clouded(patches)
                 self.inputs_queue.put(patches)
         else:
-            while not self.stop_event.is_set():
+#            while not self.stop_event.is_set():
+            while self.rand_ind < len(self):
                 with self.lock:
                     index = np.mod(self.rand_ind, len(self))
                     self.rand_ind +=1

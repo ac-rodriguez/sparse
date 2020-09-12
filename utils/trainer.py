@@ -1,6 +1,7 @@
 import tensorflow as tf
 import numpy as np
 import pickle
+import tqdm
 
 cross_entropy = tf.compat.v1.losses.sparse_softmax_cross_entropy
 
@@ -40,6 +41,7 @@ class Trainer():
         self.model_name = self.args.model
         self.two_ds = True
         self.n_classes = 1
+        self.is_debug = False
         if 'palmcoco' in self.args.dataset:
             self.n_classes = 2
         elif hasattr(self.args,'save_dir'):
@@ -117,6 +119,11 @@ class Trainer():
         return self.float_(w)
 
     def get_sem(self,lab, return_w = False):
+        if len(lab.shape) == 3:
+            if isinstance(lab,np.ndarray):
+                lab = lab[...,np.newaxis]
+            else:
+                lab = lab[...,tf.newaxis]
         int_ = lambda x: tf.cast(x, dtype=tf.int32)
         w = self.get_w(lab)
 
@@ -250,7 +257,41 @@ class Trainer():
 
                         self.val_metrics_sem[key](y_true=label_sem, y_pred=y_pred_,
                                                 sample_weight=w_*info_bool)
+
+    def update_sum_val_aggr_reg(self, predictions, labels, info=None):
+        predictions = predictions[np.newaxis,...,np.newaxis]
+        labels = labels[np.newaxis,...,np.newaxis]
+
+        w_reg = self.get_w(labels, is_99=True)
+        for key in self.val_metrics_reg.keys():
+            if key.startswith('val_'):
+                self.val_metrics_reg[key](y_true=labels, y_pred=predictions, # ['reg'],
+                                                            sample_weight=w_reg)
+            elif info is not None:
+                key_ = key.replace('/','_').rsplit('_',1)[0]
+                if key_ == info:
+                    self.val_metrics_reg[key](y_true=labels, y_pred=predictions, #['reg'],
+                                            sample_weight=w_reg)
+
                 
+    def update_sum_val_aggr_sem(self, predictions, labels, info=None):
+        predictions = predictions[np.newaxis,...,np.newaxis]
+        labels = labels[np.newaxis,...,np.newaxis]
+        label_sem, w = self.get_sem(labels, return_w=True)
+
+        w_ = self.float_(tf.reduce_any(tf.greater(w, 0), -1))
+        pred_class = tf.argmax(input=predictions, axis=3)
+        for key in self.val_metrics_sem.keys():
+            y_pred_ = predictions if 'ce' in key or 'acc' in key else pred_class
+            if key.startswith('val_'):
+                self.val_metrics_sem[key](y_true=label_sem, y_pred=y_pred_, sample_weight=w_)
+            elif info is not None:
+                key_ = key.replace('/','_').rsplit('_',1)[0]
+                if key_ == info:
+                    self.val_metrics_sem[key](y_true=label_sem, y_pred=y_pred_,
+                                            sample_weight=w_)
+
+
     def reset_sum_val(self):
         for key in self.val_metrics_reg.keys():
             self.val_metrics_reg[key].reset_states()
@@ -267,8 +308,8 @@ class Trainer():
             if self.args.lambda_reg < 1.0:    
                 for key in self.val_metrics_sem.keys():
                     tf.summary.scalar(key.replace('_','/'),self.val_metrics_sem[key].result(),step=step)
-        dict_reg = {k.split('_')[-1]:v.result().numpy() for k, v in self.val_metrics_reg.items()}
-        dict_sem = {k.split('_')[-1]:v.result().numpy() for k, v in self.val_metrics_sem.items()}
+        dict_reg = {k:v.result().numpy() for k, v in self.val_metrics_reg.items()}
+        dict_sem = {k:v.result().numpy() for k, v in self.val_metrics_sem.items()}
         
         return {**dict_reg,**dict_sem}
             
@@ -348,6 +389,29 @@ class Trainer():
                 out_dict[key] = tf.reduce_mean(stacked,axis=0)
 
         return out_dict
+
+    def validate_dataset_patches(self, epoch_, reader, args):
+        
+        if self.is_debug:
+            val_iters = 10
+        else:
+            val_iters = np.sum(reader.patch_gen_val_complete.nr_patches) // args.batch_size_eval
+        
+        val_ds = iter(reader.input_fn(type='val_complete'))
+        for _ in tqdm.trange(val_iters, desc=f'val (epoch {epoch_})'):
+            sample = next(val_ds)
+            y = sample['label']
+            if not args.is_train:
+                sample['feat_l'] = self.model.inputnorm(sample['feat_l'])
+            if args.is_dropout_uncertainty:
+                predictions = self.forward_ntimes(sample, is_training=False,n=args.n_eval_dropout, return_moments=False)
+            else:
+                predictions = self.model(sample, is_training=False)
+            info = sample['info'] if 'info' in sample.keys() else None
+            self.update_sum_val(predictions,y, info)
+        metrics = self.summaries_val(step=epoch_)
+
+        return metrics
 
 
     # def get_optimiter(self):

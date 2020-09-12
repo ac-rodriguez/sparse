@@ -17,6 +17,123 @@ def save_m(name, m):
             value = m[key]
             f.write('%s:%s\n' % (key, value))
 
+
+
+def predict_and_recompose_with_metrics(trainer, reader, args, prefix, epoch_):
+    #  input_fn, patch_generator, is_hr_pred, batch_size, type_,
+                        #   prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None,
+                        #    epoch_=0,is_dropout=False, n_eval_dropout=5, is_input_norm=False):
+    model_dir = trainer.model_dir
+    save_dir = os.path.join(model_dir, prefix)
+    batch_size = args.batch_size_eval
+    patch_generator = reader.single_gen_val
+    if not os.path.isdir(save_dir): os.makedirs(save_dir)
+    #if m is not None:
+    #    save_m(save_dir + '/metrics.txt', m)
+    plt_reg = lambda x: plots.plot_heatmap(x, cmap='viridis', percentiles=(0, 100), min=0, max=2.0)
+
+    if not isinstance(patch_generator,list):
+        patch_generator = [patch_generator]
+    predictions = {'reg':[],'sem':[]}
+    for id_ in  trange(len(patch_generator), disable=False ,desc='predicting each dataset'):
+        patch = patch_generator[id_].patch_l
+        border = patch_generator[id_].border
+        #assert 'val' in type_
+        ref_data = reader.val[id_]
+
+        ref_size = (ref_data.shape[1], ref_data.shape[0])
+        nr_patches = patch_generator[id_].nr_patches
+
+        batch_idxs = int(np.ceil(nr_patches / batch_size))
+
+        # if is_reg:
+        pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, reader.n_classes]))
+        # if is_sem:
+        pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
+        # patch_generator[id_].define_queues()
+        # if input_fn is None:
+        input_fn_ = reader.input_fn(type=f'val_complete-{id_}')
+        input_iter = iter(input_fn_)
+        # else:
+            # # patch_generator[id_].redefine_queues()
+            # input_iter = iter(input_fn[id_])
+
+        for idx in trange(batch_idxs,disable=True):
+            x = next(input_iter)
+            if not args.is_train:
+                x['feat_l'] = trainer.model.inputnorm(x['feat_l'])
+            if args.is_dropout_uncertainty:
+                p_ = trainer.forward_ntimes(x, is_training=False,n=args.n_eval_dropout, return_moments=False)
+            else:
+                p_ = trainer.model(x, is_training=False)
+            start = idx * batch_size
+            stop = start + p_['reg'].shape[0]
+            if stop > nr_patches:
+                last_batch = nr_patches - start
+                pred_r_rec[start:stop] = p_['reg'][0:last_batch]
+            else:
+                pred_r_rec[start:stop] = p_['reg']
+
+            stop = start + p_['sem'].shape[0]
+            if stop > nr_patches:
+                last_batch = nr_patches - start
+                pred_c_rec[start:stop] = np.argmax(p_['sem'][0:last_batch], axis=-1)
+            else:
+                pred_c_rec[start:stop] = np.argmax(p_['sem'], axis=-1)
+        data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
+        predictions['reg'].append(data_r_recomposed)
+
+        data_c_recomposed = patches.recompose_images(pred_c_rec, size=ref_size, border=border)
+        predictions['sem'].append(data_c_recomposed)
+
+    ref_data = reader.val
+
+    ref_names = [x.name for x in patch_generator]
+
+    for tile in tqdm(set(ref_names), desc='aggregating per location'):
+        index = [tile == x for x in ref_names]
+        reg = list(compress(predictions['reg'], index))
+        val_data = list(compress(ref_data,index))
+        for i_, reg_ in enumerate(reg):
+            reg_[np.isnan(val_data[i_][..., -1])] = np.nan
+
+        assert len(set([x.shape for x in reg])) == 1
+        
+        reg = np.stack(reg, axis=-1)
+        reg = np.nanmedian(reg, axis=-1)
+        # if is_add_labels:
+        val_labels = list(compress(reader.labels_val,index))[0]
+        
+        for j in range(reg.shape[-1]):
+            with trainer.val_writer.as_default():
+                im = plt_reg(reg[...,j])
+                im_lab = plt_reg(val_labels[...,j])
+                img_summary = np.concatenate((np.array(im),np.array(im_lab)),axis=1)[np.newaxis]
+                tf.summary.image(f'val/{tile}/reg/class{j}', img_summary, step=epoch_)
+                trainer.update_sum_val_aggr_reg(reg[...,j],val_labels[...,j], f'{tile}')
+
+        # sem = list(compress(predictions['sem'], index))
+        # val_data = list(compress(ref_data, index))
+        # for i_, sem_ in enumerate(sem):
+        #     sem_[np.isnan(val_data[i_][..., -1])] = np.nan
+        # shapes = set([x.shape for x in sem])
+        # for i, s in enumerate(shapes):
+        #     sem_sameshape = [x for x in sem if s == x.shape]
+
+        #     sem_sameshape = np.stack(sem_sameshape, axis=-1)
+        #     sem_sameshape = np.nanmedian(sem_sameshape, axis=-1)
+
+        #     np.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}',sem_sameshape)
+        #     im = plots.plot_labels(sem_sameshape, return_img=True)
+        #     # im.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}.png')
+
+        #     with trainer.val_writer.as_default():
+        #         tf.summary.image(f'{type_}/sem_pred{tile}_{i}', np.array(im)[np.newaxis], step=epoch_)
+    metrics = trainer.summaries_val(step=epoch_)
+
+    save_m(save_dir + '/metrics.txt', metrics)
+    return metrics
+
 def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred, batch_size, type_,
                           prefix='', is_reg=True, is_sem=True, return_array=False, m=None, chkpt_path=None,
                            epoch_=0,is_dropout=False, n_eval_dropout=5, is_input_norm=False):
@@ -32,7 +149,7 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
     if not isinstance(patch_generator,list):
         patch_generator = [patch_generator]
     predictions = {'reg':[],'sem':[]}
-    for id_ in  trange(len(patch_generator), disable=False):
+    for id_ in  trange(len(patch_generator), disable=False ,desc='predicting each dataset'):
     # for id_ in  trange(10, disable=False):
 
         patch = patch_generator[id_].patch_l
@@ -54,12 +171,12 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
             pred_r_rec = np.zeros(shape=([nr_patches, patch, patch, reader.n_classes]))
         if is_sem:
             pred_c_rec = np.zeros(shape=([nr_patches, patch, patch]))
-        patch_generator[id_].define_queues()
+        # patch_generator[id_].define_queues()
         if input_fn is None:
             input_fn_ = reader.input_fn(type=f'val_complete-{id_}')
             input_iter = iter(input_fn_)
         else:
-            patch_generator[id_].redefine_queues()
+            # patch_generator[id_].redefine_queues()
             input_iter = iter(input_fn[id_])
 
         # print('Predicting {} Patches...'.format(nr_patches))
@@ -89,7 +206,7 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
         #     del reader
         # print(ref_size)
         ## Recompose RGB
-        patch_generator[id_].finish_threads()
+        # patch_generator[id_].finish_threads()
         if is_reg:
             data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
             predictions['reg'].append(data_r_recomposed)
@@ -116,7 +233,7 @@ def predict_and_recompose(trainer, reader, input_fn, patch_generator, is_hr_pred
             ref_tiles = reader.test_tilenames
             ref_data = reader.test
 
-        for tile in set(ref_tiles):
+        for tile in tqdm(set(ref_tiles), desc='aggregating per location'):
             index = [tile == x for x in ref_tiles]
             if is_reg:
                 reg = list(compress(predictions['reg'], index))
@@ -372,12 +489,12 @@ def predict_and_recompose_individual_MC(trainer, reader, input_fn, patch_generat
         #if 'reg' in keys_reconstruct: 
         #    pred_rec['reg'] = np.zeros(shape=([nr_patches, patch, patch, reader.n_classes, 2]))
         pred_rec = {key:[] for key in keys_reconstruct}
-        patch_generator[id_].define_queues()
+        # patch_generator[id_].define_queues()
         if input_fn is None:
             input_fn_ = reader.input_fn(type=f'test_complete-{id_}')
             input_iter = iter(input_fn_)
         else:
-            patch_generator[id_].redefine_queues()
+            # patch_generator[id_].redefine_queues()
             input_iter = iter(input_fn[id_])            
 
         for idx in tqdm(range(0, batch_idxs), disable=None, desc='predicting'):
