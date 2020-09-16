@@ -220,7 +220,7 @@ def main(args):
         train_ds = iter(reader.input_fn(type='train'))
         
         train_iters = np.sum(reader.patch_gen.nr_patches) // args.batch_size
-        trainer.is_debug = True
+        trainer.is_debug = False
         if trainer.is_debug:
             train_iters = 10
         if args.lambda_reg == 1:

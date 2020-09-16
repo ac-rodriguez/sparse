@@ -448,9 +448,9 @@ class DataReader(object):
         is_save_or_load_file = True
         reload_ = True
         file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],self.args.dataset,'tmp_data')
-        #if 'palm4748a' in self.args.dataset:
-        #    file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],'palm4748a','tmp_data')
-        #    print('looking for', file_dataset)
+        if 'palm4748a' in self.args.dataset:
+           file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],'palm4748a','tmp_data')
+           print('looking for', file_dataset)
         if os.path.isfile(file_dataset+'/dict_id_lab_val.json') and is_save_or_load_file:
             with open(file_dataset+'/dict_id_lab_val.json', 'r') as fp:
                 list_keys = json.load(fp)
@@ -792,6 +792,7 @@ class DataReader(object):
             # ds = ds.shuffle(buffer_size=batch * 5)
             if self.args.is_masking:
                 ds = ds.map(self.add_spatial_masking)
+            ds = ds.repeat()
 
         ds = ds.batch(batch)
         if 'test' not in type:

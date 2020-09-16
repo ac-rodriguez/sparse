@@ -512,7 +512,7 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
     #         GT=list_datasets,
     #         loc='palmcountries_2017',
     #         top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
-    elif 'palm4' in DATASET:
+    elif 'palm4' in DATASET and not 'palm4748':
 
         OBJECT = 'palm'
         top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
@@ -559,15 +559,16 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
             dict_base = json.load(json_file)
 
         # TRAIN
-        list_datasets = dict_base['train']
-        list_datasets = [f'{PATH}/barry_palm/data/labels/manual_annotations/{x}' for x in list_datasets]
+        if not DATASET.endswith('rd'):
+            list_datasets = dict_base['train']
+            list_datasets = [f'{PATH}/barry_palm/data/labels/manual_annotations/{x}' for x in list_datasets]
 
-        tilenames_tr = list({x.split('/')[-2] for x in list_datasets})
+            tilenames_tr = list({x.split('/')[-2] for x in list_datasets})
 
-        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
-            GT=list_datasets,
-            loc='palmcountries_2017',
-            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+            add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+                GT=list_datasets,
+                loc='palmcountries_2017',
+                top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
         
         # VAL
         list_datasets = dict_base['val']
@@ -844,21 +845,33 @@ if __name__ == '__main__':
             json.dump(config, fp)
         print('saved', filename)
 
-    save_csv(args.dataset,args.save_dir)
+    # save_csv(args.dataset,args.save_dir)
 
-    # seed_dict = {'a':1,'b':2,'c':3,'d':4,'e':5}
+    seed_dict = {'a':1,'b':2,'c':3,'d':4,'e':5}
 
-    # out_dict = {}
-    # M_list = [10,15,30,50]
-    # for is_random_only in [True, False]:
-    #     for M in M_list:
-    #         for rand_option in seed_dict.keys():
+    out_dict = {}
+    M_list = [5, 10, 15, 30, 50]
+    types_list  = ['active','random','randomdummy','activeopt']
 
-    #             key_ = f'{M}{rand_option}'
-    #             if is_random_only:
-    #                 key_ = key_ + 'r'
-    #             print(key_)
-    #             save_csv(dataset='palm4748a_'+ key_,
-    #                      save_dir=args.save_dir)
+    for type_ in types_list:
+        for M in M_list:
+            for rand_option in seed_dict.keys():
+                if type_ == 'random':
+                    key_ = f'{M}{rand_option}r'
+                elif type_ == 'active':
+                    key_ = f'{M}{rand_option}'
+                elif type_ == 'randomdummy':
+                    key_ = f'{M}{rand_option}rd'
+                if type_ == 'activeopt':
+                    if rand_option == 'a':
+                    # choose the top weights_ only for key a
+                        key_ = f'{M}opt'
+                        print(key_)
+                        save_csv(dataset='palm4748a_'+ key_,
+                                save_dir=args.save_dir)
+                else:
+                    print(key_)
+                    save_csv(dataset='palm4748a_'+ key_,
+                            save_dir=args.save_dir)
     
-    # print('done')
+    print('done')
