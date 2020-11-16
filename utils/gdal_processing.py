@@ -107,7 +107,7 @@ def get_name_extent(file):
                 numpoints = ring.GetPointCount()
                 pointsX = []; pointsY = []
                 for p in range(numpoints):
-                    lon, lat, z = ring.GetPoint(p)
+                    lon, lat, _ = ring.GetPoint(p)
                     pointsX.append(lon)
                     pointsY.append(lat)
 
@@ -495,44 +495,44 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
     filename = filename.replace('.tif', f'_{compression}.tif')
 
     if compression== "0":
-        compression = ['alpha=yes']
+        options = ['alpha=yes']
     elif compression == "11":
-        compression = ['alpha=yes',
+        options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=1',
             'ZSTD_LEVEL=9']
     elif compression == "12":
-        compression = ['alpha=yes',
+        options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=2',
             'ZSTD_LEVEL=9']
     elif compression == "13":
-        compression = ['alpha=yes',
+        options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=ZSTD',
             'PREDICTOR=3',
             'ZSTD_LEVEL=9']
     elif compression == "21":
-        compression = ['alpha=yes',
+        options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=LZW',
             'PREDICTOR=1']
     elif compression == "22":
-        compression = ['alpha=yes',
+        options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=LZW',
             'PREDICTOR=2']
     elif compression == "23":
-        compression = ['alpha=yes',
+        options = ['alpha=yes',
             'TILED=YES',
             'COMPRESS=LZW',
             'PREDICTOR=3']
     else:
-        raise NotImplemented
+        raise NotImplementedError
 
-    target_ds = gdal.GetDriverByName('GTiff').Create(filename, xmax - xmin + 1, ymax - ymin + 1, nbands, type, compression=compression)
+    target_ds = gdal.GetDriverByName('GTiff').Create(filename, xmax - xmin + 1, ymax - ymin + 1, nbands, type, options=options)
 
     ox, pw, a, oy,b, ph = Image.GetGeoTransform()
     ox = xmin *pw + ox
@@ -550,7 +550,10 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
 
 
 def rasterize_polygons(InputVector, refDataset, lims=None, offset=None, attribute=None, NoDataValue=0, as_bool=False):
-    Image = gdal.Open(refDataset)
+    if isinstance(refDataset,str):
+        Image = gdal.Open(refDataset)
+    else:
+        Image = refDataset
 
     burnVal = 1  # value for the output image pixels
 
