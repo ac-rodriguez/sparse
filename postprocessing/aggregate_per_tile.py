@@ -20,6 +20,7 @@ parser.add_argument("data_dir", type=str, default="",
 parser.add_argument("--save-dir", default=None, help='Default will save in parent directory of data_dir')
 parser.add_argument("--is-overwrite", default=False, action="store_true",
                     help="overwrite predictions already in folder")
+parser.add_argument("--compression", default='0', help='compression algorithm to save geotifs')
 parser.add_argument("--is-clip-to-countries", default=False, action="store_true",
                     help="clip values outside landdefined areas")
 parser.add_argument("--is-reg-only", default=False, action="store_true",
@@ -36,7 +37,6 @@ parser.add_argument("--mc-repetitions", default=1, type=int,
 #                     help="Number of predicted classes")
 args = parser.parse_args()
 
-compression_ = 0
 def nanargmax(data, nanclass=args.nan_class):
     # nanargmax does not handle properly pixels with all Nan values
     mask = np.isnan(data)
@@ -75,9 +75,24 @@ if not os.path.exists(args.save_dir):    os.makedirs(args.save_dir)
 
 tilename = os.path.basename(args.data_dir)
 
+
+
+# if os.path.isfile(reg_filename) and not args.is_overwrite:
+    
+#     time_file = os.path.getmtime(reg_filename)
+#     is_new = [time_file < os.path.getmtime(x) for x in reg_dirs]
+
+#     if any(is_new):
+#         print(f'{reg_filename} exists, but {sum(is_new)} files are new, will overwrite')
+#         args.is_overwrite = True
+#     else:
+#         print(f'{reg_filename} exists, will skip')
+#         sys.exit(0)
+
+
 if args.is_remove_water:
     list1 = glob.glob(f'{PATH}/barry_palm/data/2A/phillipines_2017/*{tilename}*2017*.SAFE')
-    list1 += glob.glob(f'{PATH}/barry_palm/data/2A/palmcountriesphillipines_2017/*{tilename}*2017*.SAFE')
+    list1 += glob.glob(f'{PATH}/barry_palm/data/2A/palmcountries_2017/*{tilename}*2017*.SAFE')
     
     list1 = set(list1) # remove posible duplicates from boundaries between countries
 
@@ -100,11 +115,14 @@ if args.is_remove_water:
 else:
     is_water = None
 
-suffix_reg = f'{args.mc_repetitions}_preds_reg_0'
+suffix_reg = f'{args.mc_repetitions}_preds_reg_{args.compression}'
+
+# suffix_reg = f'_preds_reg_0'
 if tilename.startswith('T'):
     # Add all the orbits in the tile
     path = os.path.dirname(args.data_dir)
     reg_dirs = glob.glob(f'{path}/*{tilename}/*{suffix_reg}.tif')
+    assert len(reg_dirs) > 0, f'no matched files in {path}/*{tilename}/*{suffix_reg}.tif'
     print(f'reading {len(reg_dirs)} dirs from {path}/*{tilename}')
 else:
     reg_dirs = glob.glob(args.data_dir+'/*{suffix_reg}.tif')
@@ -158,14 +176,14 @@ if not os.path.isfile(reg_filename) or args.is_overwrite:
                 n = n + (1-np.isnan(data_[...,0])) * args.mc_repetitions
                 arrays = np.nansum(np.stack((arrays,data_),axis=0),axis=0) if arrays is not None else data_
 
-        gp.rasterize_numpy(n,reg_dirs[0],filename=reg_filename.replace('.tif','_n.tif'),type='int32', options=compression_)
+        gp.rasterize_numpy(n,reg_dirs[0],filename=reg_filename.replace('.tif','_n.tif'),type='int32', compression=args.compression)
             
         x_sum = arrays[...,0]
         x2_sum = arrays[...,1]
 
         means = x_sum/n 
         means = clean_array(means,is_water,reg_dirs[0])
-        gp.rasterize_numpy(means,reg_dirs[0],filename=reg_filename,type='float32', options=compression_)
+        gp.rasterize_numpy(means,reg_dirs[0],filename=reg_filename,type='float32', compression=args.compression)
 
         #std_dev = (x2_sum / n - (x_sum/n)**2)
         #std_dev = clean_array(std_dev,is_water,reg_dirs[0])
@@ -173,7 +191,7 @@ if not os.path.isfile(reg_filename) or args.is_overwrite:
         
         std_dev = (x2_sum / n - (x_sum/n)**2)**0.5
         std_dev = clean_array(std_dev,is_water,reg_dirs[0])
-        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_std.tif'),type='float32', options=compression_)
+        gp.rasterize_numpy(std_dev,reg_dirs[0],filename=reg_filename.replace('.tif','_std.tif'),type='float32', compression=args.compression)
 
 
 
@@ -213,7 +231,7 @@ if (is_compute_class or is_compute_sem) and not args.is_reg_only:
         if is_compute_class:
             if args.is_clip_to_countries:
                 arrays = clipcountries(arrays, ref_data=sem_dirs[0])
-            gp.rasterize_numpy(arrays, sem_dirs[0], filename=classprob_filename, type='float32')
+            gp.rasterize_numpy(arrays, sem_dirs[0], filename=classprob_filename, type='float32', compression=args.compression)
 
         if is_compute_sem:
             arrays = nanargmax(arrays)
@@ -221,7 +239,7 @@ if (is_compute_class or is_compute_sem) and not args.is_reg_only:
                 arrays[is_water] = 0
             if args.is_clip_to_countries:
                 arrays = clipcountries(arrays, ref_data=reg_dirs[0])
-            gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
+            gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename, compression=args.compression)
     else:
         print('computing argmax and then majority voting')
         arrays = [nanargmax(x) for x in arrays]
@@ -238,5 +256,5 @@ if (is_compute_class or is_compute_sem) and not args.is_reg_only:
             arrays[is_water] = 0 # TODO check if 0 is really background class
         if args.is_clip_to_countries:
             arrays = clipcountries(arrays, ref_data=reg_dirs[0])
-        gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename)
+        gp.rasterize_numpy(arrays, sem_dirs[0], filename=sem_filename, compression=args.compression)
 

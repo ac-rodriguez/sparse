@@ -215,8 +215,7 @@ def main(args):
         except AssertionError:
             reader = None
 
-        if reader is not None:
-            # input_fn_test_comp = reader.get_input_test(is_restart=True,as_list=True)
+        if reader is not None and len(reader.test) > 0:
             input_fn_test_comp = None
             if args.mc_repetitions > 1:
                 predict_and_recompose_individual_MC(trainer, reader,
@@ -230,7 +229,8 @@ def main(args):
                                 is_hr_pred=is_hr_pred, batch_size= args.batch_size_eval,type_=type_,
                                 is_reg=(args.lambda_reg > 0.), is_sem=False,
                                 chkpt_path=ckpt,return_array=False, compression=args.compression)
-
+        else:
+            print('skipping dataset...')
 if __name__ == '__main__':
     
     args = parser.parse_args()

@@ -250,7 +250,7 @@ def main(args):
             trainer.train_writer.flush()
             trainer.reset_sum_train()
 
-            if np.mod(epoch_,args.eval_every) == 0:
+            if np.mod(epoch_,args.eval_every) == 0 or epoch_ == args.epochs-1:
                 if is_compute_scalar_metrics:
                     metrics = trainer.validate_dataset_patches(epoch_, reader, args)
                 if is_predict_and_recompose:
