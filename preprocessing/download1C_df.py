@@ -1,6 +1,6 @@
 import argparse
 import sys
-from sentinelsat import SentinelAPI, InvalidChecksumError
+from sentinelsat import SentinelAPI, InvalidChecksumError, SentinelAPILTAError, SentinelAPIError
 import glob
 import os
 import numpy as np
@@ -8,15 +8,20 @@ import pandas as pd
 import json
 import shutil
 import tarfile
-import h5py
-from osgeo import gdal
+# import h5py
+# from osgeo import gdal
 
 parser = argparse.ArgumentParser(description="Download Sentinel-2 tiles",
                                  formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument("--username", default=None)
-parser.add_argument("--password", default=None)
+parser.add_argument("--userid", default=0, type=int)
+parser.add_argument("--password", default='ecovision')
 parser.add_argument("--df-path", default=None)
 parser.add_argument("--save-dir", default=None)
+parser.add_argument("--is-offline-only", default=False, action="store_true",
+                    help="use wget to download")
+parser.add_argument("--skip-failed", default=False, action="store_true",
+                    help="use wget to download")
 parser.add_argument("--is-wget", default=False, action="store_true",
                     help="use wget to download")
 parser.add_argument("--is-checkonly", default=False, action="store_true",
@@ -56,13 +61,60 @@ filelist = glob.glob(args.save_dir + '/*.zip')
 
 existing_ds = [os.path.split(x)[-1].replace('.zip', '') for x in filelist]
 
+## do not redownload if in correct_zip
+file_existing_correct = args.save_dir + '/correct_zip.txt'
+if os.path.isfile(file_existing_correct):
+    lines = [line.rstrip('\n') for line in open(file_existing_correct)]
+    print(len(lines),'in correct_zip')
+    print(len(existing_ds),'existing zip')
+    existing_ds = set(existing_ds+lines)
+    print(len(existing_ds),'existing ds')
+    # sys.exit(0)
+
 is_pending = [x not in existing_ds for x in df.title]
 print('total', df.shape[0])
 print('existing in folder', len(existing_ds))
 print('existing in area', len(is_pending) - np.sum(is_pending))
 print('pending for download', np.sum(is_pending))
 
-api = SentinelAPI(args.username, args.password, 'https://scihub.copernicus.eu/dhus')
+
+username_list = ['andrescamilor','andresro','sdaronco','nassar','lasinger','ceneka' ,'manutom.k']
+
+from datetime import datetime
+import time
+
+last_usedtime = [datetime(2020,1,1)]*len(username_list)
+current_user = args.userid
+last_usedtime[current_user] = datetime.now()
+
+args.username = username_list[args.userid]
+
+def get_password(username):
+    if username == 'manutom.k':
+        return 'manu1234'
+    else:
+        return 'ecovision'
+
+
+def change_user(wait_time = 30.0):
+    now = datetime.now()
+    current_time_dif = [(now-x).total_seconds() / 60.0 for x in last_usedtime]
+    if np.max(current_time_dif) < wait_time:
+        min_to_wait = wait_time+0.1 - np.max(current_time_dif)
+        print(f'waiting for {min_to_wait} min')
+        time.sleep(60*min_to_wait)
+
+    new_user = np.argmax(current_time_dif)
+    print('changed to user ',username_list[new_user])
+    last_usedtime[new_user] = datetime.now()
+
+    return new_user
+
+
+if args.username == 'manutom.k':
+    args.passwort = 'manu1234'
+
+api = SentinelAPI(args.username, get_password(args.username), 'https://scihub.copernicus.eu/dhus')
 
 if args.is_checksum:
     file_existing_correct = args.save_dir + '/correct_zip.txt'
@@ -99,22 +151,62 @@ if not args.is_checkonly:
 
     index_failed = []
     for counter, (index, row) in enumerate(df1.iterrows()):
-        print('downloading {}/{}    {}'.format(counter, df1.shape[0], row.title))
-        if args.is_wget:
-            command = f'wget --content-disposition --continue ' \
-                f'--user={args.username} ' \
-                f'--password={args.password}' \
-                f' "https://scihub.copernicus.eu/dhus/odata/v1/Products(\'{index}\')/\$value" ' \
-                f'-P {args.save_dir}'
-            os.system(command)
-        else:
-
+        while True:
+            print(counter)
             try:
-                api.download(index, directory_path=args.save_dir)
+                # if not args.is_offline_only:
+                # if api.get_product_odata(index)['Online'] and not args.is_offline_only:
+                if api.get_product_odata(index)['Online']:
+
+                    print('downloading {}/{}    {}'.format(counter, df1.shape[0], row.title))
+                    if args.is_wget:
+                        command = f'wget --content-disposition --continue ' \
+                            f'--user={args.username} ' \
+                            f'--password={args.password}' \
+                            f' "https://scihub.copernicus.eu/dhus/odata/v1/Products(\'{index}\')/\$value" ' \
+                            f'-P {args.save_dir}'
+                        os.system(command)
+                    else:
+                        response = api.download(index, directory_path=args.save_dir)
+                        if not response['Online']:
+                            print(row.title, 'will re-try at the end')
+                            index_failed.append(index)
+
+                elif args.is_offline_only:
+                    print('not online')
+                    response = api.download(index, directory_path=args.save_dir)
+                    if not response['Online']:
+                        print(row.title, 'will re-try at the end')
+                        index_failed.append(index)
+
+            except SentinelAPILTAError:
+                current_user = change_user(wait_time=30.0)
+                api = SentinelAPI(username_list[current_user], get_password(username_list[current_user]), 'https://scihub.copernicus.eu/dhus')
+                if not args.skip_failed:
+                    continue
+            except SentinelAPIError:
+                # print('too many requests, waiting 10 min')
+                # time.sleep(10*60)
+                current_user = change_user(wait_time=10.0)
+                api = SentinelAPI(username_list[current_user], get_password(username_list[current_user]), 'https://scihub.copernicus.eu/dhus')
+                if not args.skip_failed:
+                    continue
+            # except (SentinelAPILTAError,SentinelAPIError) as e:
+            #     if args.is_offline_only:
+            #         # index_failed.append(index)
+            #         current_user = change_user(wait_time=30.0)
+            #         # print('limit reached, changing user')                
+            #         api = SentinelAPI(username_list[current_user], get_password(username_list[current_user]), 'https://scihub.copernicus.eu/dhus')
+            #     else:
+            #         current_user = change_user(wait_time=10.0)
+            #         # print('too many requests, waiting 10 min')
+            #         # time.sleep(10*60)
             except InvalidChecksumError:
-                print(row.title, 'failed')
+                print(row.title, 'failed checksum, will re-try at the end')
                 index_failed.append(index)
-                pass
+            break
+        
+
     if len(index_failed) > 0:
         print('Retrying failed {} datasets..'.format(len(index_failed)))
         for i in index_failed:
@@ -130,23 +222,37 @@ if args.is_check2A:
     file_existing_correct = args.save_dir + '/correct_zip.txt'
     assert os.path.isfile(file_existing_correct), 'checksum of 1C files first'
     # print('reading files in correct_zip.txt for 2A verification 2A')
-    lines = [line.rstrip('\n') for line in open(file_existing_correct)]
-    titles_ = [x.replace('_MSIL1C_', '_MSIL2A_') for x in lines]
+    lines = [line.rstrip('\n')[:44] for line in open(file_existing_correct)]
+    if '/1C/' in args.save_dir:
+        titles_ = [x.replace('_MSIL1C_', '_MSIL2A_') for x in lines]
+    else:
+        # files are already 2A
+        titles_ = lines
     # else:
     #     titles_ = [x.replace('_MSIL1C_','_MSIL2A_') for x in df.title.sort_values()]
 
     print(f'checking 2A product for {len(titles_)} correct zip files')
     file_existing_correct = path_2A + '/correct_2A.txt'
     if os.path.isfile(file_existing_correct):
-        checked_ds = [line.rstrip('\n') for line in open(file_existing_correct)]
+        checked_ds = [line.rstrip('\n')[:44] for line in open(file_existing_correct)]
 
         titles_ = [x for x in titles_ if x not in checked_ds]
     titles_ = sorted(titles_)
     if len(titles_) > 0:
         print(f'checkcount for {len(titles_)} files pending')
 
-        existing_2A_titles = [x for x in titles_ if os.path.isdir(f'{path_2A}/{x}.SAFE')]
+        # existing_2A_titles = [x for x in titles_ if os.path.isdir(f'{path_2A}/{x}.SAFE')]
+        
+        # find the 2A file with any processing date
+        existing_2A_titles = []
+        for tile in titles_:
+            existing_list = glob.glob(f'{path_2A}/{tile}*.SAFE',recursive=False)
+            if len(existing_list) > 0:
+                # assert len(existing_list) == 1, f'there should only be one 2A per 1C {existing_list}'
+                title_ = os.path.basename(existing_list[0]).replace('.SAFE','')
+                existing_2A_titles.append(title_)          
 
+        # get_jp2_count = lambda x: len(x + '/**/*.jp2', recursive=True))
         get_jp2_count = lambda x: len(glob.glob(path_2A + '/' + x + '.SAFE/**/*.jp2', recursive=True))
         correct_2A_tiles = [x for x in existing_2A_titles if get_jp2_count(x) >= 40]
 
@@ -157,13 +263,13 @@ if args.is_check2A:
         #     existing_tar = [x for x in tFile.getnames() if x.endswith('SAFE')]
         #     correct_2A_tiles.append(existing_tar)
 
-        # add correct 2A in h5
-        h5_files = glob.glob(path_2A + '/*.he5')
-        for i in h5_files:
-            h5File = h5py.File(i, 'r')
-            existing_tar = list(h5File.keys())
-            h5File.close()
-            correct_2A_tiles.append(existing_tar)
+        # # add correct 2A in h5
+        # h5_files = glob.glob(path_2A + '/*.he5')
+        # for i in h5_files:
+        #     h5File = h5py.File(i, 'r')
+        #     existing_tar = list(h5File.keys())
+        #     h5File.close()
+        #     correct_2A_tiles.append(existing_tar)
 
         correct_2A_tiles = set(correct_2A_tiles)
 
@@ -174,8 +280,9 @@ if args.is_check2A:
 
         if len(titles_) > len(correct_2A_tiles):
             if args.is_delete:
-                print('deleting incorrect files an creating missing_2A.txt')
+                raise NotImplementedError('pending fix titles with new proc date')
                 missing_tiles = [x for x in titles_ if not x in correct_2A_tiles]
+                print(f'deleting  {len(missing_tiles)} incorrect files an creating missing_2A.txt')
                 file_missing = path_2A + '/missing_2A.txt'
                 with open(file_missing, 'w') as f:
                     for item in missing_tiles:
@@ -258,7 +365,7 @@ if args.is_tar2A:
     print(ds_2A)
 
 #str_type = h5py.new_vlen(str)
-str_type = h5py.special_dtype(vlen=str)
+# str_type = h5py.special_dtype(vlen=str)
 
 def get_newname(fname):
     newname = fname.split('_', maxsplit=3)[-1].replace('.jp2', '')

@@ -63,7 +63,19 @@ case ${CONFIG} in
     SAVE_FOLDER=asia_2019
     PATH_OUTPUT=$WORK/barry_palm/output/
     path_data=$WORK/barry_palm/data/2A/
-    df_name="asia_2019/Malaysia_all_1151.pkl"
+    df_path=$WORK/barry_palm/data/dataframes_download/asia_2019/Malaysia_all_1151.pkl
+    ;;
+  indonesia_2019)
+    SAVE_FOLDER=asia_2019
+    PATH_OUTPUT=$WORK/barry_palm/output/
+    path_data=$WORK/barry_palm/data/2A/
+    df_path=$WORK/barry_palm/data/dataframes_download/asia_2019/Indonesia_all_8430.pkl
+    ;;
+  palmpending_2017)
+    SAVE_FOLDER=palmcountries_2017
+    PATH_OUTPUT=$WORK/barry_palm/output/
+    path_data=$WORK/barry_palm/data/1C/
+    df_path=$WORK/barry_palm/data/dataframes_download/palmcountries_2017/palmpending_56.pkl
     ;;
    all)
     bash download1C_df.sh phillipines_2017 ${@:2}
@@ -80,17 +92,18 @@ esac
 
 module load python_gpu/3.7.1
 
-exec &> >(tee -a "${PATH_OUTPUT}/download_1C_$now.txt")
-
+# exec &> >(tee -a "${PATH_OUTPUT}/download_1C_$now.txt")
 
 echo $CONFIG
 
-read -p 'Username: ' user
-read -sp "Password: " password
+#read -p 'Username: ' user
+# read -sp "Password: " password
+read -p 'Userid (0-6): ' userid
 echo ""
 mkdir -p $path_data/$SAVE_FOLDER
 
-df_path=$path_data/dataframes_download/$df_name
+# df_path=$path_data/dataframes_download/$df_name
 
 
-python3 -u download1C_df.py --username=$user --password=$password --df-path $df_path --save-dir $path_data/$SAVE_FOLDER/PRODUCT/ $EXTRAARGS
+# python3 -u download1C_df.py --username=$user --password=$password --df-path $df_path --save-dir $path_data/$SAVE_FOLDER/PRODUCT/ $EXTRAARGS
+python3 -u download1C_df.py --userid=$userid --df-path $df_path --save-dir $path_data/$SAVE_FOLDER/PRODUCT/ $EXTRAARGS
