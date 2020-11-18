@@ -14,26 +14,32 @@ import utils.gdal_processing as gp
 
 run_60 = False
 
-def readHR(roi_lon_lat, data_file, scale, as_float=True, is_assert_blank=True):
+def readHR(roi_lon_lat, data_file, scale, as_float=True, is_assert_blank=True, is_exit=True,is_verbose=True):
     if data_file is None:
         return None
-    print(' [*] Reading HR Data {}'.format(os.path.basename(data_file)))
 
-    dsREF = gdal.Open(data_file)
+    if isinstance(data_file,str):
+        if is_verbose:
+            print(' [*] Reading HR Data {}'.format(os.path.basename(data_file)))
+        dsREF = gdal.Open(data_file)
+    else:
+        dsREF = data_file
 
     if roi_lon_lat:
         roi_lon1, roi_lat1, roi_lon2, roi_lat2 = gp.split_roi_string(roi_lon_lat)
         geo_pts_ref = [(roi_lon1, roi_lat1), (roi_lon1, roi_lat2), (roi_lon2, roi_lat2), (roi_lon2, roi_lat1)]
 
         if not gp.roi_intersection(dsREF, geo_pts_ref):
-            print(" [!] The ROI does not intersect with the data product")
+            if is_verbose:
+                print(" [!] The ROI does not intersect with the data product")
             sys.exit(0)
 
         xmin, ymin, xmax, ymax = gp.to_xy_box(lims=(roi_lon1, roi_lat1, roi_lon2, roi_lat2), dsREF=dsREF,
                                               enlarge=scale)  # we enlarge from 5m to 20m Bands in S2
 
-        print("Selected pixel region: xmin=%d, ymin=%d, xmax=%d, ymax=%d:" % (xmin, ymin, xmax, ymax))
-        print("Image size: width=%d x height=%d" % (xmax - xmin + 1, ymax - ymin + 1))
+        if is_verbose:
+            print("Selected pixel region: xmin=%d, ymin=%d, xmax=%d, ymax=%d:" % (xmin, ymin, xmax, ymax))
+            print("Image size: width=%d x height=%d" % (xmax - xmin + 1, ymax - ymin + 1))
 
     else:
         xmin,ymin = 0,0
@@ -41,8 +47,13 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True, is_assert_blank=True):
 
 
     if xmax < xmin or ymax < ymin:
-        print(" [!] Invalid region of interest / UTM Zone combination")
-        sys.exit(0)
+        if is_verbose:
+            print(" [!] Invalid region of interest / UTM Zone combination")
+        if is_exit:
+            sys.exit(0)
+        else:
+            return None
+
 
     dsBANDS = dict()
 
@@ -73,10 +84,16 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True, is_assert_blank=True):
         chan3 = data10
     vis = (chan3 < 1).astype(np.int)
     if np.all(chan3 < 1) and is_assert_blank:
-        print(" [!] All data is blank on Band {}".format(id_+1))
-        sys.exit(0)
+        if is_verbose:
+            print(" [!] All data is blank on Band {}".format(id_+1))
+        if is_exit:
+            sys.exit(0)
+        else:
+            return None
+
     elif np.sum(vis) > 0:
-        print(' [!] The selected image has some blank pixels')
+        if is_verbose:
+            print(' [!] The selected image has some blank pixels')
         # sys.exit()
     if as_float:
         return data10.astype(np.float32) / 255.0

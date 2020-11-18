@@ -83,7 +83,7 @@ def downscale(img, scale):
     return imout
 
 
-def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_skip_if_masked=True):
+def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_skip_if_masked=True, skip_threshold=0.5):
     if data_file is None:
         return None
         # if 'LR_file' in args:
@@ -113,7 +113,7 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_s
             elif '20m' == key:
                 missing = (data20[..., 0:6] == val).any(axis=-1)
                 mask = np.logical_or(mask, missing)
-        if np.mean(mask) > 0.5:
+        if np.mean(mask) > skip_threshold:
             if is_skip_if_masked:
                 print(f" [!] {np.mean(mask)*100:.2f}% of data is masked, skipping it...")
                 return None
@@ -276,11 +276,12 @@ class DataReader(object):
 
     @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
     def read_data_pairs(self, path_dict, mask_out_dict=None, is_load_lab=True, is_load_input=True,
-                        is_skip_if_masked=True):
+                        is_skip_if_masked=True,skip_threshold=0.5):
 
         if is_load_input:
 
-            train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict,is_skip_if_masked=is_skip_if_masked)
+            train = read_and_upsample_sen2(data_file=path_dict['lr'], args=self.args, roi_lon_lat=path_dict['roi'], mask_out_dict=mask_out_dict,
+                                           is_skip_if_masked=is_skip_if_masked, skip_threshold=skip_threshold)
 
         else:
             train,train_h = None, None
@@ -313,7 +314,37 @@ class DataReader(object):
             labels,lim_labels = None, None
 
         return train, None, labels, lim_labels
-    
+    def load_from_memory(self,file_dataset):
+
+        if os.path.isfile(file_dataset+'/dict_id_lab.json') and is_save_or_load_file:
+
+            with open(file_dataset+'/dict_id_lab.json', 'r') as fp:
+                list_keys = json.load(fp)
+
+            list_keys_ = {x.split('barry_palm',1)[-1] for x in list_keys}
+            dict_id_lab_keys_ = {x.split('barry_palm',1)[-1] for x in dict_id_lab.keys()}
+            if list_keys_ == dict_id_lab_keys_:
+                with np.load(file_dataset+'/arrays_train.npz', allow_pickle=True) as data:
+                    train = data['train']
+                    train_h = data['train_h']
+                    labels = data['labels']
+                with open(file_dataset+'/lims_labels.json', 'r') as fp:
+                    lims_labels = json.load(fp)
+                with open(file_dataset+'/train_info.json', 'r') as fp:
+                    train_info = json.load(fp)
+                basepath = self.args.save_dir.split('sparse',1)[0]
+                train_info = check_path(train_info,basepath)
+
+                # reload_ = False
+                print(f'loaded train data from {file_dataset} n={len(train)}')
+
+                return True, (train,train_h,labels,lims_labels,train_info)
+            else:
+                print('not all keys matched, will reload',file_dataset)
+                return False, None
+        else:
+            print('file not found, will reload',file_dataset)
+            return False, None
     # @conditional_decorator(no_verbose,not IS_VERBOSE_DATALOAD)
     def read_train_data(self):
 
@@ -349,7 +380,7 @@ class DataReader(object):
                 print('not all keys matched, will reload',file_dataset)
         else:
             print('file not found, will reload',file_dataset)
-
+        # reload_, arrays_ = self.load_from_memory(file_dataset)
         if reload_:
             # Load first labels
             for _,val in tqdm.tqdm(dict_id_lab.items(), desc='loading labels'):
@@ -358,7 +389,7 @@ class DataReader(object):
                 val[3] = lim_labels
 
             if USE_RAY:
-                ray.init()
+                ray.init(object_store_memory=int(50e9), num_cpus=8)
                 print(ray.nodes()[0]['Resources'])
                 data_tr = [f_read.remote(i,dict_id=dict_id_lab,mask_dict=None, read_data_pairs_func=self.read_data_pairs) for i in self.args.tr]
                 self.train,self.train_h,self.labels,self.lims_labels,is_valid = zip(*ray.get(data_tr))
@@ -387,6 +418,10 @@ class DataReader(object):
                     json.dump(self.train_info, fp,  indent=4)
                 print(f'saved dataset in {file_dataset} n={len(self.train)}')
 
+        # if 'palm4_act' in self.args.dataset:
+        #     file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],'palm4','tmp_data')
+        #     reload_, arrays_ = self.load_from_memory(file_dataset)
+        #     self.
 
         if self.args.unlabeled_data is not None:
             self.unlab = read_and_upsample_sen2(data_file=self.args.unlabeled_data, args=self.args,
@@ -450,6 +485,9 @@ class DataReader(object):
         file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],self.args.dataset,'tmp_data')
         if 'palm4748a' in self.args.dataset:
            file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],'palm4748a','tmp_data')
+           print('looking for', file_dataset)
+        if 'palm4_act' == self.args.dataset:
+           file_dataset =  os.path.join(self.args.model_dir.split(self.args.dataset)[0],'palm4','tmp_data')
            print('looking for', file_dataset)
         if os.path.isfile(file_dataset+'/dict_id_lab_val.json') and is_save_or_load_file:
             with open(file_dataset+'/dict_id_lab_val.json', 'r') as fp:
@@ -582,6 +620,7 @@ class DataReader(object):
 
             test, test_h, labels_test, lim_labels_test = self.read_data_pairs(test_, mask_out_dict=maskout,
                                                                               is_skip_if_masked=False)
+                                                                            #   is_skip_if_masked=True,skip_threshold=0.9)
             is_valid.append(test is not None)
             if is_valid[-1]:
                 # test[test[..., -2] > 50] = np.nan
@@ -682,6 +721,10 @@ class DataReader(object):
                                scale=self.scale, lims_with_labels=self.lims_labels_test[test_dset_],
                                patches_with_labels=self.args.patches_with_labels,
                                two_ds=self.two_ds, is_use_queues=False))
+            # for i in range(len(self.single_gen_test[-1])):
+            #     x_ = self.single_gen_test[-1].__getitem__(i)
+            #     if np.any(np.isnan(x_['feat_l'])):
+            #         print('there are nans', np.isnan(x_['feat_l']).mean())
 
     def get_input_test(self, is_restart=False, as_list=False):
         if not as_list:
