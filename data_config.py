@@ -786,7 +786,8 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             GT=GT_train,
                             loc=['phillipines_2017','palmcountries_2017'],
                             top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
-    elif 'cocopreactive' in DATASET:
+
+    elif 'cocopreactive' in DATASET :
     
         OBJECT = 'coco'
         dset_config['is_upsample_LR'] = False
@@ -794,6 +795,11 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
 
         rois = ['geom']
         tilenames = 'T50PNQ,T50PPR,T50PQS,T51NXA,T51NXB,T51NXG,T51NXH,T51NYB,T51NYG,T51NZH,T51NZJ,T51PUQ,T51PUR,T51PUT,T51PVR,T51PWK,T51PWQ,T51PWR,T51PYK,T51QUA'.split(',')
+        if DATASET == 'cocopreactive1':
+            tilenames += 'T51NVJ,T51PVM,T51PXM,T51PYM,T51PZL'.split(',')
+            ## areas with palmplantations
+            tilenames += 'T50MME,T50MQD,T50NPL,T51MUR,50NNM'.split(',')
+        
         ## forest areas
         tilenames += 'T51QVV,T50PTT,T51PXL'.split(',')
 
@@ -819,6 +825,60 @@ def get_dataset(DATASET, is_mounted=False, is_load_file=True):
                             GT=GT_val,
                             loc=['phillipines_2017','palmcountries_2017'],
                             top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+    elif 'cocoactive' in DATASET :
+    
+        OBJECT = 'coco'
+        dset_config['is_upsample_LR'] = False
+        top_10_path = PATH + '/barry_palm/data/1C/dataframes_download'
+
+        rois = ['geom']
+        tilenames = 'T50PNQ,T50PPR,T50PQS,T51NXA,T51NXB,T51NXG,T51NXH,T51NYB,T51NYG,T51NZH,T51NZJ,T51PUQ,T51PUR,T51PUT,T51PVR,T51PWK,T51PWQ,T51PWR,T51PYK,T51QUA'.split(',')
+
+        tilenames += 'T51NVJ,T51PVM,T51PXM,T51PYM,T51PZL'.split(',')
+        ## areas with palmplantations
+        tilenames += 'T50MME,T50MQD,T50NPL,T51MUR,50NNM'.split(',')
+        
+        ## forest areas
+        tilenames += 'T51QVV,T50PTT,T51PXL'.split(',')
+
+        GT_train = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group1*'
+        add_datasets_intile(tilenames, rois_train=rois,
+                            GT=GT_train,
+                            loc=['phillipines_2017','palmcountries_2017'],
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        GT_train = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group3*'
+        add_datasets_intile(tilenames, rois_train=rois,
+                            GT=GT_train,
+                            loc=['phillipines_2017','palmcountries_2017'],
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        GT_val = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group2*'
+        add_datasets_intile(tilenames, rois_val=rois,
+                            GT=GT_val,
+                            loc=['phillipines_2017','palmcountries_2017'],
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+        GT_val = f'{PATH}/barry_palm/data/labels/manual_annotations/*/{OBJECT}*group4*'
+        add_datasets_intile(tilenames, rois_val=rois,
+                            GT=GT_val,
+                            loc=['phillipines_2017','palmcountries_2017'],
+                            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
+
+        # Active samples
+        filename_ = PATH + '/barry_palm/data/2A/datasets/coco_act.json'
+        with open(filename_) as json_file:
+            list_datasets = json.load(json_file)
+
+        # TRAIN - Active Samples
+        list_datasets = [f'{PATH}/barry_palm/data/labels/manual_annotations/{x}' for x in list_datasets]
+
+        tilenames_tr = list({x.split('/')[-2] for x in list_datasets})
+
+        add_datasets_intile(tilenames_tr, rois_train=rois, rois_val=[], rois_test=[],
+            GT=list_datasets,
+            loc=['phillipines_2017','palmcountries_2017'],
+            top_10_list=top_10_path + '/cocopalm_countries_all_11400.txt')
 
 
     else:
