@@ -101,7 +101,7 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True, is_assert_blank=True, i
         return  data10
 
 
-def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False, verbose=True):
+def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False, verbose=True,is_skip_if_masked=True):
 
     if args is None:
         assert data_file is not None
@@ -177,7 +177,7 @@ def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False, verbose=True):
         Btemp = dsBANDS[band_name].ReadAsArray(xoff=xmin // 2, yoff=ymin // 2, xsize=(xmax - xmin + 1) // 2,
                                                ysize=(ymax - ymin + 1) // 2,
                                                buf_xsize=(xmax - xmin + 1) // 2, buf_ysize=(ymax - ymin + 1) // 2)
-        if band_name == 'CLD':
+        if band_name == 'CLD' and is_skip_if_masked:
             cloudy = np.mean(Btemp > 50)
             if cloudy > 0.5:
                 if verbose:

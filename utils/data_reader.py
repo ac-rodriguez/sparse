@@ -83,15 +83,19 @@ def downscale(img, scale):
     return imout
 
 
-def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_skip_if_masked=True, skip_threshold=0.5):
+def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_skip_if_masked=True, skip_threshold=0.5, verbose=True):
+
+    '''
+    args:
+    maskout dictionary with thresholds per band = {'CLD':10, # if Cloud prob is higher than 10%
+                   'SCL':[3,11], # if SCL is equal to cloud or cloud shadow
+                   '20m':0} # if all 20m bands are 0
+    returns:
+    single numpy array
+    '''
     if data_file is None:
         return None
-        # if 'LR_file' in args:
-        #     LR_file = args.LR_file
-        #     if ';' in LR_file:
-        #         LR_file = LR_file.split(';')[0]
-        # else:
-        #     LR_file = args.data_dir
+
     if mask_out_dict is not None:
         is_get_SCL = 'SCL' in mask_out_dict.keys()
     else:
@@ -99,7 +103,8 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_s
     if 'USER' in data_file:
         data10, data20 = geotif.readS2_old(args, roi_lon_lat, data_file=data_file)
     else:
-        data10, data20 = geotif.readS2(args, roi_lon_lat, data_file=data_file, is_get_SCL=is_get_SCL)
+        data10, data20 = geotif.readS2(args, roi_lon_lat, data_file=data_file, is_get_SCL=is_get_SCL,
+                                       verbose=verbose, is_skip_if_masked=is_skip_if_masked)
     if data10 is None:
         return None
     if mask_out_dict is not None:
@@ -130,8 +135,8 @@ def read_and_upsample_sen2(data_file, args, roi_lon_lat, mask_out_dict=None,is_s
         # mask = np.repeat(mask,data.shape[-1], axis=2)
         data[mask.squeeze()] = np.nan
     size = np.prod(data.shape) * data.itemsize
-
-    print('{:.2f} MB loaded in memory'.format(size / 1e6))
+    if verbose:
+        print('{:.2f} MB loaded in memory'.format(size / 1e6))
     return data
 
 
