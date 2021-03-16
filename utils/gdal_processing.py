@@ -1,7 +1,9 @@
 import os, sys
 import glob
+from zipfile import ZipFile
+import fnmatch
 import re
-import shutil
+# import shutil
 from osgeo import ogr, gdal, osr
 import numpy as np
 from shapely.geometry import Polygon
@@ -467,11 +469,29 @@ def get_jp2(path, band, res=10):
     if path.endswith('.xml'):
         path = os.path.dirname(path)
     assert os.path.exists(path), f' {path} does not exist'
-    if band == 'CLD':
-        cld = glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2") + glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLDPRB_{res}m.jp2")
-        return cld[0]
+
+    if path.endswith('.SAFE'):
+        if band == 'CLD':
+            cld = glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2") + \
+                  glob.glob(f"{path}/GRANULE/*/QI_DATA/*_CLDPRB_{res}m.jp2")
+            return cld[0]
+        else:
+            return glob.glob(f"{path}/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")[0]
+    elif path.endswith('.zip'):
+        if path.startswith('/vsizip/'):
+            path = path.replace('/vsizip/')
+        archive = ZipFile(path, 'r')
+        files = archive.namelist()
+        if band == 'CLD':
+            files = fnmatch.filter(files, f"*/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2") + \
+                  fnmatch.filter(files,f"*/GRANULE/*/QI_DATA/*_CLDPRB_{res}m.jp2")
+            # return cld[0]
+        else:
+            files = fnmatch.filter(files,f"*/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")
+        return '/vsizip/'+os.path.join(path,files[0])
+        
     else:
-        return glob.glob(f"{path}/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")[0]
+        raise AssertionError('file type not supported',path)
 
 
 def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.GDT_Byte, roi_lon_lat = None, compression='0'):

@@ -101,36 +101,35 @@ def readHR(roi_lon_lat, data_file, scale, as_float=True, is_assert_blank=True, i
         return  data10
 
 
-def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False):
-    if data_file is None: data_file = args.LR_file
-    # data_file = args.LR_file
-    # if '_USER_' in data_file:
-    #     print("use createPatches_old_format.py to create the patches!")
-    #     sys.exit(0)
+def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False, verbose=True):
+
+    if args is None:
+        assert data_file is not None
+        select_bands = 'B02,B03,B04,B05,B06,B07,B08,B8A,B11,B12'
+    else:
+        if data_file is None:
+            data_file = args.LR_file
+        select_bands = args.select_bands
 
 
-    # roi_lon_lat = args.roi_lon_lat
-    select_bands = args.select_bands
-
-
-    if data_file.endswith('.xml') or data_file.endswith('.zip'):
-        data_file, data_filename = os.path.split(data_file)
-
+    if data_file.endswith('.xml'):
+        raise NotImplementedError
     _, folder = os.path.split(data_file)
 
     dsREFfile = gp.get_jp2(data_file, 'B03', res=10)
-    # dsREFfile = os.path.join(data_file, 'geotif', 'Band_B3.tif')
-    if not os.path.isfile(dsREFfile):
-        raise ValueError('{} does not exist..'.format(dsREFfile))
-
-    print(' [*] Reading S2 Data {}'.format(folder))
+    
+    if verbose:
+        print(' [*] Reading S2 Data {}'.format(folder))
 
     dsREF = gdal.Open(dsREFfile)
+    if dsREF is None:
+        raise ValueError('{} does not exist..'.format(dsREF))
 
     if roi_lon_lat:
 
         if not gp.roi_intersection(dsREF, roi_lon_lat):
-            print(" [!] The ROI does not intersect with the data product, skipping it")
+            if verbose:
+                print(" [!] The ROI does not intersect with the data product, skipping it")
             return None, None
         xmin, ymin, xmax, ymax = gp.to_xy_box(roi_lon_lat, dsREF, enlarge=1)
 
@@ -143,8 +142,8 @@ def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False):
     select_bands.add('CLD') ## Always get CLD band
     if is_get_SCL:
         select_bands.add('SCL') ## Always get CLD band
-
-    print("Image size: width={} x height={}".format(xmax - xmin + 1, ymax - ymin + 1))
+    if verbose:
+        print("Image size: width={} x height={}".format(xmax - xmin + 1, ymax - ymin + 1))
 
     if xmax < xmin or ymax < ymin:
         print(" [!] Invalid region of interest / UTM Zone combination")
@@ -162,11 +161,6 @@ def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False):
 
     dsBANDS = dict()
 
-    # for band_id in select_bands:
-    #     dsBANDS[band_id] = gdal.Open(os.path.join(data_file,'geotif','Band_{}.tif'.format(band_id)))
-    #     if dsBANDS[band_id] is None:
-    #         print(' [!] Band {} is not avaliable'.format(band_id))
-    #         sys.exit(1)
     for band_id in select_bands10:
         filename = gp.get_jp2(data_file, band_id, res=10)
         dsBANDS[band_id] = gdal.Open(filename)
@@ -186,14 +180,16 @@ def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False):
         if band_name == 'CLD':
             cloudy = np.mean(Btemp > 50)
             if cloudy > 0.5:
-                print(f' [!] Dataset with P_cloud > 0.5 in {cloudy*100:.2f}% of the pixels, skipping it...')
+                if verbose:
+                    print(f' [!] Dataset with P_cloud > 0.5 in {cloudy*100:.2f}% of the pixels, skipping it...')
                 return None, None
 
 
         data20 = np.dstack((data20, Btemp)) if data20 is not None else Btemp
 
-    print("Selected 10m bands: {}".format(select_bands10))
-    print("Selected 20m bands: {}".format(select_bands20))
+    if verbose:
+        print("Selected 10m bands: {}".format(select_bands10))
+        print("Selected 20m bands: {}".format(select_bands20))
 
 
     if len(data20.shape) == 2:
@@ -210,18 +206,15 @@ def readS2(args, roi_lon_lat, data_file=None, is_get_SCL=False):
     chan3 = data10[:, :, b3_10_ind]
     vis = (chan3 < 1).astype(np.int)
     if np.all(chan3 < 1):
-        print(" [!] All data is blank on Band 3, returning None, None")
+        if verbose:
+            print(" [!] All data is blank on Band 3, returning None, None")
         return None, None
-        # sys.exit(0)
     elif np.sum(vis) > 0:
-        print(' [!] The selected image has some blank pixels')
-        # sys.exit()
+        if verbose:
+            print(' [!] The selected image has some blank pixels')
 
 
     return data10.astype(np.float32), data20.astype(np.float32)
-    # patches.save_numpy(data10, data20, labels, select_bands10, select_bands20, args, folder, view, filename='data', points = points)
-    # print(" [*] Success.")
-
 
 
 def readS2_old(args, roi_lon_lat, data_file =None):
