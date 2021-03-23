@@ -62,7 +62,7 @@ def interpPatches(image_20lr, ref_shape=None, squeeze=False, scale=None, mode='r
     data20_interp = np.zeros(((N, ch) + ref_shape)).astype(np.float32)
     for k in range(N):
         for w in range(ch):
-            data20_interp[k, w] = resize(image_20lr[k, w] / 65000, ref_shape, mode=mode) * 65000  # bicubic
+            data20_interp[k, w] = resize(image_20lr[k, w] / 65000, ref_shape, mode=mode, anti_aliasing=False) * 65000  # bicubic
 
     data20_interp = np.rollaxis(data20_interp, 1, 4)
     if squeeze:

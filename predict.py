@@ -161,7 +161,12 @@ def main(args):
     if len(args.model_weights)== 1 and '.ckpt' in args.model_weights[0]:
         ckpt = args.model_weights[0]
     else:
-        ref_folder = '/*' if args.model_weights[0].endswith('last') else 'best/*'
+        if args.model_weights[0].endswith('last'):
+            ref_folder = '/*'
+        elif args.model_weights[0].endswith('*/'):
+            ref_folder = 'best/*'
+        else:
+            ref_folder = ''
         if len(args.model_weights) > 1:
             ckpt = [tools.get_last_best_ckpt(x, folder=ref_folder) for x in args.model_weights]
             print(f'will load {len(ckpt)} models at every forward pass')
@@ -173,7 +178,9 @@ def main(args):
     if not os.path.exists(model_dir):
         os.makedirs(model_dir)
     elif not args.is_overwrite_pred:
-        safe_ = data_dir[0].split('/')[-1]
+        safe_ = os.path.basename(data_dir[0])
+        if safe_.endswith('.zip'):
+            safe_ = safe_.replace('.zip','.SAFE')
         file_reg = f'{model_dir}/{safe_}-test-{args.mc_repetitions}_preds_reg_{args.compression}.tif'
         if os.path.isfile(file_reg):
             print(f'{file_reg} already exists')
@@ -210,10 +217,7 @@ def main(args):
     for test_ in test_dsets:
         print('processing',test_)
         args.test = [test_]
-        try:
-            reader = DataReader(args, datatype='test')
-        except AssertionError:
-            reader = None
+        reader = DataReader(args, datatype='test')
 
         if reader is not None and len(reader.test) > 0:
             input_fn_test_comp = None

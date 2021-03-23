@@ -405,7 +405,6 @@ def rasterize_points(Input, refDataset, lims, scale = 10):
             mask[y1,x1]+=1
 
     if scale > 1:
-        # sigma = scale
         sigma = scale / np.pi
         mask = ndimage.gaussian_filter(mask.astype(np.float32), sigma=sigma)
 
@@ -485,7 +484,6 @@ def get_jp2(path, band, res=10):
         if band == 'CLD':
             files = fnmatch.filter(files, f"*/GRANULE/*/QI_DATA/*_CLD_{res}m.jp2") + \
                   fnmatch.filter(files,f"*/GRANULE/*/QI_DATA/*_CLDPRB_{res}m.jp2")
-            # return cld[0]
         else:
             files = fnmatch.filter(files,f"*/GRANULE/*/IMG_DATA/R{res}m/*_{band}_{res}m.jp2")
         return '/vsizip/'+os.path.join(path,files[0])
@@ -512,7 +510,8 @@ def rasterize_numpy(Input, refDataset, filename='ProjectedNumpy.tif', type=gdal.
 
     nbands = Input.shape[-1]
     
-    filename = filename.replace('.tif', f'_{compression}.tif')
+    if not filename.endswith(f'_{compression}.tif'):
+        filename = filename.replace('.tif', f'_{compression}.tif')
 
     if compression== "0":
         options = ['alpha=yes']
@@ -582,7 +581,6 @@ def rasterize_polygons(InputVector, refDataset, lims=None, offset=None, attribut
     Shapefile_layer = Shapefile.GetLayer()
 
     ### Rasterise
-    # Output = gdal.GetDriverByName(GTiff).Create('temp-palm.tif', Image.RasterXSize, Image.RasterYSize, 1, gdal.GDT_Byte)
     if attribute is None:
         Output = gdal.GetDriverByName('MEM').Create("", Image.RasterXSize, Image.RasterYSize, 1, gdal.GDT_Int32)
     else:

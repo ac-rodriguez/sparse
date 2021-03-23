@@ -482,11 +482,6 @@ class PatchExtractor(BasePatch):
         borders = (self.border, self.border)
         borders_h = (self.border * self.scale, self.border * self.scale)
         borders_lab = (self.border_lab, self.border_lab)
-        self.range_i = [None] * len(self.d_l)
-        self.range_j = [None] * len(self.d_l)
-        self.nr_patches = [None] * len(self.d_l)
-
-        # for i, data_ in enumerate(self.d_l):
 
         data_ = np.pad(self.d_l, (borders, borders, (0, 0)), mode='symmetric')
 

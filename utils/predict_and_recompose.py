@@ -112,23 +112,6 @@ def predict_and_recompose_with_metrics(trainer, reader, args, prefix, epoch_):
                 tf.summary.image(f'val/{tile}/reg/class{j}', img_summary, step=epoch_)
                 trainer.update_sum_val_aggr_reg(reg[...,j],val_labels[...,j], f'{tile}')
 
-        # sem = list(compress(predictions['sem'], index))
-        # val_data = list(compress(ref_data, index))
-        # for i_, sem_ in enumerate(sem):
-        #     sem_[np.isnan(val_data[i_][..., -1])] = np.nan
-        # shapes = set([x.shape for x in sem])
-        # for i, s in enumerate(shapes):
-        #     sem_sameshape = [x for x in sem if s == x.shape]
-
-        #     sem_sameshape = np.stack(sem_sameshape, axis=-1)
-        #     sem_sameshape = np.nanmedian(sem_sameshape, axis=-1)
-
-        #     np.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}',sem_sameshape)
-        #     im = plots.plot_labels(sem_sameshape, return_img=True)
-        #     # im.save(f'{save_dir}/{type_}_sem_pred{tile}_{i}.png')
-
-        #     with trainer.val_writer.as_default():
-        #         tf.summary.image(f'{type_}/sem_pred{tile}_{i}', np.array(im)[np.newaxis], step=epoch_)
     metrics = trainer.summaries_val(step=epoch_)
 
     save_m(save_dir + '/metrics.txt', metrics)
@@ -478,7 +461,9 @@ def predict_and_recompose_individual_MC(trainer, reader, input_fn, patch_generat
 
         lr_filename = ref_info['lr']
         refDataset = gp.get_jp2(lr_filename, 'B03', res=10)
-        data_name = [x for x in lr_filename.split('/') if 'SAFE' in x][0]
+        data_name = [x for x in lr_filename.split('/') if x.endswith('.SAFE') or x.endswith('.zip')][0]
+        if data_name.endswith('.zip'):
+            data_name = data_name.replace('.zip','.SAFE') # Just to keep consistent naming
         ref_size = (ref_data.shape[1], ref_data.shape[0])
         nr_patches = patch_generator[id_].nr_patches
 
@@ -545,22 +530,12 @@ def predict_and_recompose_individual_MC(trainer, reader, input_fn, patch_generat
                     n=n, lonlat=lonlat, patch_ids=patch_ids, patch_size=patch,border=border)
             print('saved',fname+'.npz')
 
-            
-            #data_recomposed['last'] = data_recomposed['last'].reshape((np.prod(ref_size),-1))
-            # x_sum = np.nansum(data_recomposed['last'],axis=0)
-            # x2_sum = np.nansum(data_recomposed['last']**2,axis=0)
-            # n = np.sum(1- np.any(np.isnan(data_recomposed['last']),axis=-1))
-            # np.savez(fname+'.npz',x_sum=x_sum,x2_sum=x2_sum,n=n)
-
-
 
         if 'reg' in keys_reconstruct:
             pred_rec['reg'] = np.concatenate(pred_rec['reg'], axis=0)
             data_recomposed['reg'] = patches.recompose_images(pred_rec['reg'], size=ref_size, border=border)
             data_recomposed['reg'][np.isnan(ref_data[..., 0])] = np.nan
 
-            # data_r_recomposed = patches.recompose_images(pred_r_rec, size=ref_size, border=border)
-            # data_r_recomposed[np.isnan(ref_data[..., 0])] = np.nan
 
             if not return_array:
                 fname = f'{save_dir}/{data_name}-{type_}_preds_reg'
